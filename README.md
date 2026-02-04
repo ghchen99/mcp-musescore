@@ -1,6 +1,6 @@
 # MuseScore MCP Server
 
-A Model Context Protocol (MCP) server that provides programmatic control over MuseScore through a WebSocket-based plugin system. This allows AI assistants like Claude to compose music, add lyrics, navigate scores, and control MuseScore directly.
+A Model Context Protocol (MCP) server that provides programmatic control over MuseScore, via a WebSocket-based plugin system. This allows AI assistants like Claude to compose music, add lyrics, navigate scores, and control MuseScore directly.
 
 ![Demo GIF](./assets/mcp-muse.gif)
 
