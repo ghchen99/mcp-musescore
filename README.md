@@ -179,7 +179,6 @@ await add_lyrics_to_current_note("Sol")
 await next_element()
 await add_lyrics_to_current_note("Do")
 ```
-
 ### Batch Operations
 
 ```python
@@ -195,6 +194,10 @@ sequence = [
 ]
 await processSequence(sequence)
 ```
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/image?repos=ghchen99/mcp-musescore&type=date&legend=top-left)](https://www.star-history.com/?repos=ghchen99%2Fmcp-musescore&type=date&legend=top-left)
 
 ## Troubleshooting
 
