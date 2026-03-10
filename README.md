@@ -61,7 +61,7 @@ Add to your Claude Desktop configuration file:
 
 ## Running the System
 
-### Order of Operations (Important!)
+### Order of Operations
 
 1. **Start MuseScore first** with a score open
 2. **Run the MuseScore plugin**: Go to **Plugins → MuseScore API Server**
