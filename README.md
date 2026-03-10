@@ -246,15 +246,6 @@ mcp-agents-demo/
         └── action_types.py             # WebSocket action type definitions
 ```
 
-## Requirements
-
-Create a `requirements.txt` file with:
-
-```
-fastmcp
-websockets
-```
-
 ## MIDI Pitch Reference
 
 Common MIDI pitch values for reference:
