@@ -204,7 +204,7 @@ await processSequence(sequence)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/image?repos=ghchen99/mcp-musescore&type=date&legend=top-left)](https://www.star-history.com/?repos=ghchen99%2Fmcp-musescore&type=date&legend=top-left)
+[![Star History Chart](https://www.star-history.com/?repos=ghchen99%2Fmcp-musescore&type=date&legend=top-left)](https://www.star-history.com/?repos=ghchen99%2Fmcp-musescore&type=date&legend=top-left)
 
 ## Troubleshooting
 
