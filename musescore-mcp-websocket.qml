@@ -713,7 +713,9 @@ MuseScore {
             cursor.setDuration(params.duration.numerator, params.duration.denominator);
             
             // Check if current position has a rest
-            var hasRest = selectionState.elements.some(function(element) { 
+            var staffKey = "staff" + selectionState.startStaff;
+            var staffElements = (selectionState.elements && selectionState.elements[staffKey]) || [];
+            var hasRest = staffElements.some(function(element) { 
                 return element.name === "Rest"; 
             });
 
