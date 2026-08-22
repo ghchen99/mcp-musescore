@@ -712,14 +712,8 @@ MuseScore {
             var cursor = createCursor();
             cursor.setDuration(params.duration.numerator, params.duration.denominator);
             
-            // Check if current position has a rest
-            var staffKey = "staff" + selectionState.startStaff;
-            var staffElements = (selectionState.elements && selectionState.elements[staffKey]) || [];
-            var hasRest = staffElements.some(function(element) { 
-                return element.name === "Rest"; 
-            });
-
-            cursor.addNote(params.pitch, !hasRest);
+            // Melody is the default. Pass addToChord: true to stack a pitch on the current chord.
+            cursor.addNote(params.pitch, params.addToChord === true);
             cursor.rewindToTick(selectionState.startTick);
 
             if (params.advanceCursorAfterAction) {
@@ -729,17 +723,25 @@ MuseScore {
             var element = processElement(cursor.element);
             var startTick = cursor.tick;
             var staffIdx = cursor.staffIdx;
+            var durationTicks = element && element.durationTicks ? element.durationTicks : 0;
 
             curScore.selection.clear();
-            curScore.selection.selectRange(startTick, startTick + element.durationTicks, staffIdx, staffIdx + 1);
-            
-            selectionState = {
-                startStaff: staffIdx,
-                endStaff: staffIdx + 1,
-                startTick: startTick,
-                elements: [element],
-                totalDuration: element.durationTicks
-            };
+            if (durationTicks > 0) {
+                curScore.selection.selectRange(startTick, startTick + durationTicks, staffIdx, staffIdx + 1);
+            }
+
+            var syncRes = syncStateToSelection();
+            if (syncRes && syncRes.error) {
+                var staffMap = {};
+                staffMap["staff" + staffIdx] = element ? [element] : [];
+                selectionState = {
+                    startStaff: staffIdx,
+                    endStaff: staffIdx + 1,
+                    startTick: startTick,
+                    elements: staffMap,
+                    totalDuration: durationTicks
+                };
+            }
 
             return { 
                 success: true, 

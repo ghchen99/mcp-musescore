@@ -1,6 +1,6 @@
 """TypedDict definitions for MuseScore MCP action sequences."""
 
-from typing import Dict, Any, List, Literal, TypedDict
+from typing import Dict, Any, List, Literal, NotRequired, TypedDict
 
 
 class getScoreAction(TypedDict):
@@ -12,6 +12,7 @@ class addNoteParams(TypedDict):
     pitch: int
     duration: Dict[Literal["numerator", "denominator"], int]
     advanceCursorAfterAction: bool
+    addToChord: NotRequired[bool]
 
 
 class addNoteAction(TypedDict):

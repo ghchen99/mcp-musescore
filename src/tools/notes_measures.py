@@ -8,18 +8,22 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
     """Setup notes and measures tools."""
     
     @mcp.tool()
-    async def add_note(pitch: int = 64, duration: dict = {"numerator": 1, "denominator": 4}, advance_cursor_after_action: bool = True):
+    async def add_note(pitch: int = 64, duration: dict = {"numerator": 1, "denominator": 4}, advance_cursor_after_action: bool = True, add_to_chord: bool = False):
         """Add a note at the current cursor position with the specified pitch and duration.
+        
+        Sequential notes write a melody. Set add_to_chord=True to stack a pitch on the current chord.
         
         Args:
             pitch: MIDI pitch value (0-127, where 60 is middle C)
             duration: Duration as {"numerator": int, "denominator": int} (e.g., {"numerator": 1, "denominator": 4} for quarter note)
             advance_cursor_after_action: Whether to move cursor to next position after adding note
+            add_to_chord: If True, add this pitch to the current chord instead of writing the next melody note
         """
         return await client.send_command("addNote", {
             "pitch": pitch, 
             "duration": duration,
-            "advanceCursorAfterAction": advance_cursor_after_action
+            "advanceCursorAfterAction": advance_cursor_after_action,
+            "addToChord": add_to_chord
         })
 
     @mcp.tool()

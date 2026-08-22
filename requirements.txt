@@ -1,2 +1,2 @@
-mcp[cli]
+mcp[cli]<2
 websockets
