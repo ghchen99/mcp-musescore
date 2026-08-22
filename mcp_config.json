@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "musescore": {
-      "command": "C:\\Users\\Luca\\Documents\\GitHub\\mcp-musescore\\.venv\\Scripts\\python.exe",
+      "command": "/Users/lucabankofski/opt/anaconda3/envs/musescore-mcp/bin/python",
       "args": [
-        "C:\\Users\\Luca\\Documents\\GitHub\\mcp-musescore\\server.py"
+        "/Users/lucabankofski/Documents_local/mcp-musescore/server.py"
       ]
     }
   }
