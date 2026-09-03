@@ -125,7 +125,7 @@ This MCP server provides comprehensive MuseScore control.
 - **Concurrent Voice Rendering**: Full 4-voice (`\voiceOne`, `\voiceTwo`, etc.) arrays correctly structured and sharded per staff for advanced Agent processing.
 
 ### **Note & Rest Creation**
-- `add_note(pitch, duration, advance_cursor_after_action)` - Add notes with MIDI pitch
+- `add_note(pitch, duration, advance_cursor_after_action, add_to_chord)` - Add notes with MIDI pitch. Sequential notes write a melody; set `add_to_chord=True` to stack a pitch on the current chord.
 - `add_rest(duration, advance_cursor_after_action)` - Add rests
 - `add_tuplet(duration, ratio, advance_cursor_after_action)` - Add tuplets (triplets, etc.)
 
