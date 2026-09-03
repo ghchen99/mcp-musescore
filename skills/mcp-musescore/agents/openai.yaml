@@ -1,0 +1,6 @@
+interface:
+  display_name: "MuseScore MCP"
+  short_description: "Inspect and edit an open MuseScore score"
+  default_prompt: "Use $mcp-musescore to inspect the open score and make the requested verified edits."
+policy:
+  allow_implicit_invocation: true
