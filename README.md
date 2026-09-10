@@ -34,7 +34,7 @@ git clone <your-repo>
 cd mcp-agents-demo
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install fastmcp websockets
+pip install -r requirements.txt
 ```
 
 ### 4. Configure Claude Desktop
@@ -75,8 +75,8 @@ Add to your Claude Desktop configuration file:
 For development, use the MCP development tools:
 
 ```bash
-# Install MCP dev tools
-pip install mcp
+# Install the project dependencies, including the MCP dev tools
+pip install -r requirements.txt
 
 # Test your server
 mcp dev server.py

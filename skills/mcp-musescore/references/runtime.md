@@ -5,11 +5,11 @@
 The repository currently declares:
 
 ```text
-mcp[cli]
+mcp[cli]<2
 websockets
 ```
 
-Because `server.py` imports `mcp.server.fastmcp`, the compatible tested line is:
+Because `server.py` imports `mcp.server.fastmcp`, MCP must remain on the 1.x release line. A tested combination is:
 
 ```text
 mcp[cli]==1.29.0
