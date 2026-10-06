@@ -64,6 +64,7 @@ MuseScore {
 
             // Notes & Music
             case "addNote":                 return addNote(command.params);
+            case "addTie":                  return addTie(command.params);
             case "addRest":                 return addRest(command.params);
             case "addTuplet":               return addTuplet(command.params);
             case "addLyrics":               return addLyrics(command.params);
@@ -634,6 +635,49 @@ MuseScore {
             if (res.error) return res;
             
             return { success: true, message: `Selected measure ${measureIdx + 1}`, currentSelection: selectionState };
+        });
+    }
+
+
+    // params: { startTick, endTick, staff }
+    //
+    // Ties the notes in a range to the next note of the same pitch.
+    //
+    // There is no way to build a Tie through the plugin API: Cursor::add handles
+    // ARTICULATION, KEYSIG and CLEF and has no TIE case, and Note.tieBack /
+    // tieForward are read-only. The obvious workaround - newElement(Element.TIE)
+    // and cursor.add() - is the only handle the API appears to offer and it
+    // CRASHES MuseScore: a tie with no start or end note makes the layout
+    // dereference null, and no crash report is written, so the application
+    // simply vanishes. Reproduced twice on 4.6.5, the second time with the link
+    // verified alive immediately beforehand.
+    //
+    // MuseScore itself ties perfectly well - it is what the T shortcut does - so
+    // this runs MuseScore's own `tie` action over the selected range instead.
+    // The application builds the tie; nothing is constructed by hand.
+    //
+    // Two properties of that action are worth knowing before using it:
+    //   - it acts on a RANGE, tying every selected note that has a same-pitch
+    //     successor and ignoring the rest. A tie is therefore "this span ties
+    //     forward into the next", never "tie the second pitch of this chord".
+    //   - it TOGGLES. Run it on a note that is already tied to its successor and
+    //     the tie is REMOVED. It is not idempotent, so a caller that cannot tell
+    //     "tied" from "untied" will strip good notation while every reply says
+    //     success. Read the range back first.
+    function addTie(params) {
+        var validation = validateParams(params, ["startTick", "endTick", "staff"]);
+        if (!validation.valid) return validation;
+
+        // Selected before the undo command opens: selectRange() is refused while
+        // an operation is in progress.
+        curScore.selection.clear();
+        curScore.selection.selectRange(params.startTick, params.endTick,
+                                       params.staff, params.staff + 1);
+
+        return executeWithUndo(function() {
+            cmd("tie");
+            return { success: true, startTick: params.startTick,
+                     endTick: params.endTick, staff: params.staff };
         });
     }
 

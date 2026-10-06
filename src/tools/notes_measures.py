@@ -89,3 +89,29 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
     async def undo():
         """Undo the last action."""
         return await client.send_command("undo")
+
+    @mcp.tool()
+    async def add_tie(staff: int, start_tick: int, end_tick: int):
+        """Tie the notes in a range to the next note of the same pitch.
+
+        Runs MuseScore's own `tie` action over the selected range, the same route
+        the T shortcut uses, so the ties are ordinary ties the application built
+        itself.
+
+        Do not confuse this with `newElement(Element.TIE)`: the plugin API has no
+        tie entry point and a hand-built Tie element CRASHES MuseScore, with no
+        crash report.
+
+        THE ACTION TOGGLES. Running it on a note already tied to its next
+        same-pitch note REMOVES that tie, so this is not idempotent. Read the
+        range back first (for example with select_custom_range) and tie only what
+        is not already tied.
+
+        Args:
+            staff: 0-based staff index.
+            start_tick: MIDI tick where the range to tie begins.
+            end_tick: MIDI tick where it ends (exclusive).
+        """
+        return await client.send_command("addTie", {
+            "staff": staff, "startTick": start_tick, "endTick": end_tick,
+        })
