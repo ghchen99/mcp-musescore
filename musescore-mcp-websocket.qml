@@ -150,8 +150,18 @@ MuseScore {
         }
         
         var cursor = curScore.newCursor();
-        cursor.inputStateMode = Cursor.INPUT_STATE_SYNC_WITH_SCORE;
-        
+        // SYNC_WITH_SCORE ties the cursor's input state -- including WHICH STAFF
+        // it is on -- to MuseScore's live GUI input state, which overrides an
+        // explicit cursor.staffIdx set immediately afterwards. That is why a
+        // write aimed at staff 2 can land on staff 0, and why a long run drifts
+        // mid-sequence (a two-note chord has been seen splitting across two
+        // staves). When the caller names a staff the cursor must be INDEPENDENT
+        // for that to hold. Calls that omit startStaff keep the synced
+        // behaviour they had.
+        cursor.inputStateMode = (params.startStaff !== undefined)
+            ? Cursor.INPUT_STATE_INDEPENDENT
+            : Cursor.INPUT_STATE_SYNC_WITH_SCORE;
+
         // Set track
         if (params.startStaff !== undefined) cursor.staffIdx = params.startStaff;
         if (params.voice !== undefined) cursor.voice = params.voice;
