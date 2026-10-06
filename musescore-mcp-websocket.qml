@@ -608,31 +608,41 @@ MuseScore {
     // ========================================
 
     function selectCurrentMeasure() {
+        if (!curScore) return { error: "No score open" };
+
+        // Resolve the measure from the cursor first: the selection has to be
+        // made before the undo command opens (see the note below).
+        var cursor = createCursor({
+            startTick: selectionState.startTick || 0,
+            startStaff: selectionState.startStaff || 0
+        });
+
+        var currTick = cursor.tick;
+        var scoreSummary = getScoreSummary();
+
+        var measureIdx = scoreSummary.measures.filter(function(m) {
+            return m.startTick <= currTick;
+        }).length - 1;
+
+        if (measureIdx < 0) return { error: "Invalid cursor position" };
+
+        var measure = scoreSummary.measures[measureIdx];
+        var startTick = measure.startTick;
+        var endTick = (measureIdx + 1 < scoreSummary.measures.length) ? scoreSummary.measures[measureIdx + 1].startTick : curScore.lastSegment.tick;
+
+        // The selection is applied OUTSIDE the undo command on purpose.
+        // Selection::selectRange() returns false "if selection cannot be
+        // changed, e.g. due to the ongoing operation on a score" - and
+        // startCmd() IS such an operation. Called inside executeWithUndo it is
+        // silently refused: nothing is selected, no error is raised, and the
+        // function still reports success.
+        curScore.selection.clear();
+        curScore.selection.selectRange(startTick, endTick, 0, curScore.nstaves);
+
         return executeWithUndo(function() {
-            var cursor = createCursor({ 
-                startTick: selectionState.startTick || 0, 
-                startStaff: selectionState.startStaff || 0 
-            });
-
-            var currTick = cursor.tick;
-            var scoreSummary = getScoreSummary();
-
-            var measureIdx = scoreSummary.measures.filter(function(m) { 
-                return m.startTick <= currTick; 
-            }).length - 1;
-            
-            if (measureIdx < 0) return { error: "Invalid cursor position" };
-            
-            var measure = scoreSummary.measures[measureIdx];
-            var startTick = measure.startTick;
-            var endTick = (measureIdx + 1 < scoreSummary.measures.length) ? scoreSummary.measures[measureIdx + 1].startTick : curScore.lastSegment.tick;
-
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, endTick, 0, curScore.nstaves);
-
             var res = syncStateToSelection();
             if (res.error) return res;
-            
+
             return { success: true, message: `Selected measure ${measureIdx + 1}`, currentSelection: selectionState };
         });
     }
@@ -641,15 +651,22 @@ MuseScore {
         var validation = validateParams(params, ["startTick", "endTick", "startStaff", "endStaff"]);
         if (!validation.valid) return validation;
 
-        return executeWithUndo(function() {
-            var startTick = params.startTick;
-            var endTick = params.endTick;
-            var startStaff = params.startStaff;
-            var endStaff = params.endStaff;
+        var startTick = params.startTick;
+        var endTick = params.endTick;
+        var startStaff = params.startStaff;
+        var endStaff = params.endStaff;
 
-            // Visual GUI snap
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, endTick, startStaff, endStaff);
+        // Visual GUI snap
+        // The selection is applied OUTSIDE the undo command on purpose.
+        // Selection::selectRange() returns false "if selection cannot be
+        // changed, e.g. due to the ongoing operation on a score" - and
+        // startCmd() IS such an operation. Called inside executeWithUndo it is
+        // silently refused: nothing is selected, no error is raised, and the
+        // function still reports success.
+        curScore.selection.clear();
+        curScore.selection.selectRange(startTick, endTick, startStaff, endStaff);
+
+        return executeWithUndo(function() {
 
             var elementsMap = {};
             for (var st = startStaff; st <= endStaff; st++) {
