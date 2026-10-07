@@ -60,7 +60,7 @@ The current Python wrappers sometimes test the inner `success` key without first
 - Plugin source: `musescore-mcp-websocket.qml`.
 - Python entry point: `server.py`.
 - Dependency declaration: `requirements.txt`.
-- The current source imports `mcp.server.fastmcp`; the tested compatible dependency line is `mcp[cli]==1.29.0` with `websockets==17.0.1`. Do not silently upgrade the MCP package to a major version that removes that import.
+- The current source imports `fastmcp` (standalone FastMCP 4, declared as `fastmcp>=4,<5` in `requirements.txt`).
 - The upstream project documents MuseScore 3.x and 4.x, but this integration was verified with MuseScore Studio 4.7.4 on macOS. Treat other versions as needing a bridge check.
 
 ## Failure diagnosis

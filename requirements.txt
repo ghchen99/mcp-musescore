@@ -1,2 +1,2 @@
-mcp[cli]<2
+fastmcp>=4,<5
 websockets
