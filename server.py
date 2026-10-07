@@ -35,7 +35,4 @@ setup_sequence_tools(mcp, client)
 
 # Main entry point
 if __name__ == "__main__":
-    sys.stderr.write("MuseScore MCP Server starting up...\n")
-    sys.stderr.flush()
-    logger.info("MuseScore MCP Server is running")
     mcp.run()

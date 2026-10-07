@@ -6,20 +6,26 @@ from ..client import MuseScoreClient
 def setup_connection_tools(mcp, client: MuseScoreClient):
     """Setup connection and utility tools."""
     
-    @mcp.tool()
+    @mcp.tool(
+        description="Connect to the MuseScore WebSocket API.",
+        tags={"connection"},
+    )
     async def connect_to_musescore():
-        """Connect to the MuseScore WebSocket API."""
         result = await client.connect()
         return {"success": result}
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Ping the MuseScore WebSocket API to check connection.",
+        tags={"connection"},
+    )
     async def ping_musescore():
-        """Ping the MuseScore WebSocket API to check connection."""
         return await client.send_command("ping")
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Get information about the current score.",
+        tags={"connection", "score"},
+    )
     async def get_score():
-        """Get information about the current score."""
         res = await client.send_command("getScore")
         if res.get("success") and "analysis" in res:
             from ..utils.lilypond_converter import json_to_lilypond
