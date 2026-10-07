@@ -2,7 +2,7 @@
 
 This reference describes the tools currently registered by `server.py` and the JSON actions sent to the MuseScore QML plugin. Use the Python function names when calling MCP. Use the camelCase action names only inside `processSequence`.
 
-The server currently registers 26 public tools.
+The server currently registers 27 public tools.
 
 ## Connection and score inspection
 
@@ -11,6 +11,7 @@ The server currently registers 26 public tools.
 | `connect_to_musescore` | none | Opens the WebSocket client connection to `ws://localhost:8765`. Returns `{success: bool}`. |
 | `ping_musescore` | none | Sends the `ping` action. A healthy plugin returns `pong`. |
 | `get_score` | none | Requests the current score analysis, including title, measure data, staves, voices, durations, lyrics, and pitch information when available. |
+| `show_score` | `first_measure: int = 1`, `last_measure: int \| None = None` | Read-only. Renders the score as sheet music in MCP Apps hosts (VexFlow viewer). Other hosts get only a text summary; use `get_score` for data. |
 
 Call `ping_musescore` before a mutation. Call `get_score` before and after a complex edit.
 

@@ -27,19 +27,19 @@ First, save the QML plugin code to your MuseScore plugins directory:
 3. Find "MuseScore API Server" and check the box to enable it
 4. Click **OK**
 
-### 3. Setup Python Environment
+### 3. Configure Claude Desktop (with `uv`)
+
+Install [uv](https://docs.astral.sh/uv/). It creates and caches the Python environment on first launch, so there is no venv to manage and the config needs no `.venv` path.
+
+The quickest way is to let FastMCP write the Claude Desktop config for you:
 
 ```bash
-git clone <your-repo>
-cd mcp-agents-demo
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+fastmcp install claude-desktop server.py --name musescore --python 3.13 --with-requirements requirements.txt
 ```
 
-### 4. Configure Claude Desktop
+To print the config instead of writing it, use `fastmcp install mcp-json` with the same options.
 
-Add to your Claude Desktop configuration file:
+Or add it manually to your Claude Desktop configuration file:
 
 **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
@@ -48,9 +48,13 @@ Add to your Claude Desktop configuration file:
 {
   "mcpServers": {
     "musescore": {
-      "command": "/path/to/your/project/.venv/bin/python",
+      "command": "uv",
       "args": [
-        "/path/to/your/project/server.py"
+        "run",
+        "--no-project",
+        "--python", "3.13",
+        "--with-requirements", "/path/to/mcp-musescore/requirements.txt",
+        "/path/to/mcp-musescore/server.py"
       ]
     }
   }
@@ -58,6 +62,34 @@ Add to your Claude Desktop configuration file:
 ```
 
 **Note**: Update the paths to match your actual project location.
+
+**Windows on ARM**: `cryptography` (a FastMCP dependency) has no ARM64 Windows wheel, so uv would try to compile it and fail with `link.exe not found`. Use the x64 Python instead by replacing `"3.13"` with `"cpython-3.13-windows-x86_64"` after `--python`.
+
+<details>
+<summary>Without uv (manual virtual environment)</summary>
+
+```bash
+git clone <your-repo>
+cd mcp-musescore
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Then point Claude Desktop at the venv's Python:
+
+```json
+{
+  "mcpServers": {
+    "musescore": {
+      "command": "/path/to/mcp-musescore/.venv/bin/python",
+      "args": ["/path/to/mcp-musescore/server.py"]
+    }
+  }
+}
+```
+
+</details>
 
 ## Running the System
 
@@ -83,7 +115,26 @@ fastmcp dev inspector server.py
 
 # List the registered tools
 fastmcp inspect server.py
+
+# Run the tests (no MuseScore needed)
+pip install pytest
+pytest
 ```
+
+#### Mock MuseScore plugin
+
+`tests/mock_musescore.py` is an in-memory stand-in for the QML plugin. It speaks the same WebSocket protocol on port 8765, so you can run the MCP server and the Inspector without MuseScore:
+
+```bash
+# Terminal 1: fake plugin (do not run alongside the real plugin, same port)
+# --demo preloads a two-staff Twinkle Twinkle score
+python tests/mock_musescore.py --demo
+
+# Terminal 2: MCP Inspector against the server
+fastmcp dev inspector server.py
+```
+
+It implements a subset of the plugin's actions (ping, getScore, getCursorInfo, addNote, addRest, addLyrics, goToMeasure, appendMeasure, setTimeSignature, setTempo, addInstrument, undo, processSequence). `tests/test_integration.py` uses it to exercise the real tools and WebSocket client.
 
 ### Viewing Console Output
 
@@ -141,6 +192,7 @@ This MCP server provides comprehensive MuseScore control.
 
 ### **Score Information**
 - `get_score()` - Get complete score analysis and structure
+- `show_score(first_measure, last_measure)` - Render the score as sheet music in an interactive viewer (see below)
 - `ping_musescore()` - Test connection to MuseScore
 - `connect_to_musescore()` - Establish WebSocket connection
 
@@ -148,6 +200,15 @@ This MCP server provides comprehensive MuseScore control.
 - `undo()` - Undo last action
 - `set_time_signature(numerator, denominator)` - Change time signature
 - `processSequence(sequence)` - Execute multiple commands in batch
+
+### Score viewer (MCP Apps)
+
+`show_score` is an [MCP App](https://gofastmcp.com/apps/overview): the tool result is rendered as notation by a small [VexFlow](https://www.vexflow.com/) page (`src/ui/score_viewer.html`) inside hosts that support MCP Apps. Hosts without that support only get a one-line text summary, so use `get_score` there.
+
+- Rendering was verified in a regular browser against the mock plugin. It has not been verified inside Claude or Claude Desktop.
+- The page loads VexFlow and the MCP Apps SDK from `unpkg.com`, so the host needs internet access (the server declares that domain in the app's CSP).
+- Not drawn: tuplet brackets and ties. Tuplet notes use their written value.
+- Long scores: pass `first_measure` and `last_measure` to show a section.
 
 ## Sample Music
 
@@ -256,7 +317,10 @@ mcp-agents-demo/
     │   ├── notes_measures.py           # Note and measure manipulation
     │   ├── sequences.py                # Batch operation tools
     │   ├── staff_instruments.py        # Staff and instrument tools
-    │   └── time_tempo.py               # Timing and tempo tools
+    │   ├── time_tempo.py               # Timing and tempo tools
+    │   └── viewer.py                   # show_score MCP App tool
+    ├── ui/
+    │   └── score_viewer.html           # VexFlow notation viewer
     └── types/                          # Type definitions
         ├── __init__.py
         └── action_types.py             # WebSocket action type definitions

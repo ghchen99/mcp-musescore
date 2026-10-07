@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <style>
+    body { margin: 0; padding: 8px; font-family: system-ui, sans-serif; background: transparent; }
+    #title { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+    #meta, #status { font-size: 12px; opacity: 0.7; margin: 4px 0; }
+    #score { background: #fff; color: #000; border-radius: 8px; overflow-x: auto; padding: 4px; }
+    #status.error { color: #c00; opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="title"></div>
+  <div id="score"></div>
+  <div id="meta"></div>
+  <div id="status">Waiting for score...</div>
+
+  <script src="https://unpkg.com/vexflow@4.2.5/build/cjs/vexflow.js"></script>
+  <script type="module">
+    import { App } from "https://unpkg.com/@modelcontextprotocol/ext-apps@0.4.0/app-with-deps";
+
+    const VF = Vex.Flow;
+    const els = {
+      title: document.getElementById("title"),
+      score: document.getElementById("score"),
+      meta: document.getElementById("meta"),
+      status: document.getElementById("status"),
+    };
+
+    // Standard note lengths in MuseScore ticks (a quarter note is 480).
+    const DURATIONS = [
+      [1920, "w"], [1440, "hd"], [960, "h"], [720, "qd"], [480, "q"], [360, "8d"],
+      [240, "8"], [180, "16d"], [120, "16"], [60, "32"], [30, "64"],
+    ];
+    // Tuplet lengths are drawn as their written value; tuplet brackets are not drawn.
+    const TUPLET_APPROX = { 640: "h", 320: "q", 160: "8", 80: "16", 40: "32" };
+    const BASE_PITCH = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+    const SHARP_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+    function splitTicks(ticks) {
+      if (TUPLET_APPROX[ticks]) return [TUPLET_APPROX[ticks]];
+      const out = [];
+      let rest = ticks;
+      for (const [t, d] of DURATIONS) {
+        while (rest >= t) { out.push(d); rest -= t; }
+      }
+      return out;
+    }
+
+    function keyFor(note) {
+      const m = /^([A-G])(#{0,3}|b{0,3})$/.exec(note.pitchName || "");
+      const spelled = m ? { letter: m[1], acc: m[2] } : (() => {
+        const n = SHARP_NAMES[note.pitchMidi % 12];
+        return { letter: n[0], acc: n.slice(1) };
+      })();
+      const offset = spelled.acc.startsWith("#") ? spelled.acc.length : -spelled.acc.length;
+      const octave = Math.round((note.pitchMidi - BASE_PITCH[spelled.letter] - offset) / 12) - 1;
+      return { key: `${spelled.letter.toLowerCase()}/${octave}`, acc: spelled.acc.slice(0, 2) };
+    }
+
+    function attachDots(note, duration) {
+      if (duration.endsWith("d")) VF.Dot.buildAndAttach([note], { all: true });
+    }
+
+    function makeNote(el, duration, clef, stemDirection) {
+      const restKey = clef === "bass" ? "d/3" : "b/4";
+      const base = { clef, duration: "", keys: [] };
+      if (el.name === "Rest" || !el.notes || el.notes.length === 0) {
+        const n = new VF.StaveNote({ ...base, keys: [restKey], duration: duration + "r" });
+        attachDots(n, duration);
+        return n;
+      }
+      const sorted = [...el.notes].sort((a, b) => a.pitchMidi - b.pitchMidi).map(keyFor);
+      const n = new VF.StaveNote({
+        ...base,
+        keys: sorted.map((k) => k.key),
+        duration,
+        ...(stemDirection ? { stem_direction: stemDirection } : { auto_stem: true }),
+      });
+      sorted.forEach((k, i) => { if (k.acc) n.addModifier(new VF.Accidental(k.acc), i); });
+      attachDots(n, duration);
+      const lyric = (el.lyrics || []).map((l) => l.text).filter(Boolean).join("-");
+      if (lyric) {
+        n.addModifier(
+          new VF.Annotation(lyric).setVerticalJustification(VF.Annotation.VerticalJustify.BOTTOM), 0);
+      }
+      return n;
+    }
+
+    function buildVoice(elements, measureStart, clef, stemDirection, beats) {
+      const tickables = [];
+      let cursor = measureStart;
+      for (const el of elements) {
+        if (el.startTick > cursor) {
+          for (const d of splitTicks(el.startTick - cursor)) tickables.push(new VF.GhostNote({ duration: d }));
+        }
+        for (const d of splitTicks(el.durationTicks)) tickables.push(makeNote(el, d, clef, stemDirection));
+        cursor = Math.max(cursor, el.startTick + el.durationTicks);
+      }
+      const voice = new VF.Voice({ num_beats: beats, beat_value: 4 }).setMode(VF.Voice.Mode.SOFT);
+      voice.addTickables(tickables);
+      return { voice, tickables };
+    }
+
+    function pickClef(measures, staffKey) {
+      let sum = 0, count = 0;
+      for (const m of measures) {
+        for (const el of (m.elements?.[staffKey] || [])) {
+          for (const n of (el.notes || [])) { sum += n.pitchMidi; count++; }
+        }
+      }
+      return count && sum / count < 57 ? "bass" : "treble";
+    }
+
+    function renderScore(analysis) {
+      els.score.innerHTML = "";
+      els.title.textContent = analysis.title || "Score";
+      const measures = analysis.measures || [];
+      const staves = (analysis.staves || [])
+        .map((s, i) => ({ ...s, index: i, key: `staff${i}` }))
+        .filter((s) => s.visible !== false);
+      if (!measures.length || !staves.length) {
+        els.status.textContent = "The score has no measures to show.";
+        return;
+      }
+
+      const measureTicks = analysis.measureTicks || 1920;
+      const beats = measureTicks / 480;
+      const timeSig = Number.isInteger(beats) ? `${beats}/4` : `${measureTicks / 240}/8`;
+      const clefs = staves.map((s) => pickClef(measures, s.key));
+
+      const width = Math.max(320, els.score.clientWidth - 8 || 600);
+      const clefWidth = 70;
+      const perSystem = Math.max(1, Math.min(6, Math.floor((width - clefWidth - 20) / 210)));
+      const measureWidth = Math.floor((width - clefWidth - 30) / perSystem);
+      const staffGap = 120;
+      const systemHeight = staves.length * staffGap + 50;
+      const systems = Math.ceil(measures.length / perSystem);
+
+      const renderer = new VF.Renderer(els.score, VF.Renderer.Backends.SVG);
+      renderer.resize(width, systems * systemHeight + 20);
+      const ctx = renderer.getContext();
+
+      const problems = [];
+      for (let s = 0; s < systems; s++) {
+        let x = 20;
+        const y0 = 20 + s * systemHeight;
+        const slice = measures.slice(s * perSystem, (s + 1) * perSystem);
+        slice.forEach((m, mi) => {
+          const first = mi === 0;
+          const w = measureWidth + (first ? clefWidth : 0);
+          const drawn = staves.map((st, si) => {
+            const stave = new VF.Stave(x, y0 + si * staffGap, w);
+            if (first) stave.addClef(clefs[si]);
+            if (m.measure === 1 || (s === 0 && first)) stave.addTimeSignature(timeSig);
+            if (si === 0 && first) stave.setMeasure(m.measure);
+            stave.setContext(ctx).draw();
+
+            const byVoice = new Map();
+            for (const el of (m.elements?.[st.key] || [])) {
+              const v = el.voice ?? 0;
+              if (!byVoice.has(v)) byVoice.set(v, []);
+              byVoice.get(v).push(el);
+            }
+            if (!byVoice.size) byVoice.set(0, []);
+            const multi = byVoice.size > 1;
+            const voices = [], beams = [];
+            try {
+              [...byVoice.entries()].sort((a, b) => a[0] - b[0]).forEach(([v, list]) => {
+                list.sort((a, b) => a.startTick - b.startTick);
+                let built;
+                if (!list.length) {
+                  const rest = new VF.StaveNote({ clef: clefs[si], keys: [clefs[si] === "bass" ? "d/3" : "b/4"], duration: "wr" });
+                  const voice = new VF.Voice({ num_beats: beats, beat_value: 4 }).setMode(VF.Voice.Mode.SOFT);
+                  voice.addTickables([rest]);
+                  built = { voice, tickables: [rest] };
+                } else {
+                  built = buildVoice(list, m.startTick, clefs[si], multi ? (v % 2 === 0 ? 1 : -1) : 0, beats);
+                }
+                voices.push(built.voice);
+                try {
+                  beams.push(...VF.Beam.generateBeams(built.tickables, { maintain_stem_directions: multi }));
+                } catch (_) { /* beaming is cosmetic */ }
+              });
+              new VF.Formatter().joinVoices(voices).formatToStave(voices, stave);
+              voices.forEach((v) => v.draw(ctx, stave));
+              beams.forEach((b) => b.setContext(ctx).draw());
+            } catch (e) {
+              problems.push(`measure ${m.measure}, ${st.key}: ${e.message || e}`);
+            }
+            return stave;
+          });
+
+          if (drawn.length > 1) {
+            const top = drawn[0], bottom = drawn[drawn.length - 1];
+            if (first) {
+              new VF.StaveConnector(top, bottom).setType("brace").setContext(ctx).draw();
+              new VF.StaveConnector(top, bottom).setType("singleLeft").setContext(ctx).draw();
+            }
+            new VF.StaveConnector(top, bottom).setType("singleRight").setContext(ctx).draw();
+          }
+          x += w;
+        });
+      }
+
+      els.meta.textContent = `${measures.length} measure(s), ${staves.length} staff/staves`;
+      els.status.className = problems.length ? "error" : "";
+      els.status.textContent = problems.length ? `Some measures could not be drawn: ${problems.join("; ")}` : "";
+    }
+
+    function extractScore(result) {
+      const structured = result?.structuredContent ?? result?.structured_content;
+      if (structured && structured.measures) return structured;
+      for (const block of result?.content || []) {
+        if (block.type !== "text") continue;
+        try {
+          const parsed = JSON.parse(block.text);
+          if (parsed && parsed.measures) return parsed;
+        } catch (_) { /* not JSON */ }
+      }
+      return null;
+    }
+
+    function show(result) {
+      const analysis = extractScore(result);
+      if (!analysis) {
+        els.status.className = "error";
+        els.status.textContent = "The tool result did not contain score data.";
+        return;
+      }
+      els.status.className = "";
+      els.status.textContent = "";
+      renderScore(analysis);
+    }
+
+    // Exposed so the page can be previewed without a host by calling window.renderScore(data).
+    window.renderScore = renderScore;
+
+    const app = new App({ name: "MuseScore Score Viewer", version: "1.0.0" });
+    app.ontoolresult = show;
+    await app.connect();
+  </script>
+</body>
+</html>
