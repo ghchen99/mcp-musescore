@@ -362,28 +362,6 @@ def setup_passage_tools(mcp, client: MuseScoreClient):
             out["stopped_at"] = f"bar group {len(written) + 1} of {len(groups)}"
         return out
 
-    @mcp.tool()
-    async def save(probe_only: bool = False):
-        """Save the current score in place, like pressing Cmd-S in MuseScore.
-
-        Uses MuseScore's own `file-save` action rather than the plugin API's
-        `writeScore()`, which returns false for every path tried. Measured
-        working: dispatching it on a score opened from disk rewrote the file.
-
-        A brand new score that has never been saved has nowhere to save *to*, and
-        MuseScore will open a Save dialog — which stalls the bridge until it is
-        dismissed. The plugin API gives no reliable way to detect that case
-        in advance (`Score.path` reads null even for a saved score), so the
-        caller should know whether the score has been saved once already.
-
-        Args:
-            probe_only: report the score's title and measure count without
-                saving. Use this to check which score is attached.
-        """
-        params = {"probeOnly": True} if probe_only else {}
-        return unwrap(await client.send_command("saveViaAction", params))
-
-
 def _expected_readback(nodes, pad_pieces) -> str:
     """What the staff should read as once the passage and its padding land."""
     parts = [P.serialise(nodes)] if nodes else []
