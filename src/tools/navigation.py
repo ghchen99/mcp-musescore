@@ -1,5 +1,7 @@
 """Cursor and navigation tools for MuseScore MCP."""
 
+from typing import Annotated
+
 from ..client import MuseScoreClient
 
 
@@ -65,57 +67,84 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
         return res
         return res
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Get information about the current cursor position.",
+        tags={"navigation"},
+    )
     async def get_cursor_info():
-        """Get information about the current cursor position."""
         return await _run_and_convert("getCursorInfo")
 
-    @mcp.tool()
-    async def go_to_measure(measure: int):
-        """Navigate to a specific measure."""
+    @mcp.tool(
+        description="Navigate to a specific measure and select it across all staves.",
+        tags={"navigation"},
+    )
+    async def go_to_measure(
+        measure: Annotated[int, "Measure number (1-based, must not exceed the number of measures in the score)"],
+    ):
         return await _run_and_convert("goToMeasure", {"measure": measure})
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Navigate to the final measure of the score.",
+        tags={"navigation"},
+    )
     async def go_to_final_measure():
-        """Navigate to the final measure of the score."""
         return await _run_and_convert("goToFinalMeasure")
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Navigate to the beginning of the score.",
+        tags={"navigation"},
+    )
     async def go_to_beginning_of_score():
-        """Navigate to the beginning of the score."""
         return await _run_and_convert("goToBeginningOfScore")
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Move cursor to the next element.",
+        tags={"navigation"},
+    )
     async def next_element():
-        """Move cursor to the next element."""
         return await _run_and_convert("nextElement")
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Move cursor to the previous element.",
+        tags={"navigation"},
+    )
     async def prev_element():
-        """Move cursor to the previous element."""
         return await _run_and_convert("prevElement")
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Move cursor to the next staff.",
+        tags={"navigation"},
+    )
     async def next_staff():
-        """Move cursor to the next staff."""
         return await _run_and_convert("nextStaff")
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Move cursor to the previous staff.",
+        tags={"navigation"},
+    )
     async def prev_staff():
-        """Move cursor to the previous staff."""
         return await _run_and_convert("prevStaff")
 
-    @mcp.tool()
+    @mcp.tool(
+        description="Select the current measure.",
+        tags={"navigation"},
+    )
     async def select_current_measure():
-        """Select the current measure."""
         return await _run_and_convert("selectCurrentMeasure")
         
-    @mcp.tool()
-    async def select_custom_range(start_tick: int, end_tick: int, start_staff: int, end_staff: int):
-        """
-        Select a custom range of ticks across staves.
-        This provides high surgical precision for retrieving continuous phrasing that spans measure bounds.
-        """
+    @mcp.tool(
+        description=(
+            "Select a custom range of ticks across staves. "
+            "Useful for retrieving continuous phrasing that spans measure boundaries."
+        ),
+        tags={"navigation"},
+    )
+    async def select_custom_range(
+        start_tick: Annotated[int, "Start of the range in ticks (0-based; a quarter note is 480 ticks, so a 4/4 measure is 1920)"],
+        end_tick: Annotated[int, "End of the range in ticks (exclusive)"],
+        start_staff: Annotated[int, "First staff index (0-based)"],
+        end_staff: Annotated[int, "Last staff index (0-based)"],
+    ):
         params = {
             "startTick": start_tick,
             "endTick": end_tick,

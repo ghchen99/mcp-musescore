@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that provides programmatic control over Mu
 ## Prerequisites
 
 - MuseScore 3.x or 4.x
-- Python 3.8+
+- Python 3.13+
 - Claude Desktop or compatible MCP client
 
 ## Setup
@@ -72,17 +72,17 @@ Add to your Claude Desktop configuration file:
 
 ### Development and Testing
 
-For development, use the MCP development tools:
+For development, use the FastMCP CLI:
 
 ```bash
-# Install the project dependencies, including the MCP dev tools
+# Install the project dependencies (includes the FastMCP CLI)
 pip install -r requirements.txt
 
-# Test your server
-mcp dev server.py
+# Launch the MCP Inspector against your server
+fastmcp dev inspector server.py
 
-# Check connection status
-mcp dev server.py --inspect
+# List the registered tools
+fastmcp inspect server.py
 ```
 
 ### Viewing Console Output

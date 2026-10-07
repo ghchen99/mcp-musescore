@@ -18,7 +18,7 @@ Use this skill when a user asks to inspect, compose, edit, navigate, or analyze 
 
 ## Routing rule
 
-Prefer a purpose-built CLI command when it is actually available in the current environment for the requested operation. If no such CLI command is available, use the public MCP tools documented in `references/tools.md`. Never invent a MuseScore CLI command. The repository's `mcp dev` command is an MCP inspector/development helper; it is not a replacement for the live MuseScore editing tools.
+Prefer a purpose-built CLI command when it is actually available in the current environment for the requested operation. If no such CLI command is available, use the public MCP tools documented in `references/tools.md`. Never invent a MuseScore CLI command. The repository's `fastmcp dev` command is an MCP inspector/development helper; it is not a replacement for the live MuseScore editing tools.
 
 ## Preconditions and startup
 
