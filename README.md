@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that provides programmatic control over Mu
 ## Prerequisites
 
 - MuseScore 3.x or 4.x
-- Python 3.8+
+- Python 3.13+
 - Claude Desktop or compatible MCP client
 
 ## Setup
