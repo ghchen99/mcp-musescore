@@ -129,7 +129,6 @@ def musescore_roundtrip(tmp_path, path):
     return ScoreFile(out).staves()[0].findall("Measure")
 
 
-@pytest.mark.skipif(find_musescore() is None, reason="MuseScore not installed")
 def tied_chord(duration, *pitches, back=None, ahead=None, tremolo=False):
     """A chord whose notes are tied from `back` and to `ahead` (fractions of a whole, e.g. "1/4")."""
     ties = ""
@@ -165,6 +164,7 @@ def test_roll_start_stays_without_a_tie_into_it(tmp_path):
     assert "start_moved_back" not in report and report["starts_at_tick"] == 480
 
 
+@pytest.mark.skipif(find_musescore() is None, reason="MuseScore not installed")
 def test_musescore_reads_a_mid_bar_roll_back(tmp_path):
     path = write_score(tmp_path, MID_BAR_ROLL)
     score = ScoreFile(path)
