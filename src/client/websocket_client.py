@@ -5,7 +5,24 @@ import json
 import logging
 from typing import Dict, Any, Optional
 
+from fastmcp.exceptions import ToolError
+
 logger = logging.getLogger("MuseScoreMCP.Client")
+
+
+def unwrap_result(response: dict) -> dict:
+    """Return the plugin's result payload or raise ToolError.
+
+    The plugin replies {"status": "success", "result": {...}}; handler errors arrive
+    either as {"status": "error", "message": ...} or as result.error.
+    """
+    if response.get("status") == "error" or "error" in response:
+        raise ToolError(response.get("message") or response.get("error") or "MuseScore error")
+    result = response.get("result")
+    if not isinstance(result, dict) or "error" in result:
+        message = result.get("error") if isinstance(result, dict) else "Unexpected plugin response"
+        raise ToolError(message)
+    return result
 
 
 class MuseScoreClient:
@@ -18,7 +35,8 @@ class MuseScoreClient:
     async def connect(self):
         """Connect to the MuseScore WebSocket API."""
         try:
-            self.websocket = await websockets.connect(self.uri)
+            # Score analyses of large scores can exceed the 1 MiB default frame limit.
+            self.websocket = await websockets.connect(self.uri, max_size=None)
             logger.info(f"Connected to MuseScore API at {self.uri}")
             return True
         except Exception as e:
@@ -72,6 +90,10 @@ class MuseScoreClient:
                 await self._reset_socket()
 
         return {"error": f"Not connected to MuseScore: {last_error}"}
+
+    async def request(self, action: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Send a command and return the unwrapped result, raising ToolError on failure."""
+        return unwrap_result(await self.send_command(action, params))
 
     async def close(self):
         """Close the WebSocket connection."""

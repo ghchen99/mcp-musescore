@@ -15,17 +15,6 @@ VIEWER_HTML = Path(__file__).resolve().parent.parent / "ui" / "score_viewer.html
 DEFAULT_MEASURE_TICKS = 1920
 
 
-def _unwrap(response: dict) -> dict:
-    """Return the plugin's result payload or raise ToolError."""
-    if response.get("status") == "error" or "error" in response:
-        raise ToolError(response.get("message") or response.get("error") or "MuseScore error")
-    result = response.get("result")
-    if not isinstance(result, dict) or "error" in result:
-        message = result.get("error") if isinstance(result, dict) else "Unexpected plugin response"
-        raise ToolError(message)
-    return result
-
-
 def setup_viewer_tools(mcp, client: MuseScoreClient):
     """Setup the score viewer (an MCP App: tool plus ui:// resource)."""
 
@@ -54,24 +43,29 @@ def setup_viewer_tools(mcp, client: MuseScoreClient):
             Optional[int], "Last measure to show (1-based). Defaults to the end of the score."
         ] = None,
     ) -> ToolResult:
-        analysis = _unwrap(await client.send_command("getScore")).get("analysis")
+        params = {"startMeasure": first_measure}
+        if last_measure is not None:
+            params["endMeasure"] = last_measure
+        analysis = (await client.request("getScore", params)).get("analysis")
         if not isinstance(analysis, dict):
             raise ToolError("MuseScore returned no score data")
 
-        measures = analysis.get("measures", [])
-        measure_ticks = DEFAULT_MEASURE_TICKS
-        if len(measures) > 1:
-            measure_ticks = measures[1]["startTick"] - measures[0]["startTick"] or measure_ticks
-
+        # Older plugin versions ignore the range and return every measure, so filter here too.
         shown = [
-            m for m in measures
+            m for m in analysis.get("measures", [])
             if m["measure"] >= first_measure and (last_measure is None or m["measure"] <= last_measure)
         ]
+        measure_ticks = DEFAULT_MEASURE_TICKS
+        if shown and shown[0].get("durationTicks"):
+            measure_ticks = shown[0]["durationTicks"]
+        elif len(shown) > 1:
+            measure_ticks = shown[1]["startTick"] - shown[0]["startTick"] or measure_ticks
         payload = {**analysis, "measures": shown, "measureTicks": measure_ticks}
 
         title = analysis.get("title") or "Untitled"
+        total = analysis.get("numMeasures", len(shown))
         summary = (
-            f'Score "{title}": showing {len(shown)} of {len(measures)} measure(s), '
+            f'Score "{title}": showing {len(shown)} of {total} measure(s), '
             f'{len(analysis.get("staves", []))} staff/staves.'
         )
         return ToolResult(content=summary, structured_content=json.loads(json.dumps(payload)))
