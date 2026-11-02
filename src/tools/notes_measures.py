@@ -97,6 +97,24 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
         return await client.send_command("deleteSelection", params)
 
     @mcp.tool(
+        description=(
+            "Remove whole measures (on every staff) from the score, like MuseScore's Remove selected range (Ctrl+Del). "
+            "Works with multi-measure rests on (they are switched off meanwhile) and reports an error if MuseScore "
+            "deleted fewer measures than asked. Later measures are renumbered, so when removing several ranges start "
+            "from the last one."
+        ),
+        tags={"measures"},
+    )
+    async def delete_measures(
+        start_measure: Annotated[int, "First measure to remove (1-based)"],
+        end_measure: Annotated[Optional[int], "Last measure to remove (1-based, inclusive). Defaults to start_measure."] = None,
+    ):
+        return await client.send_command("deleteMeasures", {
+            "startMeasure": start_measure,
+            "endMeasure": end_measure if end_measure is not None else start_measure,
+        })
+
+    @mcp.tool(
         description="Undo the last action.",
         tags={"measures"},
     )

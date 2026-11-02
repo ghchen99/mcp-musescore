@@ -170,6 +170,10 @@ def json_to_lilypond(score_data: Dict[str, Any]) -> str:
                 elements_by_staff[s_name].append(elem)
                 
             staff_names = sorted(list(elements_by_staff.keys()), key=lambda x: int(x.replace("staff", "")))
+        elif "startStaff" in score_data and isinstance(score_data.get("elements"), dict):
+            # The plugin's currentSelection maps "staffN" to that staff's elements
+            elements_by_staff = score_data["elements"]
+            staff_names = sorted(elements_by_staff.keys(), key=lambda x: int(x.replace("staff", "")))
         else:
             # Handle 'getScore' or standard wrapped output
             staves_info = score_data.get("staves", [])
@@ -265,4 +269,104 @@ def json_to_lilypond(score_data: Dict[str, Any]) -> str:
         
     except Exception as e:
         logger.error(f"Failed to convert JSON to LilyPond: {e}")
+        return "<< >>"
+
+
+def _staff_sort_key(name: str) -> int:
+    try:
+        return int(name.replace("staff", ""))
+    except ValueError:
+        return 0
+
+
+def _bar_comment(measure: Dict[str, Any]) -> str:
+    """"% m.N" plus the displayed number when it differs, and repeat barlines, e.g. "% m.4 (bar 6) |: :|x7"."""
+    comment = f"% m.{measure.get('measure')}"
+    if measure.get("number") is not None and measure.get("number") != measure.get("measure"):
+        comment += f" (bar {measure['number']})"
+    if measure.get("repeatStart"):
+        comment += " |:"
+    if measure.get("repeatEnd"):
+        comment += f" :|x{measure['repeatEnd']}"
+    return comment
+
+
+def score_to_lilypond(score_data: Dict[str, Any]) -> str:
+    """
+    Convert a getScore analysis (one or more measures) into LilyPond, one staff per block.
+    Every voice is padded with spacers so that each measure ends on a bar check
+    followed by a "% m.N" comment, which keeps measures easy to compare by eye.
+    """
+    try:
+        measures = score_data.get("measures", [])
+        staves_info = score_data.get("staves", [])
+        staff_names = [st.get("name") for st in staves_info if st.get("visible", True)]
+        if not staff_names:
+            names = {name for m in measures for name in (m.get("elements") or {})}
+            staff_names = sorted(names, key=_staff_sort_key)
+        short_names = {st.get("name"): st.get("shortName") for st in staves_info}
+
+        # Measure end ticks: explicit duration, else the next measure's start, else open-ended
+        ends: List[Optional[int]] = []
+        for i, m in enumerate(measures):
+            if m.get("durationTicks"):
+                ends.append(m.get("startTick", 0) + m["durationTicks"])
+            elif i + 1 < len(measures):
+                ends.append(measures[i + 1].get("startTick", 0))
+            else:
+                ends.append(None)
+
+        voice_commands = {1: "\\voiceOne", 2: "\\voiceTwo", 3: "\\voiceThree", 4: "\\voiceFour"}
+        lily_parts = ["<<"]
+        for staff in staff_names:
+            voices = sorted({
+                e.get("voice", 0)
+                for m in measures
+                for e in (m.get("elements") or {}).get(staff, [])
+            })
+            if not voices:
+                continue
+
+            label = short_names.get(staff)
+            lily_parts.append(f"  \\new Staff {{ % {staff}" + (f" ({label})" if label else ""))
+            lily_parts.append("    <<")
+            voice_strings = []
+            for v in voices:
+                bars = []
+                for m, end_tick in zip(measures, ends):
+                    start_tick = m.get("startTick", 0)
+                    elems = sorted(
+                        (e for e in (m.get("elements") or {}).get(staff, []) if e.get("voice", 0) == v),
+                        key=lambda e: e.get("startTick", 0),
+                    )
+                    tokens: List[str] = []
+                    current = start_tick
+                    for e in elems:
+                        e_tick = e.get("startTick", current)
+                        if e_tick > current:
+                            tokens.extend(ticks_to_spacers(e_tick - current))
+                        duration = e.get("durationTicks", 0)
+                        if e.get("name") == "MeasureRepeat":
+                            tokens.extend(ticks_to_spacers(duration))
+                            tokens.append("%{ measure repeat %}")
+                        else:
+                            processed = process_element(e)
+                            if processed:
+                                tokens.append(processed)
+                        current = max(current, e_tick + duration)
+                    if end_tick is not None and end_tick > current:
+                        tokens.extend(ticks_to_spacers(end_tick - current))
+                    bars.append(" ".join(tokens) + " | " + _bar_comment(m))
+
+                body = "\n        ".join(bars)
+                cmd = voice_commands.get(v + 1, "\\voiceOne")
+                voice_strings.append(f"      \\new Voice {{ {cmd}\n        {body}\n      }}")
+            lily_parts.append(" \\\\\n".join(voice_strings))
+            lily_parts.append("    >>")
+            lily_parts.append("  }")
+        lily_parts.append(">>")
+        return "\n".join(lily_parts)
+
+    except Exception as e:
+        logger.error(f"Failed to convert score to LilyPond: {e}")
         return "<< >>"

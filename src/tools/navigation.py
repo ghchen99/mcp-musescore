@@ -10,13 +10,14 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
     
     async def _run_and_convert(action: str, params=None):
         res = await client.send_command(action, params)
-        if res.get("success") and "currentSelection" in res:
+        result = res.get("result")
+        if isinstance(result, dict) and result.get("success") and "currentSelection" in result:
             from ..utils.lilypond_converter import json_to_lilypond
-            sel = res["currentSelection"]
+            sel = result["currentSelection"]
             lily_str = json_to_lilypond(sel)
             
             meta = []
-            score_info = res.get("currentScore", {})
+            score_info = result.get("currentScore", {})
             if not isinstance(score_info, dict):
                 score_info = {}
                 
@@ -64,7 +65,6 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
             
             meta_str = ", ".join(meta) if meta else "Aucune métadonnée"
             return f"[Métadonnées] {meta_str}\n[Partition]\n{lily_str}"
-        return res
         return res
 
     @mcp.tool(
