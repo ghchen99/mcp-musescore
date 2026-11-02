@@ -279,6 +279,18 @@ def _staff_sort_key(name: str) -> int:
         return 0
 
 
+def _bar_comment(measure: Dict[str, Any]) -> str:
+    """"% m.N" plus the displayed number when it differs, and repeat barlines, e.g. "% m.4 (bar 6) |: :|x7"."""
+    comment = f"% m.{measure.get('measure')}"
+    if measure.get("number") is not None and measure.get("number") != measure.get("measure"):
+        comment += f" (bar {measure['number']})"
+    if measure.get("repeatStart"):
+        comment += " |:"
+    if measure.get("repeatEnd"):
+        comment += f" :|x{measure['repeatEnd']}"
+    return comment
+
+
 def score_to_lilypond(score_data: Dict[str, Any]) -> str:
     """
     Convert a getScore analysis (one or more measures) into LilyPond, one staff per block.
@@ -344,7 +356,7 @@ def score_to_lilypond(score_data: Dict[str, Any]) -> str:
                         current = max(current, e_tick + duration)
                     if end_tick is not None and end_tick > current:
                         tokens.extend(ticks_to_spacers(end_tick - current))
-                    bars.append(" ".join(tokens) + f" | % m.{m.get('measure')}")
+                    bars.append(" ".join(tokens) + " | " + _bar_comment(m))
 
                 body = "\n        ".join(bars)
                 cmd = voice_commands.get(v + 1, "\\voiceOne")

@@ -11,7 +11,11 @@ Run standalone on the plugin's port:  python tests/mock_musescore.py [--demo]
 import asyncio
 import copy
 import json
+import re
 import sys
+import uuid
+import xml.etree.ElementTree as ET
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
@@ -27,7 +31,8 @@ SEQUENCE_ACTIONS = {
     "setStaffMute", "setInstrumentSound", "setTempo",
     "selectMeasures", "setRepeatBarlines", "addVolta", "colorRange", "deleteMeasures",
     "setStyle", "addRehearsalMark", "removeParts", "addHighlight", "addLabel", "clearHighlights",
-    "highlightNotes", "highlightMarkings", "highlightSymbols",
+    "highlightNotes", "highlightMarkings", "highlightSymbols", "setMeasureNumbering", "numberAsPlayed",
+    "addText", "removeAnnotations", "addArticulation", "removeArticulations", "ghostNotes", "beamOverRests", "addSectionCounts",
 }
 
 TPC_BY_PITCH_CLASS = [14, 21, 16, 23, 18, 13, 20, 15, 22, 17, 24, 19]
@@ -56,20 +61,37 @@ class MockScore:
         self.colors: Dict[tuple, str] = {}  # (staff, startTick, voice) -> color
         self.selected: Optional[Dict[str, int]] = None
         self.part_names = [f"Part {i + 1}" for i in range(staves)]
+        self.short_names = ["" for _ in range(staves)]
         self.drum_staves: set = set()
         self.style: Dict[str, Any] = {}
         self.rehearsal_marks: List[Dict[str, Any]] = []
         self.highlights: List[Dict[str, Any]] = []  # {"staff", "startMeasure", "endMeasure", "color"}
         self.labels: List[Dict[str, Any]] = []  # {"staff", "measure", "text", "background"}
+        self.texts: List[Dict[str, Any]] = []  # addText params, with the resolved tick
         self.note_highlights: Dict[tuple, str] = {}  # (staff, startTick, pitch) -> color
         self.markings: List[Dict[str, Any]] = []  # {"staff", "startTick", "name", "text", "highlight"}
         self.symbol_requests: List[Dict[str, Any]] = []  # highlightSymbols calls (the mock has no symbols to find)
         self.score_name = title
+        self.score_id: Optional[str] = None  # the plugin's mcpScoreId meta tag
+        self.file_path: Optional[str] = None  # the file this score is saved in, if any
+        self.part_entry: Optional[str] = None  # set when this is a part tab: saving stores the ID in that part
+        self.no_offsets: Dict[int, int] = {}  # measure -> "add to measure number"
+        self.irregular: set = set()  # measures excluded from the count
 
     @property
     def measure_ticks(self) -> int:
         num, den = self.time_signature
         return WHOLE_NOTE_TICKS * num // den
+
+    def displayed_numbers(self) -> List[int]:
+        """MuseScore's rule: add each measure's offset, then count it unless it is excluded."""
+        numbers, count = [], 0
+        for number in range(1, self.num_measures + 1):
+            count += self.no_offsets.get(number, 0)
+            numbers.append(count + 1)
+            if number not in self.irregular:
+                count += 1
+        return numbers
 
     def summary(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """getScore analysis; params mirror the plugin (startMeasure, endMeasure, staves, includeElements)."""
@@ -81,7 +103,15 @@ class MockScore:
         for number in range(first, last + 1):
             start = (number - 1) * self.measure_ticks
             end = start + self.measure_ticks
-            entry = {"measure": number, "startTick": start, "durationTicks": self.measure_ticks}
+            entry = {"measure": number, "number": self.displayed_numbers()[number - 1], "startTick": start,
+                     "durationTicks": self.measure_ticks}
+            repeat = self.repeats.get(number, {})
+            if repeat.get("start"):
+                entry["repeatStart"] = True
+            if repeat.get("end"):
+                entry["repeatEnd"] = repeat.get("count") or 2
+            if number in self.irregular:
+                entry["irregular"] = True
             if params.get("includeElements") is not False:
                 per_staff = {
                     f"staff{s}": [e for e in self.elements[s] if start <= e["startTick"] < end]
@@ -102,7 +132,7 @@ class MockScore:
             "endMeasure": last,
             "measures": measures,
             "staves": [
-                {"name": f"staff{i}", "index": i, "partName": self.part_names[i], "shortName": "",
+                {"name": f"staff{i}", "index": i, "partName": self.part_names[i], "shortName": self.short_names[i],
                  "instrumentId": "drum.group" if i in self.drum_staves else "keyboard.piano",
                  "isDrums": i in self.drum_staves, "visible": True}
                 for i in staves
@@ -137,6 +167,7 @@ class MockMuseScore:
         self.port: Optional[int] = None
         self.commands: List[Dict[str, Any]] = []
         self.opened: List[str] = []  # paths opened through openScore / reopenScore
+        self.opens_in_new_window = False  # True mimics MuseScore 4 opening the file out of the plugin's reach
 
     @property
     def uri(self) -> str:
@@ -404,6 +435,43 @@ class MockMuseScore:
         return {"success": True, "message": f"Selected measures {rng['startMeasure']}-{rng['endMeasure']}",
                 **{k: rng[k] for k in ("startTick", "endTick", "startStaff", "endStaff")}}
 
+    def _do_setMeasureNumbering(self, params):
+        if (err := self._missing(params, ["measure"])):
+            return err
+        measure = params["measure"]
+        if not 1 <= measure <= self.score.num_measures:
+            return {"error": f"Invalid measure number {measure}"}
+        self._mutating()
+        if params.get("addToNumber") is not None:
+            self.score.no_offsets[measure] = params["addToNumber"]
+        if params.get("excludeFromCount") is not None:
+            (self.score.irregular.add if params["excludeFromCount"] else self.score.irregular.discard)(measure)
+        return {"success": True, "displayedNumber": self.score.displayed_numbers()[measure - 1]}
+
+    def _do_numberAsPlayed(self, params):
+        score = self.score
+        self._mutating()
+        if params.get("reset"):
+            score.no_offsets, score.irregular = {}, set()
+            return {"success": True, "reset": True, "lastMeasureNumber": score.num_measures}
+        offsets, repeats, section_start = {}, [], 1
+        for number in range(1, score.num_measures + 1):
+            repeat = score.repeats.get(number, {})
+            if repeat.get("start"):
+                section_start = number
+            if repeat.get("end"):
+                count = repeat.get("count") or 2
+                if count > 1 and number < score.num_measures:
+                    offsets[number + 1] = offsets.get(number + 1, 0) + (count - 1) * (number - section_start + 1)
+                repeats.append({"start": section_start, "end": number, "playCount": count})
+                section_start = number + 1
+        score.no_offsets = offsets
+        score.irregular.update(params.get("exclude") or [])
+        numbers = score.displayed_numbers()
+        return {"success": True, "repeats": repeats,
+                "offsets": [{"measure": m, "addToNumber": o, "displayedNumber": numbers[m - 1]} for m, o in sorted(offsets.items())],
+                "lastMeasureNumber": numbers[-1]}
+
     def _do_setRepeatBarlines(self, params):
         rng = self._range({"startMeasure": params.get("startMeasure"), "endMeasure": params.get("endMeasure")})
         if "error" in rng:
@@ -576,6 +644,167 @@ class MockMuseScore:
             mk["highlight"] = None if params.get("clear") else params.get("color")
         return {"success": True, "found": len(found), "changed": len(found)}
 
+    def _do_addText(self, params):
+        if (err := self._missing(params, ["measure", "text"])):
+            return err
+        staff = params.get("staff") or 0
+        rng = self._range({"startMeasure": params["measure"], "startStaff": staff, "endStaff": staff + 1})
+        if "error" in rng:
+            return rng
+        rng = self._apply_beats(rng, {"startBeat": params.get("beat")})
+        if "error" in rng:
+            return rng
+        self._mutating()
+        self.score.texts.append({**params, "tick": rng["startTick"]})
+        return {"success": True}
+
+    def _chords_in(self, rng, pitches):
+        for staff in range(rng["startStaff"], rng["endStaff"]):
+            for e in self.score.elements[staff]:
+                if e["name"] == "Chord" and rng["startTick"] <= e["startTick"] < rng["endTick"] and (
+                        not pitches or any(n["pitchMidi"] in pitches for n in e["notes"])):
+                    yield staff, e
+
+    def _do_addArticulation(self, params):
+        rng = self._range(params)
+        if "error" in rng:
+            return rng
+        rng = self._apply_beats(rng, params)
+        if "error" in rng:
+            return rng
+        self._mutating()
+        added = 0
+        for _, chord in self._chords_in(rng, params.get("pitches")):
+            arts = chord.setdefault("articulations", [])
+            if params["symbol"] not in arts:
+                arts.append(params["symbol"])
+                added += 1
+        return {"success": True, "added": added}
+
+    def _do_removeArticulations(self, params):
+        rng = self._range(params)
+        if "error" in rng:
+            return rng
+        symbols = params.get("symbols") or ["half_open", "open", "closed"]
+        self._mutating()
+        removed = 0
+        for _, chord in self._chords_in(rng, params.get("pitches")):
+            keep = [a for a in chord.get("articulations", []) if a not in symbols]
+            removed += len(chord.get("articulations", [])) - len(keep)
+            if keep:
+                chord["articulations"] = keep
+            else:
+                chord.pop("articulations", None)
+        return {"success": True, "removed": removed}
+
+    def _do_addSectionCounts(self, params):
+        """mode "label": "(count)" at the end of the rehearsal mark's text; "beside": texts {measure, text,
+        sectionCount: True}. Earlier counts at those measures, in either form, are replaced."""
+        if (err := self._missing(params, ["counts"])):
+            return err
+        self._mutating()
+        measures = {c["measure"] for c in params["counts"]}
+        before = len(self.score.texts)
+        self.score.texts = [t for t in self.score.texts
+                            if not (t.get("sectionCount") and (params.get("clearAll") or t["measure"] in measures))]
+        removed = before - len(self.score.texts)
+        marks = {mk["startTick"] // self.score.measure_ticks + 1: mk for mk in self.score.markings
+                 if mk["name"] == "RehearsalMark" and mk["staff"] == 0}
+        for number in measures:
+            if number in marks:
+                base = re.sub(r"\s*\(\d[\dx+ ]*\)\s*$", "", marks[number]["text"])
+                removed += base != marks[number]["text"]
+                marks[number]["text"] = base
+        if params.get("clear"):
+            return {"success": True, "added": 0, "removed": removed}
+        if params.get("mode", "label") == "label":
+            done = [c for c in params["counts"] if c["measure"] in marks]
+            for c in done:
+                marks[c["measure"]]["text"] += f" ({c['text']})"
+            return {"success": True, "added": len(done), "removed": removed}
+        for c in params["counts"]:
+            self.score.texts.append({"measure": c["measure"], "text": c["text"], "sectionCount": True,
+                                     "color": params.get("color"), "tick": (c["measure"] - 1) * self.score.measure_ticks})
+        return {"success": True, "added": len(params["counts"]), "removed": removed}
+
+    def _do_beamOverRests(self, params):
+        """Mark rests with beamable chords before and after them in the same beat (4/4 model) as beamed over."""
+        rng = self._range(params)
+        if "error" in rng:
+            return rng
+        self._mutating()
+        changed = 0
+        for staff in range(rng["startStaff"], rng["endStaff"]):
+            items = sorted((e for e in self.score.elements[staff]
+                            if e["name"] in ("Chord", "Rest") and rng["startTick"] <= e["startTick"] < rng["endTick"]),
+                           key=lambda e: e["startTick"])
+            for i, item in enumerate(items):
+                if item["name"] != "Rest":
+                    continue
+                if params.get("clear"):
+                    changed += bool(item.pop("beamMode", None))
+                    continue
+                beat = item["startTick"] // 480
+                same = [e for e in items if e["startTick"] // 480 == beat and e["durationTicks"] < 480]
+                before = [e for e in same if e["startTick"] < item["startTick"] and e["name"] == "Chord"]
+                after = [e for e in same if e["startTick"] > item["startTick"] and e["name"] == "Chord"]
+                if before and after and item["durationTicks"] < 480 and item.get("beamMode") != "mid":
+                    item["beamMode"] = "mid"
+                    changed += 1
+        return {"success": True, "changed": changed}
+
+    def _do_ghostNotes(self, params):
+        rng = self._range(params)
+        if "error" in rng:
+            return rng
+        pitches = params.get("pitches")
+        found = [(staff, chord) for staff, chord in self._chords_in(rng, None)
+                 if any(n.get("ghost") and (not pitches or n["pitchMidi"] in pitches) for n in chord["notes"])]
+        per_bar: Dict[int, int] = {}
+        for _, chord in found:
+            bar = chord["startTick"] // self.score.measure_ticks + 1
+            per_bar[bar] = per_bar.get(bar, 0) + sum(
+                1 for n in chord["notes"] if n.get("ghost") and (not pitches or n["pitchMidi"] in pitches))
+        bars = [{"measure": b, "ghostNotes": c} for b, c in sorted(per_bar.items())]
+        total = sum(per_bar.values())
+        if params.get("mode") != "remove" or not found:
+            return {"success": True, "ghostNotes": total, "bars": bars}
+        self._mutating()
+        for _, chord in found:
+            chord["notes"] = [n for n in chord["notes"] if not (n.get("ghost") and (not pitches or n["pitchMidi"] in pitches))]
+            if not chord["notes"]:
+                chord["name"] = "Rest"
+                chord.pop("notes")
+        return {"success": True, "removed": total, "bars": bars}
+
+    def _do_removeAnnotations(self, params):
+        rng = self._range(params)
+        if "error" in rng:
+            return rng
+        kinds = params.get("kinds") or ["texts"]
+        contains = params.get("contains") or ""
+        exact = params.get("exact") is True
+        score = self.score
+        removed = dict.fromkeys(["texts", "labels", "rehearsal_marks", "tempo", "voltas"], 0)
+
+        def inside(staff, tick):
+            return rng["startStaff"] <= staff < rng["endStaff"] and rng["startTick"] <= tick < rng["endTick"]
+
+        def keep(kind, staff, tick, text):
+            if kind in kinds and inside(staff, tick) and (text == contains if exact and contains else contains in text):
+                removed[kind] += 1
+                return False
+            return True
+
+        self._mutating()
+        ticks = score.measure_ticks
+        score.texts = [t for t in score.texts if keep("texts", t.get("staff") or 0, t["tick"], t["text"])]
+        score.labels = [l for l in score.labels if keep("labels", l["staff"], (l["measure"] - 1) * ticks, l["text"])]
+        score.rehearsal_marks = [r for r in score.rehearsal_marks
+                                 if keep("rehearsal_marks", 0, (r["measure"] - 1) * ticks, r["text"])]
+        score.voltas = [v for v in score.voltas if keep("voltas", 0, (v["startMeasure"] - 1) * ticks, "")]
+        return {"success": True, "removed": removed}
+
     def _do_clearHighlights(self, params):
         rng = self._range(params)
         if "error" in rng:
@@ -606,21 +835,66 @@ class MockMuseScore:
         after += sum(1 for mk in score.markings if mk.get("highlight"))
         return {"success": True, "removed": before - after}
 
+    def _do_ensureScoreId(self, params):
+        if self.score.score_id and not params.get("renew"):
+            return {"success": True, "scoreId": self.score.score_id, "created": False}
+        self.score.score_id = f"mcp-mock-{uuid.uuid4().hex[:10]}"
+        return {"success": True, "scoreId": self.score.score_id, "created": True}
+
     def _do_scoreFileInfo(self, params):
-        return {"success": True, "scoreName": self.score.score_name, "title": self.score.title,
+        return {"success": True, "scoreId": self.score.score_id or "", "scoreName": self.score.score_name,
+                "title": self.score.title,
                 "numMeasures": self.score.num_measures, "numStaves": self.score.num_staves}
 
     def _do_saveScore(self, params):
+        """Like MuseScore saving: the score's ID is written to its file (the notes are not)."""
+        if self.score.part_entry:  # a part tab: the test file already carries the ID in that part
+            return {"success": True, "message": "Score saved"}
+        if self.score.file_path and self.score.score_id:
+            from src.mscz import ScoreFile
+            file = ScoreFile(self.score.file_path)
+            for tag in file.score.findall("metaTag"):
+                if tag.get("name") == "mcpScoreId":
+                    file.score.remove(tag)
+            ET.SubElement(file.score, "metaTag", {"name": "mcpScoreId"}).text = self.score.score_id
+            file.save()
         return {"success": True, "message": "Score saved"}
 
     def _do_openScore(self, params):
         if (err := self._missing(params, ["path"])):
             return err
         self.opened.append(params["path"])
+        if self.opens_in_new_window:
+            return {"success": True, "path": params["path"], "scoreName": self.score.score_name}
+        from src.mscz.locate import read_score_id
+        self.score.file_path = params["path"]
+        self.score.score_id = read_score_id(Path(params["path"]))
         return {"success": True, "path": params["path"], "scoreName": self.score.score_name}
 
     def _do_reopenScore(self, params):
-        return self._do_openScore(params)
+        """Close and open a file in place: the score takes the file's staves and ID, like MuseScore loading it."""
+        if (err := self._missing(params, ["path"])):
+            return err
+        if self.opens_in_new_window:
+            self.opened.append(params["path"])
+            if params.get("fallbackPath"):
+                self.opened.append(params["fallbackPath"])
+            return {"error": f"MuseScore could not open {params['path']}"}
+        result = self._do_openScore(params)
+        from src.mscz import ScoreFile
+        staves = len(ScoreFile(params["path"]).staves())
+        if staves < self.score.num_staves:
+            self.score.elements = {i: self.score.elements[i] for i in range(staves)}
+            self.score.part_names = self.score.part_names[:staves]
+            self.score.short_names = self.score.short_names[:staves]
+            self.score.num_staves = staves
+        return result
+
+    def _do_exportScore(self, params):
+        if (err := self._missing(params, ["path"])):
+            return err
+        Path(params["path"]).write_text(f"exported {self.score.num_staves} staves")
+        return {"success": True, "path": params["path"]}
 
     def _do_removeParts(self, params):
         if (err := self._missing(params, ["keepStaves"])):
@@ -633,6 +907,7 @@ class MockMuseScore:
         removed = score.num_staves - len(keep)
         score.elements = {new: score.elements[old] for new, old in enumerate(keep)}
         score.part_names = [score.part_names[s] for s in keep]
+        score.short_names = [score.short_names[s] for s in keep]
         score.drum_staves = {new for new, old in enumerate(keep) if old in score.drum_staves}
         score.num_staves = len(keep)
         return {"success": True, "removed": removed, "kept": score.part_names,

@@ -11,7 +11,7 @@ Use this skill when a user asks to inspect, compose, edit, navigate, or analyze 
 
 ## Read the right detail
 
-- Read [references/tools.md](references/tools.md) before choosing a tool or constructing a batch sequence. It is the source of truth for the 47 public MCP tools, parameters, defaults, and upstream README discrepancies.
+- Read [references/tools.md](references/tools.md) before choosing a tool or constructing a batch sequence. It is the source of truth for the 57 public MCP tools, parameters, defaults, and upstream README discrepancies.
 - Read [references/architecture.md](references/architecture.md) when diagnosing connection, plugin, port, response-envelope, or MuseScore-version problems.
 - Read [references/client-configuration.md](references/client-configuration.md) when a client needs a stdio configuration.
 - Read [references/runtime.md](references/runtime.md) when installing, selecting a Python runtime, or using the repository's CLI helpers.

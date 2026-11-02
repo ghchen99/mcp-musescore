@@ -4,6 +4,7 @@ import MuseScore 3.0
 MuseScore {
     id: root
     menuPath: "Plugins.MuseScore API Server"
+    title: "MuseScore API Server"
     description: "Exposes MuseScore API via WebSocket (Clean Version)"
     version: "2.0"
     
@@ -88,16 +89,29 @@ MuseScore {
             case "colorRange":              return colorRange(command.params);
             case "setStyle":                return setStyle(command.params);
             case "addRehearsalMark":        return addRehearsalMark(command.params);
+            case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
             case "addLabel":                return addLabel(command.params);
+            case "addText":                 return addText(command.params);
+            case "addArticulation":         return addArticulation(command.params);
+            case "removeArticulations":     return removeArticulations(command.params);
+            case "ghostNotes":              return ghostNotes(command.params);
+            case "beamOverRests":           return beamOverRests(command.params);
+            case "removeAnnotations":       return removeAnnotations(command.params);
             case "highlightNotes":          return highlightNotes(command.params);
             case "highlightMarkings":       return highlightMarkings(command.params);
             case "highlightSymbols":        return highlightSymbols(command.params);
+
+            // Measure numbers
+            case "setMeasureNumbering":     return setMeasureNumbering(command.params);
+            case "numberAsPlayed":          return numberAsPlayed(command.params);
             case "clearHighlights":         return clearHighlights(command.params);
 
             // Score files & parts
             case "scoreFileInfo":           return scoreFileInfo();
+            case "ensureScoreId":           return ensureScoreId(command.params);
             case "saveScore":               return saveScore();
+            case "exportScore":             return exportScore(command.params);
             case "openScore":               return openScore(command.params);
             case "reopenScore":             return reopenScore(command.params);
             case "removeParts":             return removeParts(command.params);
@@ -366,12 +380,20 @@ MuseScore {
             var keys = Object.keys(notesObj);
             for (var k = 0; k < keys.length; k++) {
                 var note = notesObj[keys[k]];
-                base.notes.push({
+                var noteData = {
                     pitchMidi: note.pitch,
                     tpc: note.tpc,
                     pitchName: getTpcName(note.tpc)
-                });
+                };
+                if (note.ghost) noteData.ghost = true;
+                base.notes.push(noteData);
             }
+            var arts = element.articulations || [];
+            if (arts.length) {
+                base.articulations = [];
+                for (var a = 0; a < arts.length; a++) base.articulations.push(articulationName(arts[a].symbol));
+            }
+            if (element.tremoloSingleChord) base.tremolo = true;
         }
                 
         return base;
@@ -409,8 +431,10 @@ MuseScore {
             "goToBeginningOfScore", "setTimeSignature", "addLyrics", "addInstrument",
             "setStaffMute", "setInstrumentSound", "setTempo",
             "selectMeasures", "setRepeatBarlines", "addVolta", "colorRange", "deleteMeasures",
-            "setStyle", "addRehearsalMark", "removeParts", "addHighlight", "addLabel", "clearHighlights",
-            "highlightNotes", "highlightMarkings", "highlightSymbols"
+            "setStyle", "addRehearsalMark", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
+            "highlightNotes", "highlightMarkings", "highlightSymbols",
+            "setMeasureNumbering", "numberAsPlayed", "addText", "removeAnnotations",
+            "addArticulation", "removeArticulations", "ghostNotes", "beamOverRests"
         ];
 
         try {
@@ -1075,16 +1099,34 @@ MuseScore {
 
     // Remove whole measures (all staves). Runs MuseScore's own "Remove selected range"
     // action, which manages its own undo step, so it is not wrapped in executeWithUndo.
+    // Delete whole measures. Measures inside a multi-measure rest can't be selected (time-delete then does
+    // nothing and reports no error), so multi-measure rests are switched off meanwhile; the measure count is
+    // checked afterwards.
     function deleteMeasures(params) {
         if (!curScore) return { error: "No score open" };
         var range = measureRange({ startMeasure: params.startMeasure, endMeasure: params.endMeasure });
         if (!range.valid) return range;
+        var before = curScore.nmeasures;
+        var expected = range.endMeasure - range.startMeasure + 1;
+        if (expected >= before) return { error: "A score must keep at least one measure" };
 
+        var mmRests = curScore.style ? curScore.style.value("createMultiMeasureRests") : false;
+        if (mmRests) {
+            setStyle({ key: "createMultiMeasureRests", value: false });
+            range = measureRange({ startMeasure: params.startMeasure, endMeasure: params.endMeasure });
+        }
         selectMeasureRange(range);
         cmd("time-delete");
         curScore.selection.clear();
         selectionState = { startStaff: 0, endStaff: 1, startTick: 0, elements: {} };
+        if (mmRests) setStyle({ key: "createMultiMeasureRests", value: true });
 
+        var deleted = before - curScore.nmeasures;
+        if (deleted !== expected) {
+            return { error: "MuseScore deleted " + deleted + " of the " + expected + " measures " + range.startMeasure +
+                     "-" + range.endMeasure + " (the score now has " + curScore.nmeasures + "). Select them in " +
+                     "MuseScore and press Ctrl+Del." };
+        }
         return {
             success: true,
             message: "Deleted measures " + range.startMeasure + "-" + range.endMeasure +
@@ -1312,8 +1354,14 @@ MuseScore {
             }
         }
         setColor(element.stem, color);
+        setColor(element.stemSlash, color);
         setColor(element.hook, color);
         setColor(element.beam, color);
+        // Grace notes, e.g. the small slashed note of a flam, belong to the main chord
+        var graces = element.graceNotes || [];
+        for (var g = 0; g < graces.length; g++) {
+            count += paintElement(graces[g], color);
+        }
         return count;
     }
 
@@ -1700,6 +1748,289 @@ MuseScore {
         });
     }
 
+    // Free text at a measure (and beat) with its own look: size in points, bold/italic, color, above/below.
+    // kind "expression" makes an expression text (italic and below the staff by default in MuseScore).
+    function addText(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["measure", "text"]);
+        if (!validation.valid) return validation;
+        var staff = params.staff || 0;
+        var range = measureRange({ startMeasure: params.measure, startStaff: staff, endStaff: staff + 1 });
+        if (!range.valid) return range;
+        range = applyBeats(range, { startBeat: params.beat });
+        if (range.error) return range;
+
+        return executeWithUndo(function() {
+            var cursor = createCursor({ startTick: range.startTick, startStaff: staff });
+            var text = newElement(params.kind === "expression" ? Element.EXPRESSION : Element.STAFF_TEXT);
+            text.text = params.text;
+            if (params.fontSize) text.fontSize = params.fontSize;
+            if (params.bold !== undefined || params.italic !== undefined) {
+                text.fontStyle = (params.bold ? 1 : 0) | (params.italic ? 2 : 0);
+            }
+            if (params.color) text.color = params.color;
+            if (params.placement) text.placement = params.placement === "below" ? 1 : 0;
+            cursor.add(text);
+            return { success: true, message: "Text '" + params.text + "' added at measure " + params.measure + ", staff " + staff };
+        });
+    }
+
+    // Remove texts and marks in a range. kinds: "texts" (staff/expression text without a box: add_text),
+    // "labels" (boxed staff text: add_label), "rehearsal_marks", "tempo", "voltas". `contains` limits text-based
+    // kinds to elements whose text contains that string (e.g. "*"), or equals it when `exact` is true.
+    function removeAnnotations(params) {
+        if (!curScore) return { error: "No score open" };
+        var range = measureRange(params);
+        if (!range.valid) return range;
+        var kinds = params.kinds && params.kinds.length ? params.kinds : ["texts"];
+        var contains = params.contains || "";
+        var exact = params.exact === true;
+        var removed = { texts: 0, labels: 0, rehearsal_marks: 0, tempo: 0, voltas: 0 };
+        var targets = [];
+
+        forEachMarking(range, ["StaffText", "Expression", "RehearsalMark", "Tempo", "TempoText"], function(ann) {
+            var kind;
+            if (ann.name === "RehearsalMark") kind = "rehearsal_marks";
+            else if (ann.name === "Tempo" || ann.name === "TempoText") kind = "tempo";
+            else kind = ann.frameType && !isTranslucent(ann.frameBgColor) ? "labels" : "texts";
+            if (kinds.indexOf(kind) === -1) return;
+            var plain = String(ann.text || "").replace(/<[^>]*>/g, "");
+            if (contains && (exact ? plain !== contains : plain.indexOf(contains) === -1)) return;
+            targets.push(ann);
+            removed[kind]++;
+        });
+        if (kinds.indexOf("voltas") !== -1) {
+            var spanners = curScore.spanners || [];
+            for (var i = 0; i < spanners.length; i++) {
+                var sp = spanners[i];
+                var tick = sp.spannerTick ? sp.spannerTick.ticks : -1;
+                if (sp.name === "Volta" && tick >= range.startTick && tick < range.endTick) {
+                    targets.push(sp);
+                    removed.voltas++;
+                }
+            }
+        }
+        if (!targets.length) return { success: true, removed: removed, message: "Nothing to remove" };
+
+        var result = executeWithUndo(function() {
+            for (var t = 0; t < targets.length; t++) removeElement(targets[t]);
+            return { success: true };
+        });
+        if (result && result.error) return result;
+        return { success: true, removed: removed, message: "Removed " + targets.length + " element(s)" };
+    }
+
+    // Articulation names used by the tools, as SMuFL symbols (the hi-hat ones are MuseScore's palette symbols)
+    function articulationSymbols() {
+        return {
+            half_open: SymId.pictHalfOpen2,
+            open: SymId.brassMuteOpen,
+            closed: SymId.brassMuteClosed,
+            accent: SymId.articAccentAbove,
+            marcato: SymId.articMarcatoAbove,
+            staccato: SymId.articStaccatoAbove,
+            tenuto: SymId.articTenutoAbove
+        };
+    }
+
+    function articulationName(symbol) {
+        var symbols = articulationSymbols();
+        for (var name in symbols) {
+            if (symbols[name] === symbol) return name;
+        }
+        return "symbol " + symbol;
+    }
+
+    // Call fn(chord, segment, staff) for each chord starting in the range (beats applied) on the given voices.
+    function forEachChord(range, voices, fn) {
+        for (var m = range.firstMeasure; m; m = m.nextMeasure) {
+            for (var seg = m.firstSegment; seg; seg = seg.nextInMeasure) {
+                if (seg.tick < range.startTick || seg.tick >= range.endTick) continue;
+                for (var s = range.startStaff; s < range.endStaff; s++) {
+                    for (var v = 0; v < voices.length; v++) {
+                        var el = seg.elementAt(s * 4 + voices[v]);
+                        if (el && el.name === "Chord") fn(el, seg, s);
+                    }
+                }
+            }
+            if (measureStartTick(m) >= measureStartTick(range.lastMeasure)) break;
+        }
+    }
+
+    function chordHasPitch(chord, pitches) {
+        if (!pitches) return true;
+        var notes = chord.notes || [];
+        for (var n = 0; n < notes.length; n++) {
+            if (pitches.indexOf(notes[n].pitch) !== -1) return true;
+        }
+        return false;
+    }
+
+    // Beam across rests inside a beat group (a dotted quarter in 6/8, 9/8, 12/8; a beat otherwise), as drum
+    // charts write them: MuseScore breaks the beam at every rest left on "auto" beaming. A rest is beamed over
+    // when beamable notes (shorter than a quarter) come before and after it in the same group. `clear` puts
+    // the rests in the range back on "auto".
+    function beamOverRests(params) {
+        if (!curScore) return { error: "No score open" };
+        var range = measureRange(params);
+        if (!range.valid) return range;
+        // engraving BeamMode values (types.h: INVALID -1, AUTO, NONE, BEGIN, BEGIN16, BEGIN32, MID, END);
+        // the plugin API has no BeamMode enum in 4.7
+        var mid = 5, auto = 0;
+        var clear = params.clear === true;
+
+        return executeWithUndo(function() {
+            var changed = 0;
+            for (var m = range.firstMeasure; m; m = m.nextMeasure) {
+                var start = measureStartTick(m);
+                var sig = m.timesigActual;
+                var compound = sig && sig.denominator === 8 && sig.numerator > 3 && sig.numerator % 3 === 0;
+                var group = compound ? 720 : beatTicks(m);
+                for (var s = range.startStaff; s < range.endStaff; s++) {
+                    for (var v = 0; v < 4; v++) {
+                        var items = [];
+                        for (var seg = m.firstSegment; seg; seg = seg.nextInMeasure) {
+                            var el = seg.elementAt(s * 4 + v);
+                            if (el && (el.name === "Chord" || el.name === "Rest")) items.push({ tick: seg.tick - start, cr: el });
+                        }
+                        for (var i = 0; i < items.length; i++) {
+                            var item = items[i];
+                            if (item.cr.name !== "Rest") continue;
+                            if (clear) {
+                                if (item.cr.beamMode !== auto) { item.cr.beamMode = auto; changed++; }
+                                continue;
+                            }
+                            var g = Math.floor(item.tick / group);
+                            var before = false, after = false;
+                            for (var b = i - 1; b >= 0 && Math.floor(items[b].tick / group) === g; b--) {
+                                if (items[b].cr.name === "Chord") { before = beamable(items[b].cr); break; }
+                            }
+                            for (var a = i + 1; a < items.length && Math.floor(items[a].tick / group) === g; a++) {
+                                if (items[a].cr.name === "Chord") { after = beamable(items[a].cr); break; }
+                            }
+                            if (before && after && beamable(item.cr) && item.cr.beamMode !== mid) {
+                                item.cr.beamMode = mid;
+                                changed++;
+                            }
+                        }
+                    }
+                }
+                if (measureStartTick(m) >= measureStartTick(range.lastMeasure)) break;
+            }
+            return { success: true, changed: changed,
+                     message: (clear ? "Reset beaming of " : "Beamed over ") + changed + " rest(s)" };
+        });
+    }
+
+    function beamable(chordRest) {
+        return chordRest.actualDuration && chordRest.actualDuration.ticks < 480;
+    }
+
+    // Add an articulation (e.g. the half-open hi-hat symbol) to every chord in the range that contains one of
+    // `pitches` (all chords if none). Chords that already have it are left alone.
+    function addArticulation(params) {
+        if (!curScore) return { error: "No score open" };
+        var range = measureRange(params);
+        if (!range.valid) return range;
+        range = applyBeats(range, params);
+        if (range.error) return range;
+        var symbol = articulationSymbols()[params.symbol || "half_open"];
+        if (symbol === undefined) return { error: "Unknown articulation " + params.symbol };
+        var pitches = params.pitches && params.pitches.length ? params.pitches : null;
+        var voices = params.voices && params.voices.length ? params.voices : [0, 1, 2, 3];
+
+        return executeWithUndo(function() {
+            var added = 0;
+            forEachChord(range, voices, function(chord) {
+                if (!chordHasPitch(chord, pitches)) return;
+                var arts = chord.articulations || [];
+                for (var a = 0; a < arts.length; a++) {
+                    if (arts[a].symbol === symbol) return;
+                }
+                var art = newElement(Element.ARTICULATION);
+                art.symbol = symbol;
+                chord.add(art);
+                added++;
+            });
+            return { success: true, added: added, message: "Added '" + (params.symbol || "half_open") + "' to " + added + " chord(s)" };
+        });
+    }
+
+    // Remove articulations by name (default: the hi-hat symbols) from chords in the range containing `pitches`.
+    function removeArticulations(params) {
+        if (!curScore) return { error: "No score open" };
+        var range = measureRange(params);
+        if (!range.valid) return range;
+        range = applyBeats(range, params);
+        if (range.error) return range;
+        var names = params.symbols && params.symbols.length ? params.symbols : ["half_open", "open", "closed"];
+        var symbols = articulationSymbols();
+        var wanted = [];
+        for (var i = 0; i < names.length; i++) {
+            if (symbols[names[i]] === undefined) return { error: "Unknown articulation " + names[i] };
+            wanted.push(symbols[names[i]]);
+        }
+        var pitches = params.pitches && params.pitches.length ? params.pitches : null;
+
+        return executeWithUndo(function() {
+            var targets = [];
+            forEachChord(range, [0, 1, 2, 3], function(chord) {
+                if (!chordHasPitch(chord, pitches)) return;
+                var arts = chord.articulations || [];
+                for (var a = 0; a < arts.length; a++) {
+                    if (wanted.indexOf(arts[a].symbol) !== -1) targets.push(arts[a]);
+                }
+            });
+            for (var t = 0; t < targets.length; t++) removeElement(targets[t]);
+            return { success: true, removed: targets.length };
+        });
+    }
+
+    // List (mode "list") or remove (mode "remove") ghost notes in the range. A chord made only of ghost notes
+    // becomes a rest.
+    function ghostNotes(params) {
+        if (!curScore) return { error: "No score open" };
+        var range = measureRange(params);
+        if (!range.valid) return range;
+        var pitches = params.pitches && params.pitches.length ? params.pitches : null;
+        var found = [];
+        forEachChord(range, [0, 1, 2, 3], function(chord, seg, staff) {
+            var notes = chord.notes || [];
+            var ghosts = [];
+            for (var n = 0; n < notes.length; n++) {
+                if (notes[n].ghost && (!pitches || pitches.indexOf(notes[n].pitch) !== -1)) ghosts.push(notes[n]);
+            }
+            if (ghosts.length) found.push({ chord: chord, ghosts: ghosts, all: ghosts.length === notes.length, tick: seg.tick, staff: staff });
+        });
+
+        var bars = {};
+        var numbers = [];
+        for (var f = 0; f < found.length; f++) {
+            var m = 1;
+            for (var mm = curScore.firstMeasure; mm && measureEndTick(mm) <= found[f].tick; mm = mm.nextMeasure) m++;
+            if (!bars[m]) { bars[m] = 0; numbers.push(m); }
+            bars[m] += found[f].ghosts.length;
+        }
+        var count = 0;
+        for (var b = 0; b < numbers.length; b++) count += bars[numbers[b]];
+        var perBar = [];
+        for (var c = 0; c < numbers.length; c++) perBar.push({ measure: numbers[c], ghostNotes: bars[numbers[c]] });
+        if (params.mode !== "remove" || !found.length) {
+            return { success: true, ghostNotes: count, bars: perBar };
+        }
+
+        return executeWithUndo(function() {
+            for (var i = 0; i < found.length; i++) {
+                if (found[i].all) {
+                    removeElement(found[i].chord);
+                } else {
+                    for (var g = 0; g < found[i].ghosts.length; g++) removeElement(found[i].ghosts[g]);
+                }
+            }
+            return { success: true, removed: count, bars: perBar };
+        });
+    }
+
     function isHighlightLine(spanner) {
         return spanner.name === "TextLine" && spanner.autoplace === false && isTranslucent(spanner.lineColor);
     }
@@ -1803,6 +2134,173 @@ MuseScore {
         });
     }
 
+    // Bar counts of the sections, e.g. "2x4+2". mode "label" (default, the user's choice) writes the count in
+    // parentheses in the measure's rehearsal mark: "Chorus 1 (2x4)", placed and spaced by MuseScore with the label. mode "beside" adds a staff text right of the rehearsal mark, at
+    // the mark's height: its autoplace is off and its offset is set from the mark's laid-out position, so it
+    // stays level with the label wherever the system starts and other texts don't push it around.
+    // counts: [{measure, text}]. Counts added before at those measures, in either form (a "(...)" count at the
+    // end of the label, bold staff texts made only of digits, "x" and "+"), are replaced; clear: true only
+    // removes them. clearAll: true first removes such staff texts anywhere on the first staff (counts left on
+    // other bars by earlier edits).
+    function addSectionCounts(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["counts"]);
+        if (!validation.valid) return validation;
+        var color = params.color || "#d62728";
+        var fontSize = params.fontSize || 12;
+        var gap = params.gap !== undefined ? params.gap : 0.8;  // spaces between the label's box and the count
+        var inLabel = (params.mode || "label") === "label";
+
+        return executeWithUndo(function() {
+            var placed = [], skipped = [], removed = 0, labelled = [];
+            if (params.clearAll) {
+                var stale = [];
+                for (var sm = curScore.firstMeasure; sm; sm = sm.nextMeasure) {
+                    for (var ss = sm.firstSegment; ss; ss = ss.nextInMeasure) {
+                        var anns = ss.annotations || [];
+                        for (var sa = 0; sa < anns.length; sa++) {
+                            if (Math.floor(anns[sa].track / 4) === 0 && isSectionCount(anns[sa])) stale.push(anns[sa]);
+                        }
+                    }
+                }
+                for (var st = 0; st < stale.length; st++) removeElement(stale[st]);
+                removed += stale.length;
+            }
+            var minTick = -1, maxTick = 0;
+            for (var i = 0; i < params.counts.length; i++) {
+                var c = params.counts[i];
+                var m = getMeasure(c.measure);
+                if (!m) { skipped.push({ measure: c.measure, reason: "no such measure" }); continue; }
+                var start = measureStartTick(m), end = measureEndTick(m);
+                var mark = null, old = [];
+                for (var seg = m.firstSegment; seg; seg = seg.nextInMeasure) {
+                    var annotations = seg.annotations || [];
+                    for (var a = 0; a < annotations.length; a++) {
+                        var ann = annotations[a];
+                        if (Math.floor(ann.track / 4) !== 0) continue;
+                        if (ann.name === "RehearsalMark" && !mark) mark = ann;
+                        if (isSectionCount(ann)) old.push(ann);
+                    }
+                }
+                for (var o = 0; o < old.length; o++) removeElement(old[o]);
+                removed += old.length;
+                if (mark) {
+                    var base = labelWithoutCount(mark.text);
+                    if (base !== String(mark.text)) { mark.text = base; removed++; }
+                }
+                if (params.clear) continue;
+                if (inLabel) {
+                    if (!mark) { skipped.push({ measure: c.measure, reason: "no section label" }); continue; }
+                    mark.text = labelWithoutCount(mark.text) + " (" + countText(c.text) + ")";
+                    labelled.push(c.measure);
+                    continue;
+                }
+
+                var cursor = createCursor({ startTick: start, startStaff: 0 });
+                var text = newElement(Element.STAFF_TEXT);
+                text.text = countText(c.text);
+                text.fontSize = fontSize;
+                text.fontStyle = 1;  // bold
+                text.color = color;
+                text.placement = 0;  // above
+                if (mark) text.autoplace = false;
+                cursor.add(text);
+                placed.push({ measure: c.measure, text: text, mark: mark });
+                if (minTick < 0 || start < minTick) minTick = start;
+                if (end > maxTick) maxTick = end;
+            }
+            if (placed.length) {
+                curScore.doLayout(fraction(minTick, 1920), fraction(maxTick, 1920));
+                for (var j = 0; j < placed.length; j++) {
+                    var p = placed[j];
+                    if (!p.mark) continue;
+                    var mp = p.mark.pagePos, mb = p.mark.bbox, tp = p.text.pagePos, tb = p.text.bbox;
+                    var dx = (mp.x + mb.x + mb.width + gap) - (tp.x + tb.x);
+                    var dy = (mp.y + mb.y + mb.height / 2) - (tp.y + tb.y + tb.height / 2);
+                    // Clear what is already there: past texts (e.g. the tempo) to the right, above notes and
+                    // symbols (e.g. hi-hat signs at that height)
+                    var obstacles = countObstacles(p.measure, p.text, p.mark);
+                    for (var tries = 0; tries < 12; tries++) {
+                        var box = { x0: tp.x + tb.x + dx, x1: tp.x + tb.x + tb.width + dx,
+                                    y0: tp.y + tb.y + dy, y1: tp.y + tb.y + tb.height + dy };
+                        var hit = null;
+                        for (var h = 0; h < obstacles.length && !hit; h++) {
+                            var ob = obstacles[h];
+                            if (ob.x0 < box.x1 && ob.x1 > box.x0 && ob.y0 < box.y1 && ob.y1 > box.y0) hit = ob;
+                        }
+                        if (!hit) break;
+                        if (hit.text) dx += hit.x1 + gap - box.x0;
+                        else dy -= box.y1 - (hit.y0 - 0.3);
+                    }
+                    var off = p.text.offset;
+                    p.text.offset = Qt.point(off.x + dx, off.y + dy);
+                    // Autoplace stays off: turned back on, MuseScore pushed counts into the notes. So the count is
+                    // not part of the system's outline and the system above isn't kept clear of it: mode "label"
+                    // has no such problem.
+                }
+            }
+            var noLabel = [];
+            for (var k = 0; k < placed.length; k++) if (!placed[k].mark) noLabel.push(placed[k].measure);
+            var added = placed.length + labelled.length;
+            var result = { success: true, added: added, removed: removed,
+                           message: params.clear ? "Removed " + removed + " count(s)" : "Added " + added + " count(s)" };
+            if (noLabel.length) result.withoutSectionLabel = noLabel;
+            if (skipped.length) result.skipped = skipped;
+            return result;
+        });
+    }
+
+    // Laid-out boxes (page coordinates, spaces) near a section count on staff 1: texts in its measure and the
+    // next one (text: true), and the notes and articulations of their chords.
+    function countObstacles(measureNumber, self, mark) {
+        var out = [];
+        function add(el, isText) {
+            if (!el || sameElement(el, self) || sameElement(el, mark)) return;
+            var pp = el.pagePos, bb = el.bbox;
+            if (!bb || bb.width <= 0 || bb.height <= 0) return;
+            out.push({ x0: pp.x + bb.x, x1: pp.x + bb.x + bb.width, y0: pp.y + bb.y, y1: pp.y + bb.y + bb.height, text: isText });
+        }
+        var m = getMeasure(measureNumber);
+        for (var n = 0; m && n < 2; n++, m = m.nextMeasure) {
+            for (var seg = m.firstSegment; seg; seg = seg.nextInMeasure) {
+                var annotations = seg.annotations || [];
+                for (var a = 0; a < annotations.length; a++) {
+                    if (Math.floor(annotations[a].track / 4) === 0) add(annotations[a], true);
+                }
+                for (var v = 0; v < 4; v++) {
+                    var el = seg.elementAt(v);
+                    if (!el || el.name !== "Chord") continue;
+                    var notes = el.notes || [];
+                    for (var k = 0; k < notes.length; k++) add(notes[k], false);
+                    var arts = el.articulations || [];
+                    for (var r = 0; r < arts.length; r++) add(arts[r], false);
+                }
+            }
+        }
+        return out;
+    }
+
+    function sameElement(a, b) {
+        if (!a || !b) return false;
+        return typeof a.is === "function" ? a.is(b) : a === b;
+    }
+
+    // A rehearsal mark's text without a trailing bar count in parentheses ("Chorus 1 (2x4)" -> "Chorus 1")
+    function labelWithoutCount(text) {
+        return String(text || "").replace(/\s*\((?:<[^>]*>)*[0-9][0-9x+ ]*(?:<[^>]*>)*\)\s*$/, "");
+    }
+
+    // A count as written: "2x4+2" (brackets around it are dropped: the label mode adds its own)
+    function countText(text) {
+        return String(text).replace(/^\s*\(\s*/, "").replace(/\s*\)\s*$/, "");
+    }
+
+    function isSectionCount(el) {
+        if (el.name !== "StaffText" || el.frameType) return false;
+        var plain = String(el.text || "").replace(/<[^>]*>/g, "").trim();
+        return /^\(?\s*[0-9][0-9x+ ]*\)?$/.test(plain) && (el.fontStyle & 1) === 1;
+    }
+
     // ========================================
     // SCORE FILES & PARTS
     // ========================================
@@ -1829,6 +2327,7 @@ MuseScore {
         if (!curScore) return { error: "No score open" };
         return {
             success: true,
+            scoreId: curScore.metaTag("mcpScoreId") || "",
             scoreName: curScore.scoreName || "",
             title: curScore.title || "",
             numMeasures: curScore.nmeasures,
@@ -1836,10 +2335,35 @@ MuseScore {
         };
     }
 
+    // The plugin API does not expose a score's file path. The server finds the file by an ID stored in the
+    // score's metadata: give the open score one (a new one with renew, e.g. for a copy of another score).
+    function ensureScoreId(params) {
+        if (!curScore) return { error: "No score open" };
+        var id = curScore.metaTag("mcpScoreId");
+        if (id && !(params && params.renew)) return { success: true, scoreId: id, created: false };
+        id = "mcp-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 2176782336).toString(36);
+        curScore.startCmd();
+        curScore.setMetaTag("mcpScoreId", id);
+        curScore.endCmd();
+        return { success: true, scoreId: id, created: true };
+    }
+
     function saveScore() {
         if (!curScore) return { error: "No score open" };
         cmd("file-save");
         return { success: true, message: "Score saved" };
+    }
+
+    // Export a copy without saving the score (no Save dialog, no corruption check). writeScore() works for
+    // export formats such as MusicXML (.mxl) but not for MuseScore's own .mscz/.mscx in 4.7.
+    function exportScore(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["path"]);
+        if (!validation.valid) return validation;
+        var ext = params.path.split(".").pop().toLowerCase();
+        if (ext === "mscz" || ext === "mscx") return { error: "MuseScore files cannot be exported from a plugin; use .mxl" };
+        if (!writeScore(curScore, params.path, ext)) return { error: "MuseScore could not export " + params.path };
+        return { success: true, path: params.path };
     }
 
     function openedScoreResult(opened, path) {
@@ -1860,14 +2384,20 @@ MuseScore {
         return openedScoreResult(readScore(params.path), params.path);
     }
 
-    // Close the current score and open the file again, to pick up edits made to it on disk.
-    // Save first: closing a modified score would show a dialog.
+    // Close the current score and open `path` in its place (MuseScore 4 would open a second score in a new
+    // window, out of the plugin's reach). Save first: closing a modified score would show a dialog.
+    // If `path` cannot be opened, `fallbackPath` (usually the score just closed) is opened again.
     function reopenScore(params) {
         if (!curScore) return { error: "No score open" };
         var validation = validateParams(params, ["path"]);
         if (!validation.valid) return validation;
         closeScore(curScore);
-        return openedScoreResult(readScore(params.path), params.path);
+        var opened = readScore(params.path);
+        if (!opened && params.fallbackPath) {
+            var restored = readScore(params.fallbackPath);
+            return { error: "MuseScore could not open " + params.path + (restored ? "; reopened " + params.fallbackPath : "") };
+        }
+        return openedScoreResult(opened, params.path);
     }
 
     // Remove every part that has none of the given staves (MuseScore 4.7+).
@@ -1899,6 +2429,105 @@ MuseScore {
     }
 
     // ========================================
+    // MEASURE NUMBERS
+    // ========================================
+
+    // Displayed measure numbers, by position (index 0 = measure 1), following MuseScore's layout rule:
+    // add each measure's "add to measure number" offset, then count it unless it is excluded.
+    function displayedNumbers() {
+        var numbers = [];
+        var count = 0;
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) {
+            count += m.noOffset || 0;
+            numbers.push(count + 1);
+            if (!m.irregular) count++;
+        }
+        return numbers;
+    }
+
+    // Set "Add to measure number" and/or "Exclude from measure count" on one measure.
+    function setMeasureNumbering(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["measure"]);
+        if (!validation.valid) return validation;
+        var m = getMeasure(params.measure);
+        if (!m) return { error: "Invalid measure number " + params.measure };
+
+        return executeWithUndo(function() {
+            if (params.addToNumber !== undefined && params.addToNumber !== null) m.noOffset = params.addToNumber;
+            if (params.excludeFromCount !== undefined && params.excludeFromCount !== null) m.irregular = params.excludeFromCount;
+            return { success: true, displayedNumber: displayedNumbers()[params.measure - 1],
+                     message: "Measure " + params.measure + " now shows number " + displayedNumbers()[params.measure - 1] };
+        });
+    }
+
+    // Number measures as they are played: after a passage between repeat barlines played N times, the next
+    // measure's offset is (N - 1) x the passage length. Every other measure's offset is reset to 0, so the
+    // result does not depend on earlier runs. Optional `exclude` lists measures to leave out of the count.
+    // Voltas are not taken into account (they are reported).
+    function numberAsPlayed(params) {
+        if (!curScore) return { error: "No score open" };
+        params = params || {};
+        var first = curScore.firstMeasure;
+        if (first && typeof first.repeatEnd === "undefined") {
+            return { error: "Reading repeat barlines needs MuseScore 4.6 or newer" };
+        }
+
+        var measures = [];
+        for (var m = first; m; m = m.nextMeasure) measures.push(m);
+        var offsets = [];
+        for (var i = 0; i < measures.length; i++) offsets.push(0);
+
+        var sectionStart = 0;
+        var repeats = [];
+        for (var j = 0; j < measures.length; j++) {
+            if (measures[j].repeatStart) sectionStart = j;
+            if (measures[j].repeatEnd) {
+                var count = measures[j].repeatCount || 2;
+                var length = j - sectionStart + 1;
+                if (count > 1 && j + 1 < measures.length) offsets[j + 1] += (count - 1) * length;
+                repeats.push({ start: sectionStart + 1, end: j + 1, playCount: count });
+                sectionStart = j + 1;
+            }
+        }
+
+        var voltas = 0;
+        var spanners = curScore.spanners || [];
+        for (var v = 0; v < spanners.length; v++) {
+            if (spanners[v].name === "Volta") voltas++;
+        }
+
+        var exclude = params.exclude || [];
+        var reset = params.reset === true;
+        return executeWithUndo(function() {
+            for (var k = 0; k < measures.length; k++) {
+                measures[k].noOffset = reset ? 0 : offsets[k];
+                if (reset) measures[k].irregular = false;
+                else if (exclude.indexOf(k + 1) !== -1) measures[k].irregular = true;
+            }
+            if (reset) {
+                var plain = displayedNumbers();
+                return { success: true, reset: true, lastMeasureNumber: plain[plain.length - 1],
+                         message: "Bar numbers reset to 1-" + plain[plain.length - 1] };
+            }
+            var numbers = displayedNumbers();
+            var changed = [];
+            for (var n = 0; n < measures.length; n++) {
+                if (offsets[n]) changed.push({ measure: n + 1, addToNumber: offsets[n], displayedNumber: numbers[n] });
+            }
+            var result = {
+                success: true,
+                repeats: repeats,
+                offsets: changed,
+                lastMeasureNumber: numbers[numbers.length - 1],
+                message: "Numbered " + measures.length + " measures as played; the last one shows " + numbers[numbers.length - 1]
+            };
+            if (voltas) result.warning = voltas + " volta(s) in the score: 1st/2nd endings are not taken into account";
+            return result;
+        });
+    }
+
+    // ========================================
     // SCORE ANALYSIS
     // ========================================
 
@@ -1919,6 +2548,7 @@ MuseScore {
 
         opts = opts || {};
         var total = curScore.nmeasures;
+        var numbers = displayedNumbers();
         var first = Math.max(1, opts.startMeasure || 1);
         var last = Math.min(total, opts.endMeasure || total);
         var includeElements = opts.includeElements !== false;
@@ -1962,7 +2592,10 @@ MuseScore {
         for (var n = first; m && n <= last; n++, m = m.nextMeasure) {
             var startTick = measureStartTick(m);
             var endTick = measureEndTick(m);
-            var entry = { measure: n, startTick: startTick, durationTicks: endTick - startTick };
+            var entry = { measure: n, number: numbers[n - 1], startTick: startTick, durationTicks: endTick - startTick };
+            if (m.repeatStart) entry.repeatStart = true;
+            if (m.repeatEnd) entry.repeatEnd = m.repeatCount || 2;
+            if (m.irregular) entry.irregular = true;  // excluded from the bar count (e.g. a count-in bar)
 
             if (includeElements) {
                 entry.numElements = 0;
@@ -1992,7 +2625,8 @@ MuseScore {
                         if (staffIndices.indexOf(annStaff) === -1) continue;
                         entry.markings.push({
                             name: ann.name,
-                            text: typeof ann.subtypeName === "function" && ann.name === "Dynamic" ? ann.subtypeName() : (ann.text || ""),
+                            text: typeof ann.subtypeName === "function" && ann.name === "Dynamic" ? ann.subtypeName()
+                                  : String(ann.text || "").replace(/<[^>]*>/g, ""),
                             staff: annStaff,
                             startTick: seg.tick,
                             highlighted: isMarkingHighlight(ann) ? true : false

@@ -41,4 +41,10 @@ __all__ = [
     "highlightNotesAction",
     "highlightMarkingsAction",
     "highlightSymbolsAction",
+    "setMeasureNumberingAction",
+    "numberAsPlayedAction",
+    "addTextAction",
+    "addArticulationAction",
+    "removeArticulationsAction",
+    "ghostNotesAction",
 ]

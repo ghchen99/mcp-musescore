@@ -1,301 +1,63 @@
 # MuseScore MCP Server
 
-A Model Context Protocol (MCP) server that provides programmatic control over MuseScore, via a WebSocket-based plugin system. This allows AI assistants like Claude to compose music, add lyrics, navigate scores, and control MuseScore directly.
+A Model Context Protocol (MCP) server that provides programmatic control over MuseScore, via a WebSocket-based plugin system. This allows AI assistants like Claude to compose music, add lyrics, navigate and analyse scores, restructure them with repeats, and mark them up with colors and highlights, directly in MuseScore.
 
 ![Demo GIF](./assets/mcp-muse.gif)
 
-## Prerequisites
-
-- MuseScore 3.x or 4.x
-- Python 3.13+
-- Claude Desktop or compatible MCP client
-
-## Setup
-
-### 1. Install the MuseScore Plugin
-
-First, save the QML plugin code to your MuseScore plugins directory:
-
-**macOS**: `~/Documents/MuseScore4/Plugins/musescore-mcp-websocket.qml`
-**Windows**: `%USERPROFILE%\Documents\MuseScore4\Plugins\musescore-mcp-websocket.qml`
-**Linux**: `~/Documents/MuseScore4/Plugins/musescore-mcp-websocket.qml`
-
-### 2. Enable the Plugin in MuseScore
-
-1. Open MuseScore
-2. Go to **Plugins → Plugin Manager**
-3. Find "MuseScore API Server" and check the box to enable it
-4. Click **OK**
-
-### 3. Configure Claude Desktop (with `uv`)
-
-Install [uv](https://docs.astral.sh/uv/). It creates and caches the Python environment on first launch, so there is no venv to manage and the config needs no `.venv` path.
-
-The quickest way is to let FastMCP write the Claude Desktop config for you:
-
-```bash
-fastmcp install claude-desktop server.py --name musescore --python 3.13 --with-requirements requirements.txt
-```
-
-To print the config instead of writing it, use `fastmcp install mcp-json` with the same options.
-
-Or add it manually to your Claude Desktop configuration file:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "musescore": {
-      "command": "uv",
-      "args": [
-        "run",
-        "--no-project",
-        "--python", "3.13",
-        "--with-requirements", "/path/to/mcp-musescore/requirements.txt",
-        "/path/to/mcp-musescore/server.py"
-      ]
-    }
-  }
-}
-```
-
-**Note**: Update the paths to match your actual project location.
-
-**Windows on ARM**: `cryptography` (a FastMCP dependency) has no ARM64 Windows wheel, so uv would try to compile it and fail with `link.exe not found`. Use the x64 Python instead by replacing `"3.13"` with `"cpython-3.13-windows-x86_64"` after `--python`.
-
-<details>
-<summary>Without uv (manual virtual environment)</summary>
-
-```bash
-git clone <your-repo>
-cd mcp-musescore
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Then point Claude Desktop at the venv's Python:
-
-```json
-{
-  "mcpServers": {
-    "musescore": {
-      "command": "/path/to/mcp-musescore/.venv/bin/python",
-      "args": ["/path/to/mcp-musescore/server.py"]
-    }
-  }
-}
-```
-
-</details>
-
-## Running the System
-
-### Order of Operations
-
-1. **Start MuseScore first** with a score open
-2. **Run the MuseScore plugin**: Go to **Plugins → MuseScore API Server**
-   - You should see console output: `"Starting MuseScore API Server on port 8765"`
-3. **Then start the Python MCP server** or restart Claude Desktop
-
-[insert screenshot of different functionality, harmonisation, melodywriting, as zoomed in GIFs]
-
-### Development and Testing
-
-For development, use the FastMCP CLI:
-
-```bash
-# Install the project dependencies (includes the FastMCP CLI)
-pip install -r requirements.txt
-
-# Launch the MCP Inspector against your server
-fastmcp dev inspector server.py
-
-# List the registered tools
-fastmcp inspect server.py
-
-# Run the tests (no MuseScore needed)
-pip install pytest
-pytest
-```
-
-#### Mock MuseScore plugin
-
-`tests/mock_musescore.py` is an in-memory stand-in for the QML plugin. It speaks the same WebSocket protocol on port 8765, so you can run the MCP server and the Inspector without MuseScore:
-
-```bash
-# Terminal 1: fake plugin (do not run alongside the real plugin, same port)
-# --demo preloads a two-staff Twinkle Twinkle score
-python tests/mock_musescore.py --demo
-
-# Terminal 2: MCP Inspector against the server
-fastmcp dev inspector server.py
-```
-
-For changes to the plugin itself, `dev/plugin_harness.py` runs the real plugin headless in a local MuseScore on a copy of a score, prints each command's result, and can save or render the edited score:
-
-```bash
-python dev/plugin_harness.py '[{"action": "highlightNotes", "params": {"startMeasure": 1, "endMeasure": 2}}]' \
-    "examples/jazz piano/Jazz Piano.mscz" --png /tmp/preview.png
-```
-
-The mock implements a subset of the plugin's actions (ping, getScore, getCursorInfo, addNote, addRest, addLyrics, goToMeasure, appendMeasure, setTimeSignature, setTempo, addInstrument, undo, processSequence, selectMeasures, deleteMeasures, setRepeatBarlines, addVolta, colorRange, the highlight and label actions, and the score-file actions used by `apply_measure_repeats` and `make_part_score`). `tests/test_integration.py` uses it to exercise the real tools and WebSocket client.
-
-### Viewing Console Output
-
-To see MuseScore plugin console output, run MuseScore from terminal:
-
-**macOS**:
-```bash
-/Applications/MuseScore\ 4.app/Contents/MacOS/mscore
-```
-
-**Windows**:
-```cmd
-cd "C:\Program Files\MuseScore 4\bin"
-MuseScore.exe
-```
-
-**Linux**:
-```bash
-musescore4
-```
-
-## Features
-
-This MCP server provides comprehensive MuseScore control. 
-
-**🌟 NEW in this fork:** Built-in automatic, flawless multi-voice Polyphony & Temporal layout mapping to LilyPond!
-
-### **Navigation & Cursor Control**
-- `get_cursor_info()` - Get current cursor position and selection info
-- `go_to_measure(measure)` - Navigate to specific measure
-- `go_to_beginning_of_score()` / `go_to_final_measure()` - Navigate to start/end
-- `next_element()` / `prev_element()` - Move cursor element by element
-- `next_staff()` / `prev_staff()` - Move between staves
-- `select_current_measure()` - Select entire current measure
-- `select_custom_range(start_tick, end_tick, start_staff, end_staff)` - Slicing tool to extract cross-measure, multi-staff phrasing
-
-### **Polyphony & LilyPond Integration**
-- **Temporal Rhythm Padding**: Voices with gaps or rests automatically receive LilyPond spacer sequences (`s4.`) to hold their mathematical place accurately.
-- **Concurrent Voice Rendering**: Full 4-voice (`\voiceOne`, `\voiceTwo`, etc.) arrays correctly structured and sharded per staff for advanced Agent processing.
-
-### **Note & Rest Creation**
-- `add_note(pitch, duration, advance_cursor_after_action, add_to_chord)` - Add notes with MIDI pitch. Sequential notes write a melody; set `add_to_chord=True` to stack a pitch on the current chord.
-- `add_rest(duration, advance_cursor_after_action)` - Add rests
-- `add_tuplet(duration, ratio, advance_cursor_after_action)` - Add tuplets (triplets, etc.)
-
-### **Measure Management**
-- `insert_measure()` - Insert measure at current position
-- `append_measure(count)` - Add measures to end of score
-- `delete_selection(measure)` - Delete current selection or specific measure
-- `delete_measures(start_measure, end_measure)` - Remove whole measures on every staff (later measures are renumbered)
-
-### **Lyrics & Text**
-- `add_lyrics_to_current_note(text)` - Add lyrics to current note
-- `add_lyrics(lyrics_list)` - Batch add lyrics to multiple notes
-- `set_title(title)` - Set score title
-
-### **Score Information**
-- `get_score(start_measure, end_measure, staves, format)` - Read the score as LilyPond (or JSON), 16 measures at a time by default, optionally only some staves
-- `show_score(first_measure, last_measure)` - Render the score as sheet music in an interactive viewer (see below)
-- `ping_musescore()` - Test connection to MuseScore
-- `connect_to_musescore()` - Establish WebSocket connection
-
-### **Utilities**
-- `undo()` - Undo last action
-- `set_time_signature(numerator, denominator)` - Change time signature
-- `set_tempo(bpm, measure)` - Add a tempo marking at the cursor or at a measure
-- `processSequence(sequence)` - Execute multiple commands in batch
-
-### **Repeat Structure & Coloring**
-- `find_repeated_measures(start_measure, end_measure, staves, highlight)` - Find bars that repeat on each staff (measure-repeat candidates) and passages that repeat on all staves (repeat barline and 1st/2nd ending candidates), with the tool calls that apply them. `highlight=True` colors the duplicates
-- `set_repeat_barlines(start_measure, end_measure, play_count, clear)` - Start/end repeat barlines (MuseScore 4.6+; older versions get the bars selected for the palette)
-- `add_volta(start_measure, end_measure, endings, text)` - 1st/2nd ending bracket (experimental)
-- `prepare_measure_repeat(start_measure, end_measure, bars, first_staff, last_staff)` - Select bars for a 1/2/4-bar measure-repeat sign, which you then click in the palette (the manual alternative to `apply_measure_repeats`)
-- `color_range(...)` / `clear_color(...)` - Color notes and rests in a range of measures and staves, or reset them to black. `start_beat`/`end_beat` limit it to part of a bar (e.g. a fill on beats 3-4)
-- `highlight_bars(start_measure, end_measure, first_staff, last_staff, color, opacity, start_beat, end_beat)` - Highlighter-pen band behind the bars of each staff (a thick semi-transparent line that follows the bars across line breaks; experimental)
-- `highlight_notes(start_measure, end_measure, first_staff, last_staff, drums, pitches, start_beat, end_beat, color, opacity)` - Full-staff-height translucent box around each matching hit, sized to the note (touching hits share a box); `drums=["crash"]` picks the crash in a kick+crash chord
-- `highlight_symbols(start_measure, end_measure, first_staff, last_staff, kinds, mode, color, opacity, clear)` - Highlight (pastel light blue box) or recolor time signatures, repeat barlines and measure-repeat signs
-- `highlight_markings(start_measure, end_measure, first_staff, last_staff, types, color, opacity)` - Translucent box behind each dynamic (f, mf, ff) or other marking; `get_score` lists the markings per measure
-- `add_label(measure, text, staff, background, border)` - Label in a colored box at a measure, e.g. "Groove x7"
-- `clear_highlights(start_measure, end_measure, first_staff, last_staff, kinds)` - Remove highlight bands, note boxes, marking boxes and boxed labels
-
-### **Drum Charts & Measure-Repeat Signs**
-- `find_groove_sections(staves, start_measure, end_measure, tolerance)` - Section map of a groove part (drums by default): groove bar, exact copies, near copies with the hits that differ, and fills, plus ready-made repeat-sign groups for the exact copies
-- `apply_measure_repeats(staff, groups, score_path)` - Turn bars into 1-, 2- or 4-bar measure-repeat signs automatically (see below)
-- `restore_backup(backup, score_path)` - Bring back the version before an `apply_measure_repeats` edit
-- `collapse_to_repeat(start, end, force)` - Keep one groove bar between repeat barlines with a play count ("7x") and delete the bars it replaces (MuseScore 4.6+)
-- `make_part_score(staves, output_path)` - Save a copy of the score with only some parts (e.g. the drum kit) and open it, to build a chart in (MuseScore 4.7+)
-- `add_rehearsal_mark(measure, text)` - Section label at a measure (experimental)
-
-MuseScore's plugin API cannot place measure-repeat signs, so `apply_measure_repeats` edits the score file: the plugin saves the score, the server backs up the file (to `~/.mcp-musescore/backups`, or `MCP_MUSESCORE_BACKUP_DIR`), writes the signs into it, and the plugin closes and reopens the score. The tab shows the result, but MuseScore's undo history starts over, so use `restore_backup` to undo. The server finds the file through MuseScore's open and recent file lists; pass `score_path` if it cannot.
-
-To shorten a score, ask for its repeated passages to be applied: the agent runs `find_repeated_measures`, then each passage's `apply` steps (delete the duplicate measures, add repeat barlines and voltas), starting from the last passage.
-
-### Score viewer (MCP Apps)
-
-`show_score` is an [MCP App](https://gofastmcp.com/apps/overview): the tool result is rendered as notation by a small [VexFlow](https://www.vexflow.com/) page (`src/ui/score_viewer.html`) inside hosts that support MCP Apps. Hosts without that support only get a one-line text summary, so use `get_score` there.
-
-- Rendering was verified in a regular browser against the mock plugin. It has not been verified inside Claude or Claude Desktop.
-- The page loads VexFlow and the MCP Apps SDK from `unpkg.com`, so the host needs internet access (the server declares that domain in the app's CSP).
-- Not drawn: tuplet brackets and ties. Tuplet notes use their written value.
-- Long scores: pass `first_measure` and `last_measure` to show a section.
-
-## Sample Music
-
-Check out the `/examples` folder for sample MuseScore files demonstrating various musical styles:
-
-- **Asian Instrumental** - Traditional Asian-inspired instrumental piece
-- **String Quartet** - Classical string quartet arrangement
-
-Each example includes:
-- `.mscz` - MuseScore file (editable)
-- `.pdf` - Sheet music
-- `.mp3` - Audio preview
-
-## Usage Examples
-
-### Creating a Simple Melody
-
-```python
-# Set up the score
-await set_title("My First Song")
-await go_to_beginning_of_score()
-
-# Add notes (MIDI pitch: 60=C, 62=D, 64=E, etc.)
-await add_note(60, {"numerator": 1, "denominator": 4}, True)  # Quarter note C
-await add_note(64, {"numerator": 1, "denominator": 4}, True)  # Quarter note E
-await add_note(67, {"numerator": 1, "denominator": 4}, True)  # Quarter note G
-await add_note(72, {"numerator": 1, "denominator": 2}, True)  # Half note C
-
-# Add lyrics
-await go_to_beginning_of_score()
-await add_lyrics_to_current_note("Do")
-await next_element()
-await add_lyrics_to_current_note("Mi")
-await next_element()
-await add_lyrics_to_current_note("Sol")
-await next_element()
-await add_lyrics_to_current_note("Do")
-```
-### Batch Operations
-
-```python
-# Add multiple lyrics at once
-await add_lyrics(["Twin-", "kle", "twin-", "kle", "lit-", "tle", "star"])
-
-# Use sequence processing for complex operations
-sequence = [
-    {"action": "goToBeginningOfScore", "params": {}},
-    {"action": "addNote", "params": {"pitch": 60, "duration": {"numerator": 1, "denominator": 4}, "advanceCursorAfterAction": True}},
-    {"action": "addNote", "params": {"pitch": 64, "duration": {"numerator": 1, "denominator": 4}, "advanceCursorAfterAction": True}},
-    {"action": "addRest", "params": {"duration": {"numerator": 1, "denominator": 4}, "advanceCursorAfterAction": True}}
-]
-await processSequence(sequence)
-```
+## What you can do
+
+Ask Claude in plain language; it picks the tools. For example:
+
+- **Compose and edit**: "Write a C major arpeggio in bar 3", "Add the lyrics 'Twin-kle twin-kle' from bar 1", "Set the tempo to 90 at bar 17".
+- **Read large scores**: the score is read 16 bars at a time as compact LilyPond, optionally only some staves, so even a 20-staff score fits.
+- **Compress a score with repeats**: "Find the repeated passages and put them between repeat barlines". The server finds bars and passages that repeat, adds repeat barlines, 1st/2nd endings and play counts, and removes the duplicate bars.
+- **Build drum charts**: "Map the sections of the drum part" gives a road map (groove bar, exact and near copies, fills, and where the crashes fall). "Turn the copies into repeat signs" writes 1-, 2- or 4-bar measure-repeat signs automatically. "Make a drums-only chart with the groove written once and a 7x count" copies the score, keeps only the drums and collapses each run of identical bars. With the [drum-chart skill](docs/skills.md), "make a drum chart from the open score" runs the whole workflow (see the [example use case](#example-use-case-a-drum-chart-from-a-songsterr-tab)).
+- **Keep the song's bar numbers**: "Number the bars as played" makes the displayed numbers count repeated bars, so a compact chart still matches the original song.
+- **Highlight and color**: "Highlight the crash hits", "Box the dynamics", "Highlight the repeat signs and time signatures in light blue", "Color the fill on beats 3-4 of bar 13 green", "Label bar 6 'Groove x7'", "Add these cues in small grey italics at the start of each section: ...".
+- **Finish the page**: "Tidy the title and call it a drum chart" cleans up the title frame; "Print what changed at the end" adds a summary of the differences from the original after the last bar, so it ends up in the PDF.
+- **Iterate**: everything the tools add can be removed again ("remove the ** marks", "clear the crash highlights", "reset the bar numbers"), so you can refine the result step by step.
+
+## Example use case: a drum chart from a Songsterr tab
+
+How the [drum-chart skill](docs/skills.md) is used day to day, from a song on [Songsterr](https://www.songsterr.com/) to a printable drum chart.
+
+**Once:** set up the plugin and the server ([Setup](docs/setup.md)), then install the skill in Claude Desktop ([Installing a skill](docs/skills.md#installing-a-skill-in-claude-desktop-or-claudeai)).
+
+**For each song:**
+
+1. **Songsterr → Guitar Pro.** Open the song on Songsterr and export it as a Guitar Pro file (`.gp`, `.gp5`…).
+2. **Import it in MuseScore** with File → Open. Don't save it: the skill never saves the full score. If MuseScore says the file is corrupted, carry on: the damage is usually in another instrument, which the skill removes.
+3. **Focus on the drum part.** Open the drum part in its own tab (Parts, then the drum kit), or stay on the full score. Either way the skill keeps only the drum staff, after backing up the full score to `~/.mcp-musescore/backups`.
+4. **Start the plugin:** Plugins → MuseScore API Server.
+5. **Call the skill.** In Claude Desktop, ask "make a drum chart from the open score".
+6. **Answer when prompted.** Claude proposes a section map (sections, bar ranges, which grooves and phrases collapse into "× N") and asks, in one message:
+   - which near copies to merge, and what each merge would drop (e.g. "bar 24 like 26: drops the kick on 5.5");
+   - whether to remove the ghost notes;
+   - where the hi-hat is half-open;
+   - which cymbal rolls to simplify.
+
+   After your OK it works on its own. The first time it saves the chart, MuseScore asks where (an imported score has no file yet): pick a name like `<song> - drums.mscz`.
+7. **The chart, in the same MuseScore tab:**
+   - each groove or phrase written once between repeat barlines, with its play count;
+   - section labels with their bar counts, e.g. "Chorus 1 (2x4)";
+   - fills in green, stops in red, crashes, dynamics and time signatures highlighted;
+   - bar numbers that still match the song;
+   - a tidy title: song, artist, "Drums";
+   - the changes from the original after the last bar, and the song structure on its own page.
+
+   To change something, ask in the same chat (e.g. "don't merge bar 24", "the hi-hat is half-open in the bridge too"): Claude redoes only that part.
+8. **Export to PDF:** save (Ctrl+S), then File → Export → PDF.
+
+## Documentation
+
+| Page | What's in it |
+|---|---|
+| [Setup and running](docs/setup.md) | Prerequisites, installing the plugin, registering the server with Claude Desktop (with `uv` or a virtual environment), Ubuntu notes, starting order, updating, sample scores |
+| [Tool reference](docs/tools.md) | Reading and navigating the score, notes, measures, tempo, instruments, highlighting and coloring, batch operations, the score viewer, version requirements, examples |
+| [Repeats and drum charts](docs/drum-charts.md) | Compressing a score with repeats, drum-chart tools, measure-repeat signs and how they are written, drum notation, chart examples |
+| [Agent skills](docs/skills.md) | The bundled skills and how to install them in Claude Desktop or Claude Code |
+| [Development and testing](docs/development.md) | Tests, the mock plugin, running the real plugin headless, console output, file structure |
+| [Troubleshooting](docs/troubleshooting.md) | Connection, plugin, server, score-file and skill problems, API limitations |
 
 ## Star History
 
@@ -306,77 +68,3 @@ await processSequence(sequence)
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=ghchen99/mcp-musescore&type=date&legend=top-left&sealed_token=odyuE8YGdrYwqllb44_ZA_4jszOPlz9weSOVIc87yiR8SUSbUGaQoLxlylc2J4ZujJBLXPSCBh9dxSpTn9rD1wNfri9JkxySZuf93zfduRtC2cFbRbi0d3REHTcU3W6U0tKKmxu13NwAIo2teYBM3WjkiqauMf04gdfk8t5LM6MQ1oZFcJoY2ZVydzEg" />
  </picture>
 </a>
-
-## Troubleshooting
-
-### Connection Issues
-- **"Not connected to MuseScore"**: 
-  - Ensure MuseScore is running with a score open
-  - Run the MuseScore plugin (Plugins → MuseScore API Server)
-  - Check that port 8765 isn't blocked by firewall
-
-### Plugin Issues
-- **Plugin not appearing**: Check the `.qml` file is in the correct plugins directory
-- **Plugin won't enable**: Restart MuseScore after placing the plugin file
-- **No console output**: Run MuseScore from terminal to see debug messages
-
-### Python Server Issues
-- **"No server object found"**: The server object must be named `mcp`, `server`, or `app` at module level
-- **WebSocket errors**: Make sure MuseScore plugin is running before starting Python server
-- **Connection timeout**: The MuseScore plugin must be actively running, not just enabled
-
-### API Limitations
-- **Lyrics**: Only first verse supported in MuseScore 3.x plugin API
-- **Title setting**: Uses multiple fallback methods due to frame access limitations
-- **Selection persistence**: Some operations may affect current selection
-
-## File Structure
-
-```
-mcp-agents-demo/
-├── .venv/
-├── server.py                           # Python MCP server entry point
-├── musescore-mcp-websocket.qml         # MuseScore plugin
-├── requirements.txt
-├── README.md
-└── src/                                # Source code modules
-    ├── __init__.py
-    ├── client/                         # WebSocket client functionality
-    │   ├── __init__.py
-    │   └── websocket_client.py
-    ├── tools/                          # MCP tool implementations
-    │   ├── __init__.py
-    │   ├── connection.py               # Connection management tools
-    │   ├── navigation.py               # Score navigation tools
-    │   ├── notes_measures.py           # Note and measure manipulation
-    │   ├── sequences.py                # Batch operation tools
-    │   ├── staff_instruments.py        # Staff and instrument tools
-    │   ├── time_tempo.py               # Timing and tempo tools
-    │   ├── structure.py                # Repeat detection, repeat barlines, voltas
-    │   ├── formatting.py               # Score coloring tools
-    │   └── viewer.py                   # show_score MCP App tool
-    ├── ui/
-    │   └── score_viewer.html           # VexFlow notation viewer
-    ├── utils/
-    │   ├── lilypond_converter.py       # Score JSON to LilyPond
-    │   └── repetition.py               # Repeated-measure analysis
-    └── types/                          # Type definitions
-        ├── __init__.py
-        └── action_types.py             # WebSocket action type definitions
-```
-
-## MIDI Pitch Reference
-
-Common MIDI pitch values for reference:
-- **Middle C**: 60
-- **C Major Scale**: 60, 62, 64, 65, 67, 69, 71, 72
-- **Chromatic**: C=60, C#=61, D=62, D#=63, E=64, F=65, F#=66, G=67, G#=68, A=69, A#=70, B=71
-
-## Duration Reference
-
-Duration format: `{"numerator": int, "denominator": int}`
-- **Whole note**: `{"numerator": 1, "denominator": 1}`
-- **Half note**: `{"numerator": 1, "denominator": 2}`
-- **Quarter note**: `{"numerator": 1, "denominator": 4}`
-- **Eighth note**: `{"numerator": 1, "denominator": 8}`
-- **Dotted quarter**: `{"numerator": 3, "denominator": 8}`

@@ -99,7 +99,9 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
     @mcp.tool(
         description=(
             "Remove whole measures (on every staff) from the score, like MuseScore's Remove selected range (Ctrl+Del). "
-            "Later measures are renumbered, so when removing several ranges start from the last one."
+            "Works with multi-measure rests on (they are switched off meanwhile) and reports an error if MuseScore "
+            "deleted fewer measures than asked. Later measures are renumbered, so when removing several ranges start "
+            "from the last one."
         ),
         tags={"measures"},
     )

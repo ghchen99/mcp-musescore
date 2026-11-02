@@ -58,7 +58,8 @@ def build_harness(commands, plugin_source=PLUGIN):
     }}
 }}
 """
-    return code[:on_run].replace('menuPath: "Plugins.MuseScore API Server"', 'menuPath: "Plugins.MCP Harness"') + runner
+    head = code[:on_run].replace('menuPath: "Plugins.MuseScore API Server"', 'menuPath: "Plugins.MCP Harness"')
+    return head.replace('title: "MuseScore API Server"', 'title: "MCP Harness"') + runner
 
 
 def read_results(score_path):

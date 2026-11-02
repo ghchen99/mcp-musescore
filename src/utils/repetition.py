@@ -20,24 +20,60 @@ MEASURE_REPEAT_SIZES = (1, 2, 4)
 SIGN_POSITION = {1: 0, 2: 0, 4: 1}
 
 
+CRASH_PITCHES = {49, 57}  # crash cymbal 1 and 2
+# On beat 1 a crash usually replaces the closed hi-hat, so for collapsing they count as the same "cymbal on 1"
+BEAT_ONE_CYMBALS = CRASH_PITCHES | {42}
+
+
 def measure_fingerprint(elements: Sequence[Dict[str, Any]], measure_start_tick: int) -> Fingerprint:
-    """Hashable summary of one staff's content in one measure."""
+    """Hashable summary of one staff's content in one measure (notes, ghost notes and articulations)."""
     items = []
     for e in elements:
-        pitches = tuple(sorted(n.get("pitchMidi") for n in e.get("notes", []) if n.get("pitchMidi") is not None))
+        notes = [n for n in e.get("notes", []) if n.get("pitchMidi") is not None]
         items.append((
             e.get("startTick", measure_start_tick) - measure_start_tick,
             e.get("voice", 0),
             e.get("name", ""),
             e.get("durationTicks", 0),
-            pitches,
+            tuple(sorted(n["pitchMidi"] for n in notes)),
             bool(e.get("isTuplet")),
             bool(e.get("isTie")),
+            tuple(sorted(e.get("articulations") or [])),
+            tuple(sorted(n["pitchMidi"] for n in notes if n.get("ghost"))),
         ))
     return tuple(sorted(items))
 
 
-def staff_fingerprints(measures: Sequence[Dict[str, Any]], staff: str) -> Tuple[List[Fingerprint], set]:
+def core_fingerprint(elements: Sequence[Dict[str, Any]], measure_start_tick: int) -> Fingerprint:
+    """Like measure_fingerprint, but ignoring ghost notes and which cymbal is hit on beat 1.
+
+    A crash and a closed hi-hat on beat 1 both count as "a cymbal on 1". Bars with the same core can be
+    collapsed into one: their only differences are things a chart shows with a mark (crash pattern) or
+    leaves out (ghost notes).
+    """
+    items = []
+    for e in elements:
+        tick = e.get("startTick", measure_start_tick) - measure_start_tick
+        notes = [n["pitchMidi"] for n in e.get("notes", []) if n.get("pitchMidi") is not None and not n.get("ghost")]
+        if tick == 0 and any(p in BEAT_ONE_CYMBALS for p in notes):
+            notes = [p for p in notes if p not in BEAT_ONE_CYMBALS] + [-1]  # -1: a cymbal on beat 1
+        name = e.get("name", "")
+        if name == "Chord" and not notes:
+            name = "Rest"
+        items.append((
+            tick,
+            e.get("voice", 0),
+            name,
+            e.get("durationTicks", 0),
+            tuple(sorted(notes)),
+            bool(e.get("isTuplet")),
+            tuple(sorted(e.get("articulations") or [])) if notes else (),
+        ))
+    return tuple(sorted(items))
+
+
+def staff_fingerprints(measures: Sequence[Dict[str, Any]], staff: str,
+                       fingerprint=measure_fingerprint) -> Tuple[List[Fingerprint], set]:
     """Fingerprints of one staff's measures, with existing measure-repeat signs resolved.
 
     Returns (fingerprints, indices of bars covered by an existing measure-repeat group).
@@ -46,7 +82,7 @@ def staff_fingerprints(measures: Sequence[Dict[str, Any]], staff: str) -> Tuple[
     groups = []
     for i, m in enumerate(measures):
         elements = (m.get("elements") or {}).get(staff, [])
-        fps.append(measure_fingerprint(elements, m.get("startTick", 0)))
+        fps.append(fingerprint(elements, m.get("startTick", 0)))
         sign = next((e for e in elements if e.get("name") == "MeasureRepeat"), None)
         if sign is not None:
             size = int(sign.get("numMeasures") or 1)

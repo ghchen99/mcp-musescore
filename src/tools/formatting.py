@@ -74,7 +74,7 @@ def setup_formatting_tools(mcp, client: MuseScoreClient):
 
     @mcp.tool(
         description=(
-            "Color the notes and rests (with their stems, beams, accidentals, dots and ties) "
+            "Color the notes and rests (with their stems, beams, accidentals, dots, ties and grace notes such as flams) "
             "in a range of measures and staves, e.g. to highlight a passage. Use start_beat/end_beat to "
             "color only part of a bar, e.g. a fill on beats 3-4: notes and rests starting in that span are colored."
         ),
@@ -222,6 +222,171 @@ def setup_formatting_tools(mcp, client: MuseScoreClient):
         params["types"] = types
         params["color"] = translucent(color, opacity)
         return await client.request("highlightMarkings", params)
+
+    @mcp.tool(
+        description=(
+            "Add free text at a bar (optionally at a beat) with its own look: size, italic/bold, color, above or "
+            "below the staff. Defaults give a small, italic, light-grey cue, e.g. the first words of a section's "
+            "lyrics as a reminder for the player. kind='expression' makes it an expression text. Use the text the "
+            "user provides. Remove with Ctrl+Z, or select the texts in MuseScore and delete them."
+        ),
+        tags={"formatting"},
+    )
+    async def add_text(
+        measure: Annotated[int, "Bar position (1-based)"],
+        text: Annotated[str, "The text to add"],
+        staff: Annotated[int, "Staff (0-based)"] = 0,
+        beat: Annotated[Optional[float], "Beat within the bar (1-based, fractions allowed). Defaults to the start of the bar."] = None,
+        size: Annotated[float, "Font size in points"] = 8,
+        italic: Annotated[bool, "Italic text"] = True,
+        bold: Annotated[bool, "Bold text"] = False,
+        color: Annotated[str, 'Text color as "#rrggbb" (default light grey)'] = "#9e9e9e",
+        placement: Annotated[Literal["above", "below"], "Above or below the staff"] = "above",
+        kind: Annotated[Literal["staff", "expression"], "Staff text, or expression text"] = "staff",
+    ):
+        translucent(color, 1)  # validates the color
+        params = {"measure": measure, "text": text, "staff": staff, "fontSize": size, "italic": italic,
+                  "bold": bold, "color": color, "placement": placement, "kind": kind}
+        if beat is not None:
+            params["beat"] = beat
+        return await client.request("addText", params)
+
+    @mcp.tool(
+        description=(
+            "Remove texts and marks from a range of bars, e.g. to redo part of a chart. kinds: 'texts' (add_text: "
+            "cues, '*' marks, legends), 'labels' (boxed add_label texts), 'rehearsal_marks', 'tempo' (tempo "
+            "markings, which also changes playback), 'voltas'. `contains` limits it to texts containing that string, "
+            "e.g. '**'. Defaults to the whole score. Highlights and note colors are removed with clear_highlights / "
+            "clear_color instead."
+        ),
+        tags={"formatting"},
+    )
+    async def remove_annotations(
+        start_measure: Annotated[int, "First bar (1-based position)"] = 1,
+        end_measure: Annotated[Optional[int], "Last bar (inclusive). Defaults to the end of the score."] = None,
+        first_staff: Annotated[int, "First staff (0-based)"] = 0,
+        last_staff: Annotated[Optional[int], "Last staff (0-based, inclusive). Defaults to the last staff."] = None,
+        kinds: Annotated[
+            List[Literal["texts", "labels", "rehearsal_marks", "tempo", "voltas"]], "What to remove"
+        ] = ["texts"],
+        contains: Annotated[Optional[str], "Only remove texts containing this string (text-based kinds)"] = None,
+        exact: Annotated[bool, 'Only remove texts equal to `contains` (e.g. "*" but not "**" or a legend)'] = False,
+    ):
+        if end_measure is None:
+            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
+        params = range_params(start_measure, end_measure, first_staff, last_staff)
+        params["kinds"] = kinds
+        if contains:
+            params["contains"] = contains
+            params["exact"] = exact
+        return await client.request("removeAnnotations", params)
+
+    @mcp.tool(
+        description=(
+            "Add an articulation to the chords that contain the chosen drums in a range of bars (and beats): "
+            "'half_open' (half-open hi-hat), 'open', 'closed' (hi-hat), 'accent', 'marcato', 'staccato', 'tenuto'. "
+            "E.g. drums=['hi-hat'], symbol='half_open' marks the hi-hats of bars 72-85 as half-open. Chords that "
+            "already have it are left alone. Remove with remove_articulations."
+        ),
+        tags={"notation"},
+    )
+    async def add_articulation(
+        start_measure: Annotated[int, "First bar (1-based position)"],
+        end_measure: Annotated[Optional[int], "Last bar (inclusive). Defaults to start_measure."] = None,
+        symbol: Annotated[
+            Literal["half_open", "open", "closed", "accent", "marcato", "staccato", "tenuto"], "Articulation to add"
+        ] = "half_open",
+        drums: Annotated[Optional[List[str]], 'Drums whose chords get it, e.g. ["hi-hat"]'] = None,
+        pitches: Annotated[Optional[List[int]], "MIDI pitches whose chords get it (with drums; all chords if both empty)"] = None,
+        first_staff: Annotated[int, "First staff (0-based)"] = 0,
+        last_staff: Annotated[Optional[int], "Last staff (0-based, inclusive). Defaults to the last staff."] = None,
+        start_beat: Annotated[Optional[float], START_BEAT_HELP] = None,
+        end_beat: Annotated[Optional[float], END_BEAT_HELP] = None,
+    ):
+        params = beat_params(range_params(start_measure, end_measure, first_staff, last_staff), start_beat, end_beat)
+        selected = (pitches or []) + drum_pitches(drums or [])
+        if selected:
+            params["pitches"] = sorted(set(selected))
+        params["symbol"] = symbol
+        return await client.request("addArticulation", params)
+
+    @mcp.tool(
+        description=(
+            "Remove articulations (by default the hi-hat symbols half_open, open, closed) from the chords that "
+            "contain the chosen drums in a range of bars."
+        ),
+        tags={"notation"},
+    )
+    async def remove_articulations(
+        start_measure: Annotated[int, "First bar (1-based position)"] = 1,
+        end_measure: Annotated[Optional[int], "Last bar (inclusive). Defaults to the end of the score."] = None,
+        symbols: Annotated[
+            List[Literal["half_open", "open", "closed", "accent", "marcato", "staccato", "tenuto"]],
+            "Articulations to remove",
+        ] = ["half_open", "open", "closed"],
+        drums: Annotated[Optional[List[str]], 'Only chords with these drums, e.g. ["hi-hat"]'] = None,
+        pitches: Annotated[Optional[List[int]], "Only chords with these MIDI pitches"] = None,
+        first_staff: Annotated[int, "First staff (0-based)"] = 0,
+        last_staff: Annotated[Optional[int], "Last staff (0-based, inclusive). Defaults to the last staff."] = None,
+    ):
+        if end_measure is None:
+            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
+        params = range_params(start_measure, end_measure, first_staff, last_staff)
+        selected = (pitches or []) + drum_pitches(drums or [])
+        if selected:
+            params["pitches"] = sorted(set(selected))
+        params["symbols"] = symbols
+        return await client.request("removeArticulations", params)
+
+    @mcp.tool(
+        description=(
+            "List the ghost notes (notes in parentheses) per bar, or remove them (mode='remove'). A chord made only "
+            "of ghost notes becomes a rest. Show the list to the user before removing: whether a chart keeps ghost "
+            "notes is their choice."
+        ),
+        tags={"notation"},
+    )
+    async def ghost_notes(
+        start_measure: Annotated[int, "First bar (1-based position)"] = 1,
+        end_measure: Annotated[Optional[int], "Last bar (inclusive). Defaults to the end of the score."] = None,
+        mode: Annotated[Literal["list", "remove"], "List them, or remove them"] = "list",
+        drums: Annotated[Optional[List[str]], 'Only these drums, e.g. ["hi-hat"]'] = None,
+        pitches: Annotated[Optional[List[int]], "Only these MIDI pitches"] = None,
+        first_staff: Annotated[int, "First staff (0-based)"] = 0,
+        last_staff: Annotated[Optional[int], "Last staff (0-based, inclusive). Defaults to the last staff."] = None,
+    ):
+        if end_measure is None:
+            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
+        params = range_params(start_measure, end_measure, first_staff, last_staff)
+        selected = (pitches or []) + drum_pitches(drums or [])
+        if selected:
+            params["pitches"] = sorted(set(selected))
+        params["mode"] = mode
+        return await client.request("ghostNotes", params)
+
+    @mcp.tool(
+        description=(
+            "Beam eighths and shorter across rests inside a beat group (a dotted quarter in 12/8, a beat in 4/4), "
+            "as drum charts write them: one beamed group per beat with the rest under the beam, instead of "
+            "separate flags broken at every rest. Only rests with beamable notes before and after them in the "
+            "same group change. Run it over the whole drum staff once the chart is done. clear=True puts the rests "
+            "back on automatic beaming."
+        ),
+        tags={"notation"},
+    )
+    async def beam_over_rests(
+        start_measure: Annotated[int, "First bar (1-based position)"] = 1,
+        end_measure: Annotated[Optional[int], "Last bar (inclusive). Defaults to the end of the score."] = None,
+        first_staff: Annotated[int, "First staff (0-based)"] = 0,
+        last_staff: Annotated[Optional[int], "Last staff (0-based, inclusive). Defaults to the last staff."] = None,
+        clear: Annotated[bool, "Undo: put the rests back on automatic beaming"] = False,
+    ):
+        if end_measure is None:
+            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
+        params = range_params(start_measure, end_measure, first_staff, last_staff)
+        if clear:
+            params["clear"] = True
+        return await client.request("beamOverRests", params)
 
     @mcp.tool(
         description=(

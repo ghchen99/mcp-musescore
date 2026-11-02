@@ -30,7 +30,10 @@ def setup_connection_tools(mcp, client: MuseScoreClient):
             "Get the notes of the current score as LilyPond (or raw JSON), a range of measures at a time. "
             f"Without end_measure, returns at most {GET_SCORE_WINDOW} measures starting at start_measure; "
             "the header says how many measures the score has, so page through long scores. "
-            "Use staves to read only some staves of a large score."
+            "Use staves to read only some staves of a large score. Each bar ends with '% m.N': N is the bar's "
+            "position, which is what every tool's measure parameters mean. When the score's displayed bar numbers "
+            "differ (e.g. they count repeats), the displayed number follows as '(bar M)'; repeat barlines show as "
+            "'|:' and ':|xN'."
         ),
         tags={"connection", "score"},
     )

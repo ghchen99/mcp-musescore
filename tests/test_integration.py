@@ -299,9 +299,17 @@ JAZZ = Path(__file__).resolve().parent.parent / "examples" / "jazz piano" / "Jaz
 def jazz_copy(tmp_path, monkeypatch):
     """A copy of the example score plus an isolated backup directory."""
     monkeypatch.setenv("MCP_MUSESCORE_BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setenv("MUSESCORE_DATA_DIR", str(tmp_path / "no-musescore-data"))
     path = tmp_path / "Jazz Piano.mscz"
     shutil.copy(JAZZ, path)
     return path
+
+
+def open_in_mock(path, staves=2, measures=8, score=None):
+    """A mock score shaped like the file (the example has 2 staves and 8 measures) and saved in it."""
+    score = score or MockScore(staves=staves, measures=measures)
+    score.file_path = str(path)
+    return score
 
 
 def bass_staff_repeat(path, measure):
@@ -318,17 +326,17 @@ def test_apply_measure_repeats_edits_file_and_reloads(tmp_path, monkeypatch):
         assert [g["start"] for g in result["applied"]] == [2, 3]
         assert result["reopened"] is True
         actions = [cmd["action"] for cmd in mock.commands]
-        assert actions.index("saveScore") < actions.index("reopenScore")
+        assert actions.index("ensureScoreId") < actions.index("saveScore") < actions.index("reopenScore")
         assert mock.opened == [str(path)]
-        assert Path(result["backup"]).read_bytes() == original
+        assert bass_staff_repeat(Path(result["backup"]), 2) is None
         assert bass_staff_repeat(path, 2) == "1" and bass_staff_repeat(path, 3) == "1"
 
         restored = (await c.call_tool("restore_backup", {"score_path": str(path)})).data
-        assert path.read_bytes() == original
         assert Path(restored["previous_version_backup"]).exists()
         assert mock.opened == [str(path), str(path)]
+        assert bass_staff_repeat(path, 2) is None  # back to the version before the edit
 
-    run_with_mock(scenario)
+    run_with_mock(scenario, open_in_mock(path))
 
 
 def test_apply_measure_repeats_without_changes_does_not_reload(tmp_path, monkeypatch):
@@ -341,7 +349,7 @@ def test_apply_measure_repeats_without_changes_does_not_reload(tmp_path, monkeyp
         assert "backup" not in result and mock.opened == []
         assert not (tmp_path / "backups").exists()
 
-    run_with_mock(scenario)
+    run_with_mock(scenario, open_in_mock(path))
 
 
 def test_apply_measure_repeats_finds_the_open_file(tmp_path, monkeypatch):
@@ -351,8 +359,7 @@ def test_apply_measure_repeats_finds_the_open_file(tmp_path, monkeypatch):
     (data_dir / "session" / "session.json").write_text(json.dumps([str(path)]))
     (data_dir / "recent_files.json").write_text(json.dumps([str(path), "/nowhere/Other.mscz"]))
     monkeypatch.setenv("MUSESCORE_DATA_DIR", str(data_dir))
-    score = MockScore()
-    score.score_name = "Jazz Piano"
+    score = open_in_mock(path)
 
     async def scenario(c, mock):
         result = (await c.call_tool("apply_measure_repeats", {
@@ -373,7 +380,7 @@ def test_apply_measure_repeats_rejects_uneven_runs(tmp_path, monkeypatch):
             raise_on_error=False)
         assert result.is_error and "cannot be split" in result.content[0].text
 
-    run_with_mock(scenario)
+    run_with_mock(scenario, open_in_mock(path))
 
 
 def drum_score(pattern, other=None):
@@ -388,9 +395,9 @@ def test_find_groove_sections_defaults_to_drums():
         result = (await c.call_tool("find_groove_sections", {})).data
         (staff,) = result["staves"]
         assert staff["name"] == "Drum Kit"
-        assert staff["road_map"][0] == "Bars 1-5: groove bar 1, 3 exact copies, fill 5"
+        assert staff["road_map"][0] == "Bars 1-5: groove bar 1, 3 exact copies, fill 5, collapse 1-4 to 1 x4"
         assert staff["apply_exact_copies"] == {"staff": 0, "groups": [{"start": 2, "end": 4, "bars": 1}]}
-        assert staff["sections"][0]["collapse"] == {"start": 1, "end": 4, "play_count": 4}
+        assert staff["sections"][0]["runs"][0]["play_count"] == 4
 
     run_with_mock(scenario, drum_score("AAAAB", "CDEFG"))
 
@@ -426,24 +433,95 @@ def test_collapse_to_repeat_refuses_when_other_staves_differ():
     run_with_mock(scenario, drum_score("AAAA", "CDEF"))
 
 
+QUARTET = Path(__file__).resolve().parent.parent / "examples" / "string quartet" / "String Quartet.mscz"
+
+
+def quartet_copy(tmp_path, monkeypatch):
+    """A copy of the 4-part example (4 staves, 4 measures) in an isolated MuseScore data dir."""
+    monkeypatch.setenv("MCP_MUSESCORE_BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setenv("MUSESCORE_DATA_DIR", str(tmp_path / "no-musescore-data"))
+    path = tmp_path / "Quartet.mscz"
+    shutil.copy(QUARTET, path)
+    return path
+
+
 def test_make_part_score_opens_a_copy_with_one_part(tmp_path, monkeypatch):
-    source = jazz_copy(tmp_path, monkeypatch)
-    score = drum_score("AAAA", "CDEF")
-    score.part_names[0] = "Paul McCartney | Ludwig | Drums"
+    source = quartet_copy(tmp_path, monkeypatch)
+    score = open_in_mock(source, score=patterned_score("AAAA", "BBBB", "CCCC", "DDDD"))
+    score.short_names[3] = "Vc."  # trailing dot: the copy must not be named "... - Vc..mscz"
 
     async def scenario(c, mock):
-        result = (await c.call_tool("make_part_score", {"staves": [0], "score_path": str(source)})).data
-        target = tmp_path / "Jazz Piano - Drums.mscz"
-        assert result["file"] == str(target) and target.read_bytes() == source.read_bytes()
-        assert result["kept_parts"] == ["Paul McCartney | Ludwig | Drums"]
-        assert mock.opened == [str(target)] and mock.score.num_staves == 1
-        actions = [cmd["action"] for cmd in mock.commands]
-        assert actions.count("saveScore") == 2 and actions.index("removeParts") < len(actions) - 1
-
-        second = (await c.call_tool("make_part_score", {"staves": [0], "score_path": str(source)})).data
-        assert second["file"] == str(tmp_path / "Jazz Piano - Drums (2).mscz")
+        result = (await c.call_tool("make_part_score", {"staves": [3], "score_path": str(source)})).data
+        target = tmp_path / "Quartet - Vc.mscz"
+        assert result["file"] == str(target) and result["staves_now"] == 1
+        assert result["kept_parts"] == ["Violoncello"]
+        assert mock.opened == [str(target)]
+        assert "removeParts" not in [cmd["action"] for cmd in mock.commands]
+        copy = ScoreFile(target)
+        assert len(copy.staves()) == 1 and [p.findtext("trackName") for p in copy.score.findall("Part")] == ["Violoncello"]
+        # the copy has its own score ID, so it can never be mistaken for the original
+        from src.mscz.locate import read_score_id
+        assert read_score_id(target) and read_score_id(target) != read_score_id(source)
+        assert len(ScoreFile(source).staves()) == 4  # the original is unchanged
 
     run_with_mock(scenario, score)
+
+
+def test_make_part_score_reopens_the_original_if_the_copy_cannot_be_opened(tmp_path, monkeypatch):
+    source = quartet_copy(tmp_path, monkeypatch)
+    score = open_in_mock(source, score=patterned_score("AAAA", "BBBB", "CCCC", "DDDD"))
+
+    async def scenario(c, mock):
+        mock.opens_in_new_window = True
+        result = await c.call_tool("make_part_score", {"staves": [3], "score_path": str(source)},
+                                   raise_on_error=False)
+        assert result.is_error and "the original was reopened unchanged" in result.content[0].text
+        assert mock.opened[-1] == str(source)
+        assert mock.score.num_staves == 4
+
+    run_with_mock(scenario, score)
+
+
+def test_make_part_score_in_place_removes_parts_from_the_open_score(tmp_path, monkeypatch):
+    source = quartet_copy(tmp_path, monkeypatch)
+    score = open_in_mock(source, score=patterned_score("AAAA", "BBBB", "CCCC", "DDDD"))
+
+    async def scenario(c, mock):
+        result = (await c.call_tool("make_part_score", {"staves": [3], "in_place": True})).data
+        assert result["staves_now"] == 1 and mock.score.num_staves == 1
+        actions = [cmd["action"] for cmd in mock.commands]
+        # nothing is saved and no other file is opened: the full score (maybe damaged) is never written again
+        assert "saveScore" not in actions and "reopenScore" not in actions and mock.opened == []
+        assert actions.index("exportScore") < actions.index("removeParts")
+        (export,) = result["full_score_backups"]  # the file was never saved with this score's ID, so no copy
+        assert export.endswith(".full-score.mxl") and Path(export).read_text() == "exported 4 staves"
+        assert result["incomplete_bars"] == [] and result["warnings"] == []
+
+    run_with_mock(scenario, score)
+
+
+def test_file_edits_refuse_a_file_that_is_not_the_open_score(tmp_path, monkeypatch):
+    open_file = jazz_copy(tmp_path, monkeypatch)
+    other = tmp_path / "Other.mscz"
+    shutil.copy(JAZZ, other)
+
+    async def scenario(c, mock):
+        # an explicit path to another file is refused
+        result = await c.call_tool("set_end_notes", {"lines": ["x"], "score_path": str(other)},
+                                   raise_on_error=False)
+        assert result.is_error and "is not the file of the score open in MuseScore" in result.content[0].text
+        # a file with the open score's ID but a different shape (e.g. not saved) is refused too
+        mock.score.num_measures = 5
+        result = await c.call_tool("set_end_notes", {"lines": ["x"]}, raise_on_error=False)
+        assert result.is_error and "but the open score has 2 and 5" in result.content[0].text
+        assert not (tmp_path / "backups").exists()
+
+    data_dir = tmp_path / "musescore"
+    (data_dir / "session").mkdir(parents=True)
+    (data_dir / "session" / "session.json").write_text(json.dumps([str(other)]))
+    (data_dir / "recent_files.json").write_text(json.dumps([str(open_file), str(other)]))
+    monkeypatch.setenv("MUSESCORE_DATA_DIR", str(data_dir))
+    run_with_mock(scenario, open_in_mock(open_file))
 
 
 def test_add_rehearsal_mark():
@@ -573,3 +651,284 @@ def test_highlight_symbols_modes():
         assert bad.is_error
 
     run_with_mock(scenario)
+
+
+def test_bars_are_numbered_as_played():
+    async def scenario(c, mock):
+        # bars: 1 intro, 2 groove x3, 3 fill, 4-5 passage x2, 6 end
+        await c.call_tool("set_repeat_barlines", {"start_measure": 2, "end_measure": 2, "play_count": 3})
+        await c.call_tool("set_repeat_barlines", {"start_measure": 4, "end_measure": 5})
+        result = (await c.call_tool("number_bars_as_played", {})).data
+        assert [(o["measure"], o["addToNumber"]) for o in result["offsets"]] == [(3, 2), (6, 2)]
+        assert mock.score.displayed_numbers() == [1, 2, 5, 6, 7, 10]
+        assert result["lastMeasureNumber"] == 10
+
+        again = (await c.call_tool("number_bars_as_played", {"exclude_from_count": [1]})).data
+        assert again["lastMeasureNumber"] == 9 and mock.score.displayed_numbers()[2] == 4
+
+        text = (await c.call_tool("get_score", {"start_measure": 1, "end_measure": 6})).content[0].text
+        assert "% m.2 (bar 1) |: :|x3" in text and "% m.3 (bar 4)" in text
+
+        await c.call_tool("set_measure_number", {"measure": 3, "add_to_number": 0})
+        assert mock.score.displayed_numbers()[2] == 2
+        bad = await c.call_tool("set_measure_number", {"measure": 3}, raise_on_error=False)
+        assert bad.is_error
+
+    run_with_mock(scenario, patterned_score("ABCDEF"))
+
+
+def test_add_text_with_cue_style():
+    async def scenario(c, mock):
+        await c.call_tool("add_text", {"measure": 2, "text": "Verse cue", "beat": 3})
+        (text,) = mock.score.texts
+        assert text["tick"] == 1920 + 960
+        assert (text["fontSize"], text["italic"], text["color"], text["placement"]) == (8, True, "#9e9e9e", "above")
+        bad = await c.call_tool("add_text", {"measure": 2, "text": "x", "color": "grey"}, raise_on_error=False)
+        assert bad.is_error
+
+    run_with_mock(scenario)
+
+
+def test_header_and_end_notes_edit_the_file_and_reload(tmp_path, monkeypatch):
+    path = jazz_copy(tmp_path, monkeypatch)
+
+    async def scenario(c, mock):
+        result = (await c.call_tool("set_score_header", {
+            "title": "Hold The Line", "subtitle": "Drum chart", "part_name": "Drums", "score_path": str(path)})).data
+        assert result["header"]["subtitle"] == "Drum chart" and result["reopened"] is True
+        assert Path(result["backup"]).exists()
+
+        same = (await c.call_tool("set_score_header", {"title": "Hold The Line", "score_path": str(path)})).data
+        assert "backup" not in same  # nothing changed, no reload
+
+        notes = (await c.call_tool("set_end_notes", {
+            "lines": ["Intro: x4, then x2", "Verses 1-3: x9 each"], "score_path": str(path)})).data
+        assert notes["lines"] == 2 and notes["reopened"] is True
+        assert mock.opened == [str(path), str(path)]
+
+        bad = await c.call_tool("set_score_header", {"score_path": str(path)}, raise_on_error=False)
+        assert bad.is_error
+
+    run_with_mock(scenario, open_in_mock(path))
+
+
+def test_remove_annotations_and_reset_numbering():
+    async def scenario(c, mock):
+        await c.call_tool("add_text", {"measure": 1, "text": "* crash on 1st time only   ** crash every other bar"})
+        await c.call_tool("add_text", {"measure": 2, "text": "**", "size": 10, "italic": False})
+        await c.call_tool("add_text", {"measure": 3, "text": "*", "size": 10, "italic": False})
+        await c.call_tool("add_label", {"measure": 2, "text": "Groove x7"})
+        await c.call_tool("add_rehearsal_mark", {"measure": 1, "text": "Intro"})
+        await c.call_tool("add_volta", {"start_measure": 4})
+
+        only_double = (await c.call_tool("remove_annotations", {"start_measure": 2, "contains": "**"})).data
+        assert only_double["removed"]["texts"] == 1
+        assert [t["text"] for t in mock.score.texts] == ["* crash on 1st time only   ** crash every other bar", "*"]
+        single = (await c.call_tool("remove_annotations", {"contains": "*", "exact": True})).data
+        assert single["removed"]["texts"] == 1 and len(mock.score.texts) == 1
+        await c.call_tool("add_text", {"measure": 3, "text": "*"})
+
+        everything = (await c.call_tool("remove_annotations", {
+            "kinds": ["texts", "labels", "rehearsal_marks", "voltas"]})).data
+        assert everything["removed"] == {"texts": 2, "labels": 1, "rehearsal_marks": 1, "tempo": 0, "voltas": 1}
+        assert not (mock.score.texts or mock.score.labels or mock.score.rehearsal_marks or mock.score.voltas)
+
+        await c.call_tool("set_repeat_barlines", {"start_measure": 2, "end_measure": 2, "play_count": 3})
+        await c.call_tool("number_bars_as_played", {"exclude_from_count": [1]})
+        reset = (await c.call_tool("number_bars_as_played", {"reset": True})).data
+        assert reset["reset"] and mock.score.displayed_numbers() == [1, 2, 3, 4]
+
+    run_with_mock(scenario)
+
+
+def test_file_edits_after_make_part_score_go_to_the_copy(tmp_path, monkeypatch):
+    """The original incident: after make_part_score, MuseScore's session list still named the original."""
+    source = jazz_copy(tmp_path, monkeypatch)
+    data_dir = tmp_path / "musescore"
+    (data_dir / "session").mkdir(parents=True)
+    (data_dir / "session" / "session.json").write_text(json.dumps([str(source)]))
+    (data_dir / "recent_files.json").write_text(json.dumps([str(source)]))
+    monkeypatch.setenv("MUSESCORE_DATA_DIR", str(data_dir))
+    score = open_in_mock(source, score=drum_score("AAAAAAAA", "CDEFGHAB"))
+    score.short_names[0] = "drm."
+
+    async def scenario(c, mock):
+        copy = Path((await c.call_tool("make_part_score", {"staves": [0, 1]})).data["file"])
+        await c.call_tool("set_end_notes", {"lines": ["Verses x9"]})
+        await c.call_tool("set_score_header", {"subtitle": "Drum chart"})
+
+        def has_notes(path):
+            return any(child.tag == "TBox" for child in ScoreFile(path).staves()[0])
+
+        assert has_notes(copy) and not has_notes(source)
+        from src.mscz.frames import header_texts
+        assert header_texts(ScoreFile(copy)).get("subtitle") == "Drum chart"
+        assert "subtitle" not in header_texts(ScoreFile(source))
+
+    run_with_mock(scenario, score)
+
+
+def test_collapse_to_repeat_collapses_a_two_bar_phrase():
+    async def scenario(c, mock):
+        result = (await c.call_tool("collapse_to_repeat", {"start": 2, "end": 7, "phrase_bars": 2})).data
+        assert "Bars 2-3 now play 3 times" in result["message"]
+        assert mock.score.repeats[2]["start"] and mock.score.repeats[3] == {"end": True, "count": 3}
+        assert mock.score.num_measures == 4
+
+    run_with_mock(scenario, drum_score("CABABABD"))
+
+
+def test_collapse_to_repeat_refuses_phrases_that_differ():
+    async def scenario(c, mock):
+        result = await c.call_tool("collapse_to_repeat", {"start": 1, "end": 4, "phrase_bars": 2},
+                                   raise_on_error=False)
+        assert result.is_error and "bars [4]" in result.content[0].text
+        bad = await c.call_tool("collapse_to_repeat", {"start": 1, "end": 5, "phrase_bars": 2},
+                                raise_on_error=False)
+        assert bad.is_error and "whole number" in bad.content[0].text
+        assert mock.score.num_measures == 6
+
+    run_with_mock(scenario, drum_score("ABACDE"))
+
+
+
+def test_articulations_and_ghost_notes():
+    score = drum_score("AAAA")
+    score.elements[0][1]["notes"].append({"pitchMidi": 42, "tpc": 0, "pitchName": "F#", "ghost": True})
+    score.elements[0][5]["notes"] = [{"pitchMidi": 42, "tpc": 0, "pitchName": "F#", "ghost": True}]
+
+    async def scenario(c, mock):
+        listed = (await c.call_tool("ghost_notes", {})).data
+        assert listed["ghostNotes"] == 2 and listed["bars"] == [{"measure": 1, "ghostNotes": 1}, {"measure": 2, "ghostNotes": 1}]
+        removed = (await c.call_tool("ghost_notes", {"mode": "remove"})).data
+        assert removed["removed"] == 2 and mock.score.elements[0][5]["name"] == "Rest"
+
+        await c.call_tool("add_articulation", {"start_measure": 1, "end_measure": 1, "symbol": "half_open",
+                                               "start_beat": 2, "end_beat": 3})
+        assert [e.get("articulations") for e in mock.score.elements[0][:4]] == [None, ["half_open"], ["half_open"], None]
+        assert mock.commands[-1]["params"]["symbol"] == "half_open"
+        gone = (await c.call_tool("remove_articulations", {})).data
+        assert gone["removed"] == 2
+
+    run_with_mock(scenario, score)
+
+
+def test_beam_over_rests_only_inside_a_beat():
+    score = drum_score("A")
+    note = lambda tick, length: {"name": "Chord", "startTick": tick, "durationTicks": length, "voice": 0,
+                                 "notes": [{"pitchMidi": 42, "tpc": 0, "pitchName": "F#"}]}
+    rest = lambda tick, length: {"name": "Rest", "startTick": tick, "durationTicks": length, "voice": 0}
+    # beat 1: 16th, 16th rest, eighth (rest inside the beat); beat 2: rest then a note (rest starts the beat)
+    score.elements[0] = [note(0, 120), rest(120, 120), note(240, 240), rest(480, 240), note(720, 240),
+                         rest(960, 960)]
+
+    async def scenario(c, mock):
+        result = (await c.call_tool("beam_over_rests", {})).data
+        assert result["changed"] == 1
+        assert [e.get("beamMode") for e in mock.score.elements[0] if e["name"] == "Rest"] == ["mid", None, None]
+        assert mock.commands[-1]["params"] == {"startMeasure": 1, "endMeasure": 1, "startStaff": 0}
+        cleared = (await c.call_tool("beam_over_rests", {"clear": True})).data
+        assert cleared["changed"] == 1
+
+    run_with_mock(scenario, score)
+
+
+def test_file_edits_in_a_part_tab_detach_the_part_first(tmp_path, monkeypatch):
+    """The agent worked in the drum part's tab: the score ID was saved into the part, not the full score."""
+    from src.mscz.locate import read_score_id
+    from tests.test_parts import score_with_part
+    monkeypatch.setenv("MCP_MUSESCORE_BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setenv("MUSESCORE_DATA_DIR", str(tmp_path / "no-musescore-data"))
+    full, entry = score_with_part(tmp_path, score_id="mcp-part-1")
+    score = open_in_mock(full, score=patterned_score("DDDD"))
+    score.score_id, score.part_entry = "mcp-part-1", entry
+
+    async def scenario(c, mock):
+        result = (await c.call_tool("set_end_notes", {"lines": ["Verses x4"], "score_path": str(full)})).data
+        part = tmp_path / "Quartet - Cello.mscz"
+        assert result["file"] == str(part)
+        # edited first, then opened once: two quick reopens crashed MuseScore
+        assert mock.opened == [str(part)] and mock.score.file_path == str(part)
+        assert [c["action"] for c in mock.commands].count("reopenScore") == 1
+        assert any(child.tag == "TBox" for child in ScoreFile(part).staves()[0])
+        assert read_score_id(part) and read_score_id(part) != "mcp-part-1"
+        assert len(ScoreFile(full).staves()) == 4  # the full score file is untouched
+        assert list((tmp_path / "backups").glob("Quartet.*.mscz"))
+
+    run_with_mock(scenario, score)
+
+
+def test_incomplete_bars_are_found():
+    from src.tools.structure import incomplete_measures
+    measures = [{"measure": 52, "durationTicks": 1440, "elements": {
+        "staff0": [{"name": "Chord", "durationTicks": 960, "voice": 0}, {"name": "Rest", "durationTicks": 480, "voice": 0}],
+        "staff1": [{"name": "Chord", "durationTicks": 1920, "voice": 0}, {"name": "Chord", "durationTicks": 480, "voice": 1}],
+    }}]
+    assert incomplete_measures(measures) == [
+        {"measure": 52, "staff": 1, "found_ticks": {0: 1920}, "expected_ticks": 1440}]
+
+
+def test_reopens_are_spaced(monkeypatch):
+    """MuseScore crashed when a score was closed ~0.3 s after it was opened: the server waits in between."""
+    import asyncio
+    from src.tools import score_file
+    monkeypatch.setattr(score_file, "REOPEN_GAP", 0.5)
+    monkeypatch.setattr(score_file, "_last_reopen", 0.0)
+    calls = []
+
+    class Client:
+        async def send_command(self, action, params=None):
+            calls.append((action, asyncio.get_running_loop().time()))
+            return {"status": "success", "result": {"success": True}}
+
+    async def twice():
+        await score_file.reopen_in_place(Client(), Path("/nonexistent/a.mscz"))
+        await score_file.reopen_in_place(Client(), Path("/nonexistent/a.mscz"))
+
+    asyncio.run(twice())
+    reopens = [t for action, t in calls if action == "reopenScore"]
+    assert len(reopens) == 2 and reopens[1] - reopens[0] >= 0.45
+
+
+def test_section_counts_from_the_song_structure():
+    """Bar 1 is a count-in (excluded from the bar count), bars 2-3 a lead-in before the intro groove."""
+    score = drum_score("DEFAAAABBBBBBC")
+    score.irregular = {1}
+    score.markings += [{"staff": 0, "startTick": 0, "name": "RehearsalMark", "text": "Intro"},
+                       {"staff": 0, "startTick": 7 * score.measure_ticks, "name": "RehearsalMark", "text": "Verse"}]
+
+    async def scenario(c, mock):
+        outline = (await c.call_tool("song_structure", {})).data
+        intro, verse = outline["sections"]
+        assert (intro["bars_played"], intro["lead_in_bars"], intro["count"], intro["not_counted"]) == (6, 2, "2+4", [1])
+        assert (verse["bars_played"], verse["count"]) == (7, "4+3") and outline["total_bars_played"] == 13
+        assert outline["suggested_rows"][0]["count"] == "2+4"
+
+        result = (await c.call_tool("label_section_counts", {})).data
+        assert result["counts"] == [{"measure": 1, "text": "2+4"}, {"measure": 8, "text": "4+3"}]
+        assert [c["params"]["mode"] for c in mock.commands if c["action"] == "addSectionCounts"] == ["label"]
+        assert [mk["text"] for mk in mock.score.markings] == ["Intro (2+4)", "Verse (4+3)"]
+        assert (mock.score.style["rehearsalMarkFontSize"], mock.score.style["rehearsalMarkMinDistance"]) == (12, 1)
+        # the counts written in the labels are kept when they still add up
+        assert [sec["count"] for sec in (await c.call_tool("song_structure", {})).data["sections"]] == ["2+4", "4+3"]
+        # the count in the label doesn't change the section names; running it again replaces the counts
+        assert [sec["section"] for sec in (await c.call_tool("song_structure", {})).data["sections"]] == ["Intro", "Verse"]
+        await c.call_tool("label_section_counts", {"counts": [{"measure": 8, "text": "(2x4)"}]})
+        assert [mk["text"] for mk in mock.score.markings] == ["Intro (2+4)", "Verse (2x4)"]
+
+        # counts left beside a label on another bar go when the counts move into the labels
+        mock.score.texts.append({"measure": 2, "text": "2+4", "sectionCount": True})
+        await c.call_tool("label_section_counts", {})
+        assert not [t for t in mock.score.texts if t.get("sectionCount")]
+
+        # beside the label instead: the count in the label goes
+        await c.call_tool("label_section_counts", {"counts": [{"measure": 8, "text": "2x4"}], "placement": "beside"})
+        assert mock.score.markings[1]["text"] == "Verse"
+        assert [(t["measure"], t["text"]) for t in mock.score.texts if t.get("sectionCount")] == [(8, "2x4")]
+        await c.call_tool("label_section_counts", {"clear": True})
+        assert [mk["text"] for mk in mock.score.markings] == ["Intro", "Verse"]
+        assert not [t for t in mock.score.texts if t.get("sectionCount")]
+        bad = await c.call_tool("label_section_counts", {"counts": [{"measure": 8}]}, raise_on_error=False)
+        assert bad.is_error
+
+    run_with_mock(scenario, score)

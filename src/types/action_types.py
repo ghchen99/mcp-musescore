@@ -348,6 +348,121 @@ class highlightSymbolsAction(TypedDict):
     params: highlightSymbolsParams
 
 
+class setMeasureNumberingParams(TypedDict):
+    measure: int
+    addToNumber: NotRequired[int]
+    excludeFromCount: NotRequired[bool]
+
+
+class setMeasureNumberingAction(TypedDict):
+    action: Literal["setMeasureNumbering"]
+    params: setMeasureNumberingParams
+
+
+class numberAsPlayedParams(TypedDict):
+    exclude: NotRequired[List[int]]
+
+
+class numberAsPlayedAction(TypedDict):
+    action: Literal["numberAsPlayed"]
+    params: numberAsPlayedParams
+
+
+class addTextParams(TypedDict):
+    measure: int
+    text: str
+    staff: NotRequired[int]
+    beat: NotRequired[float]
+    fontSize: NotRequired[float]
+    italic: NotRequired[bool]
+    bold: NotRequired[bool]
+    color: NotRequired[str]
+    placement: NotRequired[Literal["above", "below"]]
+    kind: NotRequired[Literal["staff", "expression"]]
+
+
+class addTextAction(TypedDict):
+    action: Literal["addText"]
+    params: addTextParams
+
+
+class addArticulationParams(TypedDict):
+    startMeasure: int
+    endMeasure: NotRequired[int]
+    startStaff: NotRequired[int]
+    endStaff: NotRequired[int]
+    startBeat: NotRequired[float]
+    endBeat: NotRequired[float]
+    pitches: NotRequired[List[int]]
+    symbol: Literal["half_open", "open", "closed", "accent", "marcato", "staccato", "tenuto"]
+
+
+class addArticulationAction(TypedDict):
+    action: Literal["addArticulation"]
+    params: addArticulationParams
+
+
+class removeArticulationsParams(TypedDict):
+    startMeasure: int
+    endMeasure: NotRequired[int]
+    startStaff: NotRequired[int]
+    endStaff: NotRequired[int]
+    pitches: NotRequired[List[int]]
+    symbols: NotRequired[List[str]]
+
+
+class removeArticulationsAction(TypedDict):
+    action: Literal["removeArticulations"]
+    params: removeArticulationsParams
+
+
+class ghostNotesParams(TypedDict):
+    startMeasure: int
+    endMeasure: NotRequired[int]
+    startStaff: NotRequired[int]
+    endStaff: NotRequired[int]
+    pitches: NotRequired[List[int]]
+    mode: NotRequired[Literal["list", "remove"]]
+
+
+class ghostNotesAction(TypedDict):
+    action: Literal["ghostNotes"]
+    params: ghostNotesParams
+
+
+class SectionCount(TypedDict):
+    measure: int
+    text: str
+
+
+class addSectionCountsParams(TypedDict):
+    counts: List[SectionCount]
+    mode: NotRequired[Literal["label", "beside"]]
+    color: NotRequired[str]
+    fontSize: NotRequired[float]
+    gap: NotRequired[float]
+    clear: NotRequired[bool]
+    clearAll: NotRequired[bool]
+
+
+class addSectionCountsAction(TypedDict):
+    action: Literal["addSectionCounts"]
+    params: addSectionCountsParams
+
+
+class beamOverRestsParams(TypedDict):
+    startMeasure: int
+    endMeasure: NotRequired[int]
+    startStaff: NotRequired[int]
+    endStaff: NotRequired[int]
+    clear: NotRequired[bool]
+
+
+class beamOverRestsAction(TypedDict):
+    action: Literal["beamOverRests"]
+    params: beamOverRestsParams
+
+
 ActionSequence = List[
     getScoreAction | addNoteAction | addRestAction | addTupletAction | 
     addLyricsAction | addInstrumentAction | setStaffMuteAction | 
@@ -359,5 +474,7 @@ ActionSequence = List[
     selectMeasuresAction | deleteMeasuresAction | setRepeatBarlinesAction |
     addVoltaAction | colorRangeAction | setStyleAction | addRehearsalMarkAction |
     removePartsAction | addHighlightAction | addLabelAction | clearHighlightsAction |
-    highlightNotesAction | highlightMarkingsAction | highlightSymbolsAction
+    highlightNotesAction | highlightMarkingsAction | highlightSymbolsAction |
+    setMeasureNumberingAction | numberAsPlayedAction | addTextAction | addArticulationAction |
+    removeArticulationsAction | ghostNotesAction | beamOverRestsAction | addSectionCountsAction
 ]
