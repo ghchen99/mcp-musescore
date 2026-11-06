@@ -15,6 +15,7 @@
 - **Plugin won't enable**: Restart MuseScore after placing the plugin file
 - **No console output**: Run MuseScore from terminal to see debug messages
 - **New plugin actions are "Unknown command"**: MuseScore is still running the old plugin. Restart MuseScore and run the plugin again
+- **`go_to_measure` reports "Mesure: 1" and the next note or time signature lands in bar 1**: an older plugin selected the bar inside an undo command, where the new selection isn't readable yet, so the cursor stayed where it was. Update the `.qml` file and restart the plugin. With an old copy, `go_to_beginning_of_score` followed by `next_element` steps reach the bar instead
 
 ## Python Server Issues
 - **"No server object found"**: The server object must be named `mcp`, `server`, or `app` at module level

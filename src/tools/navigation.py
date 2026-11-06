@@ -75,7 +75,11 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
         return await _run_and_convert("getCursorInfo")
 
     @mcp.tool(
-        description="Navigate to a specific measure and select it across all staves.",
+        description=(
+            "Navigate to a specific measure and select it across all staves. The cursor moves to beat 1 "
+            "of that measure on the first staff, so the next cursor tool (add_note, add_rest, add_lyrics, "
+            "set_time_signature...) acts there; use next_staff to move down to another staff."
+        ),
         tags={"navigation"},
     )
     async def go_to_measure(

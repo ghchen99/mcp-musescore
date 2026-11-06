@@ -538,29 +538,32 @@ MuseScore {
         };
     }
 
+    // Select one whole measure on every staff and move the cursor state to its first beat
+    // (staff 0), where the next cursor action (addNote, setTimeSignature, addLyrics...) acts.
+    // Selecting is not a score edit, so this runs outside startCmd()/endCmd(): inside a
+    // command the new selection has no segments yet, syncStateToSelection() fell back to
+    // the previous cursor position (often bar 1), and the following actions landed there.
+    // The state is also set from the measure's own ticks in case the sync still disagrees.
+    function selectWholeMeasure(range) {
+        selectMeasureRange(range);
+        var res = syncStateToSelection();
+        if (res.error || selectionState.startTick !== range.startTick) {
+            selectMeasureRange(range);
+        }
+        return { success: true, currentSelection: selectionState };
+    }
+
     function goToMeasure(params) {
         var validation = validateParams(params, ["measure"]);
         if (!validation.valid) return validation;
+        if (!curScore) return { error: "No score open" };
+        if (params.measure < 1 || params.measure > curScore.nmeasures) {
+            return { error: "Invalid measure number" };
+        }
 
-        return executeWithUndo(function() {
-            var score = getScoreSummary({ includeElements: false });
-            if (params.measure < 1 || params.measure > score.measures.length) {
-                return { error: "Invalid measure number" };
-            }
-            var measureIdx = params.measure - 1;
-            var measure = score.measures[measureIdx];
-            var startTick = measure.startTick;
-            
-            var endTick = (measureIdx + 1 < score.measures.length) ? score.measures[measureIdx + 1].startTick : curScore.lastSegment.tick;
-            
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, endTick, 0, curScore.nstaves);
-            
-            var res = syncStateToSelection();
-            if (res.error) return res;
-            
-            return { success: true, currentSelection: selectionState };
-        });
+        var range = measureRange({ startMeasure: params.measure });
+        if (!range.valid) return range;
+        return selectWholeMeasure(range);
     }
 
     function nextElement(params) {
@@ -757,34 +760,22 @@ MuseScore {
     // SELECTION FUNCTIONS
     // ========================================
 
+    // Same stale-selection issue as goToMeasure, so it shares selectWholeMeasure().
     function selectCurrentMeasure() {
-        return executeWithUndo(function() {
-            var cursor = createCursor({ 
-                startTick: selectionState.startTick || 0, 
-                startStaff: selectionState.startStaff || 0 
-            });
+        if (!curScore) return { error: "No score open" };
 
-            var currTick = cursor.tick;
-            var scoreSummary = getScoreSummary({ includeElements: false });
+        var tick = selectionState.startTick || 0;
+        var number = 1;
+        var m = curScore.firstMeasure;
+        while (m && tick >= measureEndTick(m)) {
+            m = m.nextMeasure;
+            number++;
+        }
+        if (!m) return { error: "Invalid cursor position" };
 
-            var measureIdx = scoreSummary.measures.filter(function(m) { 
-                return m.startTick <= currTick; 
-            }).length - 1;
-            
-            if (measureIdx < 0) return { error: "Invalid cursor position" };
-            
-            var measure = scoreSummary.measures[measureIdx];
-            var startTick = measure.startTick;
-            var endTick = (measureIdx + 1 < scoreSummary.measures.length) ? scoreSummary.measures[measureIdx + 1].startTick : curScore.lastSegment.tick;
-
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, endTick, 0, curScore.nstaves);
-
-            var res = syncStateToSelection();
-            if (res.error) return res;
-            
-            return { success: true, message: `Selected measure ${measureIdx + 1}`, currentSelection: selectionState };
-        });
+        var result = selectWholeMeasure(measureRange({ startMeasure: number }));
+        result.message = "Selected measure " + number;
+        return result;
     }
 
     function selectCustomRange(params) {

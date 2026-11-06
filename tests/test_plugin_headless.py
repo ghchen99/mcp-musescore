@@ -60,6 +60,19 @@ def test_clear_highlights_removes_them(tmp_path):
     assert text_lines(out) == 0
 
 
+def test_go_to_measure_moves_the_cursor_there():
+    results = results_by_action(run([
+        {"action": "goToMeasure", "params": {"measure": 3}},
+        {"action": "setTimeSignature", "params": {"numerator": 2, "denominator": 4}},
+        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 3, "includeElements": False}},
+    ], JAZZ))
+    selection = results["goToMeasure"]["currentSelection"]
+    assert selection["startTick"] == 2 * 1440  # bars 1-2 are in 3/4
+    assert (selection["startStaff"], selection["endStaff"]) == (0, 2)
+    measures = results["getScore"]["analysis"]["measures"]
+    assert [m["durationTicks"] for m in measures] == [1440, 1440, 960]
+
+
 def test_errors_come_back_as_results():
     (result,) = run([{"action": "colorRange", "params": {"startMeasure": 99}}], JAZZ)
     assert "Invalid measure range" in result["result"]["error"]
