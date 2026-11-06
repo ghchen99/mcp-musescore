@@ -365,10 +365,12 @@ MuseScore {
             for (var l = 0; l < element.lyrics.length; l++) {
                 var lyr = element.lyrics[l];
                 if (lyr) {
+                    var held = lyr.lyricTicks;
                     base.lyrics.push({
                         text: lyr.text,
                         no: lyr.no,
-                        syllabic: lyr.syllabic
+                        syllabic: lyr.syllabic,
+                        lyricTicks: held && held.ticks ? held.ticks : 0
                     });
                 }
             }
@@ -983,38 +985,61 @@ MuseScore {
         });
     }
 
+    // One entry per chord from the cursor; rests are skipped and take no entry.
+    //   "Hel-"     a syllable ending in "-" is joined to the next syllable with a hyphen
+    //   "" or "_"  the chord gets no syllable: the previous one is held over it (a melisma),
+    //              drawn as an extender line unless that syllable is hyphenated
+    // No Lyrics element is ever created with empty text: MuseScore never keeps one itself, and
+    // typing "_" (the extender key) into a score holding such placeholders crashed MuseScore.
     function addLyrics(params) {
         if (!params.lyrics || !Array.isArray(params.lyrics) || params.lyrics.length === 0) {
             return { error: "Lyrics must be specified as an array of strings" };
         }
-        
+
         return executeWithUndo(function() {
             syncStateToSelection();
-            
-            var cursor = createCursor({ 
-                startTick: selectionState.startTick, 
-                startStaff: selectionState.startStaff 
+
+            var cursor = createCursor({
+                startTick: selectionState.startTick,
+                startStaff: selectionState.startStaff
             });
-            
+
             var lyricsArray = params.lyrics.slice();
             var verse = params.verse || 0;
             var addedCount = 0;
+            var heldCount = 0;
             var skippedCount = 0;
-            
+            var previous = null;  // last syllable placed: { lyric, tick, hyphen }
+
             while (cursor.element && lyricsArray.length > 0) {
                 var element = cursor.element;
-                
+
                 if (element.type === Element.CHORD || element.name === "Chord") {
-                    var lyr = newElement(Element.LYRICS);
-                    lyr.text = lyricsArray.shift();
-                    lyr.verse = verse;
-                    
-                    cursor.add(lyr);
-                    addedCount++;
+                    var text = String(lyricsArray.shift());
+                    if (text === "" || text === "_") {
+                        // lyricTicks runs from the syllable to the start of the last chord it is held over
+                        if (previous && !previous.hyphen) {
+                            previous.lyric.lyricTicks = fraction(cursor.tick - previous.tick, 1920);
+                        }
+                        heldCount++;
+                    } else {
+                        var hyphen = text.length > 1 && text.charAt(text.length - 1) === "-";
+                        if (hyphen) text = text.slice(0, -1);
+                        var inWord = previous !== null && previous.hyphen;
+
+                        var lyr = newElement(Element.LYRICS);
+                        lyr.text = text;
+                        lyr.verse = verse;
+                        lyr.syllabic = hyphen ? (inWord ? Lyrics.MIDDLE : Lyrics.BEGIN)
+                                              : (inWord ? Lyrics.END : Lyrics.SINGLE);
+                        cursor.add(lyr);
+                        previous = { lyric: lyr, tick: cursor.tick, hyphen: hyphen };
+                        addedCount++;
+                    }
                 } else if (element.type === Element.REST || element.name === "Rest") {
                     skippedCount++;
                 }
-                
+
                 if (!cursor.next()) break;
             }
             
@@ -1034,13 +1059,15 @@ MuseScore {
             curScore.selection.selectRange(finalTick, finalTick + (finalElement.durationTicks || 0), staffIdx, staffIdx + 1);
             
             var message = `Added ${addedCount} lyrics`;
+            if (heldCount > 0) message += `, held ${heldCount} notes`;
             if (skippedCount > 0) message += `, skipped ${skippedCount} rests`;
             if (lyricsArray.length > 0) message += `, ${lyricsArray.length} lyrics remaining`;
-            
-            return { 
-                success: true, 
+
+            return {
+                success: true,
                 message: message,
                 addedCount: addedCount,
+                heldCount: heldCount,
                 skippedCount: skippedCount,
                 remainingLyrics: lyricsArray,
                 currentSelection: selectionState

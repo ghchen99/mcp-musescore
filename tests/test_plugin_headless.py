@@ -60,6 +60,21 @@ def test_clear_highlights_removes_them(tmp_path):
     assert text_lines(out) == 0
 
 
+def test_held_lyrics_add_no_empty_lyrics(tmp_path):
+    out = tmp_path / "out.mscz"
+    results = results_by_action(run([
+        {"action": "goToBeginningOfScore", "params": {}},
+        {"action": "addLyrics", "params": {"lyrics": ["Glo-", "ri", "_", "a"]}},
+        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2, "staves": [0]}},
+    ], JAZZ, out=out))
+    assert results["addLyrics"]["addedCount"] == 3 and results["addLyrics"]["heldCount"] == 1
+    with zipfile.ZipFile(out) as z:
+        name = next(n for n in z.namelist() if n.endswith(".mscx") and "/" not in n)
+        mscx = z.read(name).decode("utf-8")
+    assert mscx.count("<Lyrics>") == 3
+    assert "<text></text>" not in mscx
+
+
 def test_errors_come_back_as_results():
     (result,) = run([{"action": "colorRange", "params": {"startMeasure": 99}}], JAZZ)
     assert "Invalid measure range" in result["result"]["error"]

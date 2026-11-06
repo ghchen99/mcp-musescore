@@ -41,7 +41,7 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 | `add_note` | `pitch: int = 64`, `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a note at the current cursor position. |
 | `add_rest` | `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a rest at the current cursor position. |
 | `add_tuplet` | `duration: dict = {numerator: 1, denominator: 4}`, `ratio: dict = {numerator: 3, denominator: 2}`, `advance_cursor_after_action: bool = true` | Adds a tuplet; the default ratio represents a triplet. |
-| `add_lyrics` | `lyrics: list[str]`, `verse: int = 0` | Adds syllables to consecutive notes from the current cursor. Verse is zero-based. |
+| `add_lyrics` | `lyrics: list[str]`, `verse: int = 0` | Adds syllables to consecutive notes from the current cursor, one entry per note (rests skipped). `"Hel-"` hyphenates to the next syllable; `"_"` holds the previous syllable over that note with an extender line (no lyric is placed there). Verse is zero-based. |
 | `insert_measure` | none | Inserts a measure at the current position. |
 | `append_measure` | `count: int = 1` | Appends one or more measures to the end of the score. |
 | `delete_selection` | `measure: int | null = null` | Deletes the current selection, or a specified measure when provided. Treat as destructive and verify immediately. |
