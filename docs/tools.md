@@ -32,7 +32,7 @@ Navigation results come back as LilyPond with measure, beat and staff metadata.
 - `add_note(pitch, duration, advance_cursor_after_action, add_to_chord)` - Add notes with MIDI pitch. Sequential notes write a melody; set `add_to_chord=True` to stack a pitch on the current chord.
 - `add_rest(duration, advance_cursor_after_action)` - Add rests
 - `add_tuplet(duration, ratio, advance_cursor_after_action)` - Add tuplets (triplets, etc.)
-- `add_lyrics(lyrics, verse)` - Add lyric syllables to consecutive notes from the cursor
+- `add_lyrics(lyrics, verse)` - Add lyric syllables to consecutive notes from the cursor, one entry per note (rests are skipped). End a syllable with `-` to hyphenate it to the next one; use `"_"` for a note that holds the previous syllable (a melisma), which then gets an extender line. For example, "Glo-ri-a" sung over five notes, with "ri" held for three: `["Glo-", "ri", "_", "_", "a"]`
 
 ## Measures, Time & Tempo
 - `insert_measure()` - Insert measure at current position

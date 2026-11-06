@@ -56,11 +56,16 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
         })
 
     @mcp.tool(
-        description="Add lyrics to consecutive notes starting from the current cursor position.",
+        description=(
+            "Add lyrics to consecutive notes starting from the current cursor position, one entry per note "
+            "(rests are skipped). End a syllable with '-' to hyphenate it to the next one (\"Hel-\", \"lo\"). "
+            "Use \"_\" (or \"\") for a note that continues the previous syllable: no lyric is placed there and "
+            "the previous syllable gets an extender line over it, as MuseScore draws a melisma."
+        ),
         tags={"notes"},
     )
     async def add_lyrics(
-        lyrics: Annotated[List[str], 'List of lyric syllables to add (e.g. ["Hel", "lo", "world"])'],
+        lyrics: Annotated[List[str], 'One entry per note, e.g. ["Hel-", "lo", "world", "_", "_"]: "-" hyphenates, "_" holds the previous syllable'],
         verse: Annotated[int, "Verse number (0-based, default is 0 for first verse)"] = 0,
     ):
         return await client.send_command("addLyrics", {

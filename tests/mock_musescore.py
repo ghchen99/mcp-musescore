@@ -35,6 +35,9 @@ SEQUENCE_ACTIONS = {
     "addText", "removeAnnotations", "addArticulation", "removeArticulations", "ghostNotes", "beamOverRests", "addSectionCounts",
 }
 
+# MuseScore's Lyrics.Syllabic values
+SYLLABIC = {"SINGLE": 0, "BEGIN": 1, "END": 2, "MIDDLE": 3}
+
 TPC_BY_PITCH_CLASS = [14, 21, 16, 23, 18, 13, 20, 15, 22, 17, 24, 19]
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
@@ -362,18 +365,35 @@ class MockMuseScore:
         self._mutating()
         remaining = list(lyrics)
         verse = params.get("verse") or 0
-        added = skipped = 0
+        added = held = skipped = 0
+        previous = None  # (lyric, tick, hyphen) of the last syllable placed
         for element in self.score.elements[self.score.cursor_staff]:
             if element["startTick"] < self.score.cursor_tick:
                 continue
             if not remaining:
                 break
-            if element["name"] == "Chord":
-                element["lyrics"] = [{"text": remaining.pop(0), "no": verse, "syllabic": 0}]
-                added += 1
-            else:
+            if element["name"] != "Chord":
                 skipped += 1
+                continue
+            text = str(remaining.pop(0))
+            if text in ("", "_"):
+                if previous and not previous[2]:
+                    previous[0]["lyricTicks"] = element["startTick"] - previous[1]
+                held += 1
+                continue
+            hyphen = len(text) > 1 and text.endswith("-")
+            if hyphen:
+                text = text[:-1]
+            in_word = previous is not None and previous[2]
+            syllabic = (SYLLABIC["MIDDLE"] if in_word else SYLLABIC["BEGIN"]) if hyphen else (
+                SYLLABIC["END"] if in_word else SYLLABIC["SINGLE"])
+            lyric = {"text": text, "no": verse, "syllabic": syllabic, "lyricTicks": 0}
+            element["lyrics"] = [lyric]
+            previous = (lyric, element["startTick"], hyphen)
+            added += 1
         message = f"Added {added} lyrics"
+        if held:
+            message += f", held {held} notes"
         if skipped:
             message += f", skipped {skipped} rests"
         if remaining:
@@ -382,6 +402,7 @@ class MockMuseScore:
             "success": True,
             "message": message,
             "addedCount": added,
+            "heldCount": held,
             "skippedCount": skipped,
             "remainingLyrics": remaining,
             "currentSelection": self.score.cursor_selection(),
