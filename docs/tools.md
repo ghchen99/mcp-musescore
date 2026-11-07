@@ -14,11 +14,11 @@ Repeats, drum charts and drum notation have [their own page](drum-charts.md).
 
 ## Navigation & Cursor Control
 - `get_cursor_info()` - Get current cursor position and selection info
-- `go_to_measure(measure)` - Navigate to specific measure
+- `go_to_measure(measure)` - Select a measure on every staff and move the cursor to its first beat on staff 0. The next cursor tool (`add_note`, `add_rest`, `add_lyrics`, `set_time_signature`...) acts there; follow with `next_staff()` to write on another staff
 - `go_to_beginning_of_score()` / `go_to_final_measure()` - Navigate to start/end
 - `next_element()` / `prev_element()` - Move cursor element by element
 - `next_staff()` / `prev_staff()` - Move between staves
-- `select_current_measure()` - Select entire current measure
+- `select_current_measure()` - Select the whole measure the cursor is in, on every staff (the cursor moves to its first beat on staff 0)
 - `select_custom_range(start_tick, end_tick, start_staff, end_staff)` - Slicing tool to extract cross-measure, multi-staff phrasing
 
 Navigation results come back as LilyPond with measure, beat and staff metadata.
