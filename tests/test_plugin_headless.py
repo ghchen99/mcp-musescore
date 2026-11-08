@@ -269,3 +269,43 @@ def test_delete_measures_inside_a_multi_measure_rest(tmp_path):
     ], source, out=out_dir / "out.mscz"))
     assert results["deleteMeasures"]["numMeasures"] == 4
     assert results["getScore"]["analysis"]["numMeasures"] == 4
+
+
+def test_get_score_reports_ties_per_note(tmp_path):
+    """Ties belong to notes. getScore used to read them from the chord, so isTie was always false."""
+    from tests.test_rolls import write_score
+
+    tpc = {60: 14, 62: 16, 64: 18, 67: 15, 69: 17}
+
+    def note(pitch, ahead=None, back=None):
+        ties = ""
+        if ahead:
+            ties += f'<Spanner type="Tie"><Tie/><next><location><fractions>{ahead}</fractions></location></next></Spanner>'
+        if back:
+            ties += f'<Spanner type="Tie"><prev><location><fractions>-{back}</fractions></location></prev></Spanner>'
+        return f"<Note>{ties}<pitch>{pitch}</pitch><tpc>{tpc[pitch]}</tpc></Note>"
+
+    def chord(duration, *notes):
+        return f"<Chord><durationType>{duration}</durationType>{''.join(notes)}</Chord>"
+
+    # Bar 1: C-E-G with only C and E tied into C-E-A, then a D tied across the barline into bar 2
+    source = write_score(tmp_path, [
+        chord("quarter", note(60, ahead="1/4"), note(64, ahead="1/4"), note(67))
+        + chord("quarter", note(60, back="1/4"), note(64, back="1/4"), note(69))
+        + chord("half", note(62, ahead="1/2")),
+        chord("whole", note(62, back="1/2")),
+    ])
+    (entry,) = run([{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}], source)
+    bar_1, bar_2 = (
+        sorted(m["elements"]["staff0"], key=lambda e: e["startTick"])
+        for m in entry["result"]["analysis"]["measures"]
+    )
+
+    def ties(element):
+        return {n["pitchMidi"]: (n.get("tieForward", False), n.get("tieBack", False)) for n in element["notes"]}
+
+    assert ties(bar_1[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
+    assert ties(bar_1[1]) == {60: (False, True), 64: (False, True), 69: (False, False)}
+    assert ties(bar_1[2]) == {62: (True, False)}
+    assert ties(bar_2[0]) == {62: (False, True)}
+    assert [e["isTie"] for e in bar_1 + bar_2] == [True, False, True, False]

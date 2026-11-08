@@ -356,7 +356,7 @@ MuseScore {
         var base = {
             name: element.name,
             durationTicks: element.actualDuration ? element.actualDuration.ticks : 0,
-            isTie: element.tieForward ? true : false,
+            isTie: false,  // set below: true when a note of the chord is tied to the next note
             isTuplet: element.tuplet ? true : false
         };
 
@@ -386,6 +386,12 @@ MuseScore {
                     pitchName: getTpcName(note.tpc)
                 };
                 if (note.ghost) noteData.ghost = true;
+                // Ties belong to single notes, not to the chord. Like ghost, only reported when present.
+                if (note.tieForward) {
+                    noteData.tieForward = true;
+                    base.isTie = true;
+                }
+                if (note.tieBack) noteData.tieBack = true;
                 base.notes.push(noteData);
             }
             var arts = element.articulations || [];

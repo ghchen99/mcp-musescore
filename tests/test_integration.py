@@ -175,6 +175,24 @@ def test_navigation_returns_lilypond_for_the_selection():
     run_with_mock(scenario, demo_score())
 
 
+def test_get_score_shows_ties():
+    score = patterned_score("AA")
+    last_of_bar_1, first_of_bar_2 = score.elements[0][3], score.elements[0][4]
+    last_of_bar_1["isTie"] = True
+    last_of_bar_1["notes"][0]["tieForward"] = True
+    first_of_bar_2["notes"][0]["tieBack"] = True
+
+    async def scenario(c, mock):
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert "c'4 c'4 c'4 c'4~ | % m.1" in text
+        analysis = (await c.call_tool("get_score", {"format": "json"})).data
+        bar_1, bar_2 = (m["elements"]["staff0"] for m in analysis["measures"])
+        assert bar_1[3]["isTie"] and bar_1[3]["notes"][0]["tieForward"]
+        assert bar_2[0]["notes"][0]["tieBack"] and not bar_2[0]["isTie"]
+
+    run_with_mock(scenario, score)
+
+
 def test_set_tempo_at_a_measure():
     async def scenario(c, mock):
         await c.call_tool("set_tempo", {"bpm": 90, "measure": 2})
