@@ -28,6 +28,26 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
         })
 
     @mcp.tool(
+        description=(
+            "Tie notes of the chord at the cursor to the same pitches in the next chord of that staff. "
+            "A tie joins two notes of the same pitch into one longer sound. Only pitches in both chords can be "
+            "tied: by default every such pitch is tied; pass pitches to tie only some of them (e.g. tie C and E "
+            "of C-E-G into C-E-A with pitches=[60, 64]). Afterwards the cursor is on the second chord, so calling "
+            "add_tie again continues a tie chain. Note that after add_note the cursor is already on the next "
+            "position: move back to the first note (e.g. with prev_element) before calling add_tie. "
+            "Fails without changing the score when no pitch can be tied, e.g. when the next element is a rest."
+        ),
+        tags={"notes"},
+    )
+    async def add_tie(
+        pitches: Annotated[Optional[List[int]], "MIDI pitches to tie (e.g. [60, 64]). Default: every pitch that is in both chords."] = None,
+    ):
+        params = {}
+        if pitches is not None:
+            params["pitches"] = pitches
+        return await client.request("addTie", params)
+
+    @mcp.tool(
         description="Add a rest at the current cursor position.",
         tags={"notes"},
     )

@@ -66,6 +66,7 @@ MuseScore {
 
             // Notes & Music
             case "addNote":                 return addNote(command.params);
+            case "addTie":                  return addTie(command.params);
             case "addRest":                 return addRest(command.params);
             case "addTuplet":               return addTuplet(command.params);
             case "addLyrics":               return addLyrics(command.params);
@@ -431,7 +432,7 @@ MuseScore {
         if (!params.sequence) return { error: "No sequence specified" };
 
         var validCommands = [
-            "getScore", "addNote", "addRest", "addTuplet", "appendMeasure", "deleteSelection",
+            "getScore", "addNote", "addTie", "addRest", "addTuplet", "appendMeasure", "deleteSelection",
             "getCursorInfo", "goToMeasure", "nextElement", "prevElement", "nextStaff", "prevStaff",
             "selectCurrentMeasure", "processSequence", "insertMeasure", "goToFinalMeasure",
             "goToBeginningOfScore", "setTimeSignature", "addLyrics", "addInstrument",
@@ -893,6 +894,123 @@ MuseScore {
             return { 
                 success: true, 
                 message: "Note added with pitch " + params.pitch,
+                currentSelection: selectionState
+            };
+        });
+    }
+
+    function chordPitches(chord) {
+        var pitches = [];
+        var notes = chord.notes || [];
+        for (var i = 0; i < notes.length; i++) pitches.push(notes[i].pitch);
+        return pitches;
+    }
+
+    function noteWithPitch(chord, pitch) {
+        var notes = chord.notes || [];
+        for (var i = 0; i < notes.length; i++) {
+            if (notes[i].pitch === pitch) return notes[i];
+        }
+        return null;
+    }
+
+    // Tie notes of the chord at the cursor to the same pitches in the next chord (same staff and voice).
+    // MuseScore's tie command does not refuse a note without a matching pitch in the next chord: it inserts
+    // a new tied note and overwrites the music after it. So only notes whose pitch is in both chords are
+    // selected. Afterwards the cursor is on the second chord, so another addTie continues a tie chain.
+    function addTie(params) {
+        params = params || {};
+
+        return executeWithUndo(function() {
+            syncStateToSelection();
+
+            var cursor = createCursor({ startTick: selectionState.startTick, startStaff: selectionState.startStaff });
+            var first = cursor.element;
+            var firstTick = cursor.tick;
+            if (!first || first.name !== "Chord") {
+                return { error: "No note or chord at the cursor to tie from" };
+            }
+            if (!cursor.next() || !cursor.element) {
+                return { error: "No note or chord after the cursor to tie to" };
+            }
+            var second = cursor.element;
+            var secondTick = cursor.tick;
+            var staffIdx = cursor.staffIdx;
+            if (second.name !== "Chord") {
+                return { error: "The element after the cursor is a rest: a tie needs a note of the same pitch" };
+            }
+
+            var firstPitches = chordPitches(first);
+            var secondPitches = chordPitches(second);
+            var requested = params.pitches && params.pitches.length ? params.pitches : null;
+            var candidates = requested || firstPitches;
+            var toTie = [];
+            var alreadyTied = [];
+            var skipped = [];
+            var seen = [];
+            for (var i = 0; i < candidates.length; i++) {
+                var pitch = candidates[i];
+                if (seen.indexOf(pitch) >= 0) continue;
+                seen.push(pitch);
+                var note = noteWithPitch(first, pitch);
+                if (!note || secondPitches.indexOf(pitch) < 0) {
+                    skipped.push(pitch);
+                } else if (note.tieForward) {
+                    alreadyTied.push(pitch);
+                } else {
+                    toTie.push(note);
+                }
+            }
+            if (toTie.length === 0 && alreadyTied.length === 0) {
+                return {
+                    error: "No pitch to tie: the chord at the cursor has [" + firstPitches.join(", ") +
+                        "], the next chord has [" + secondPitches.join(", ") + "]" +
+                        (requested ? ", requested [" + requested.join(", ") + "]" : "")
+                };
+            }
+
+            if (toTie.length > 0) {
+                curScore.selection.clear();
+                for (var t = 0; t < toTie.length; t++) curScore.selection.select(toTie[t], t > 0);
+                cmd("tie");
+            }
+
+            // Check the result on a fresh cursor; throwing rolls the whole action back
+            var check = createCursor({ startTick: firstTick, startStaff: staffIdx });
+            var tied = [];
+            for (var n = 0; n < toTie.length; n++) {
+                var tiedNote = noteWithPitch(check.element, toTie[n].pitch);
+                if (!tiedNote || !tiedNote.tieForward) {
+                    throw new Error("MuseScore did not tie pitch " + toTie[n].pitch);
+                }
+                tied.push(toTie[n].pitch);
+            }
+
+            // Move the cursor to the second chord. MuseScore applies a new selection only when the command ends,
+            // so reading it back here (syncStateToSelection) would still report the first chord. Build the cursor
+            // state directly instead, as nextElement does.
+            var secondTicks = second.actualDuration ? second.actualDuration.ticks : 0;
+            curScore.selection.clear();
+            curScore.selection.selectRange(secondTick, secondTick + secondTicks, staffIdx, staffIdx + 1);
+            var secondElement = processElement(createCursor({ startTick: secondTick, startStaff: staffIdx }).element);
+            secondElement.startTick = secondTick;
+            var staffMap = {};
+            staffMap["staff" + staffIdx] = [secondElement];
+            selectionState = {
+                startStaff: staffIdx,
+                endStaff: staffIdx + 1,
+                startTick: secondTick,
+                elements: staffMap,
+                totalDuration: secondTicks
+            };
+
+            return {
+                success: true,
+                message: "Tied " + (tied.length ? "pitch " + tied.join(", ") : "nothing new") +
+                    (alreadyTied.length ? " (already tied: " + alreadyTied.join(", ") + ")" : ""),
+                tiedPitches: tied,
+                alreadyTied: alreadyTied,
+                skippedPitches: skipped,
                 currentSelection: selectionState
             };
         });

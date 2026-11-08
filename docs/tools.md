@@ -30,6 +30,7 @@ Navigation results come back as LilyPond with measure, beat and staff metadata.
 
 ## Note & Rest Creation
 - `add_note(pitch, duration, advance_cursor_after_action, add_to_chord)` - Add notes with MIDI pitch. Sequential notes write a melody; set `add_to_chord=True` to stack a pitch on the current chord.
+- `add_tie(pitches)` - Tie notes of the chord at the cursor to the same pitches in the next chord. By default every pitch that is in both chords is tied; pass `pitches` to tie only some (e.g. `[60, 64]` ties C and E of C–E–G into C–E–A). The cursor then moves to the second chord, so calling it again continues a tie chain. Fails without changing the score when no pitch can be tied. `get_score` shows ties as `~` in LilyPond and as `tieForward`/`tieBack` per note in JSON.
 - `add_rest(duration, advance_cursor_after_action)` - Add rests
 - `add_tuplet(duration, ratio, advance_cursor_after_action)` - Add tuplets (triplets, etc.)
 - `add_lyrics(lyrics, verse)` - Add lyric syllables to consecutive notes from the cursor

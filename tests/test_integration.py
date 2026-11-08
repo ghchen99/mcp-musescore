@@ -193,6 +193,92 @@ def test_get_score_shows_ties():
     run_with_mock(scenario, score)
 
 
+def chord_score(*chords):
+    """Mock score with one quarter-note chord per entry (a tuple of pitches); the cursor on the first chord."""
+    mock = MockMuseScore(MockScore(measures=1))
+    for pitches in chords:
+        for i, pitch in enumerate(pitches):
+            mock.process_command({"action": "addNote", "params": {
+                "pitch": pitch, "duration": QUARTER, "advanceCursorAfterAction": True, "addToChord": i > 0}})
+    mock.score.cursor_tick = 0
+    return mock.score
+
+
+def note_ties(score, index):
+    """{pitch: (tieForward, tieBack)} for the element at `index` on staff 0."""
+    element = score.elements[0][index]
+    return {n["pitchMidi"]: (bool(n.get("tieForward")), bool(n.get("tieBack"))) for n in element["notes"]}
+
+
+def test_add_tie_ties_only_the_given_pitches_of_a_chord():
+    async def scenario(c, mock):
+        result = (await c.call_tool("add_tie", {"pitches": [60, 64]})).data
+        assert (result["tiedPitches"], result["skippedPitches"]) == ([60, 64], [])
+        assert mock.commands[-1] == {"action": "addTie", "params": {"pitches": [60, 64]}}
+        assert note_ties(mock.score, 0) == {60: (True, False), 64: (True, False), 67: (False, False)}
+        assert note_ties(mock.score, 1) == {60: (False, True), 64: (False, True), 69: (False, False)}
+        assert mock.score.cursor_tick == 480  # on the second chord
+        assert result["currentSelection"]["startTick"] == 480  # and the reply says so
+
+    run_with_mock(scenario, chord_score((60, 64, 67), (60, 64, 69)))
+
+
+def test_add_tie_by_default_ties_every_pitch_in_both_chords():
+    async def scenario(c, mock):
+        result = (await c.call_tool("add_tie", {})).data
+        assert (result["tiedPitches"], result["skippedPitches"]) == ([60, 64], [67])
+        assert mock.commands[-1] == {"action": "addTie", "params": {}}
+
+    run_with_mock(scenario, chord_score((60, 64, 67), (60, 64, 69)))
+
+
+def test_add_tie_twice_makes_a_tie_chain():
+    async def scenario(c, mock):
+        await c.call_tool("add_tie", {})
+        await c.call_tool("add_tie", {})
+        assert [note_ties(mock.score, i)[60] for i in range(3)] == [(True, False), (True, True), (False, True)]
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert "c'4~ c'4~ c'4" in text
+
+    run_with_mock(scenario, chord_score((60,), (60,), (60,)))
+
+
+def test_add_tie_errors_leave_the_score_unchanged():
+    async def scenario(c, mock):
+        no_match = await c.call_tool("add_tie", {}, raise_on_error=False)
+        assert no_match.is_error
+        assert "No pitch to tie: the chord at the cursor has [60], the next chord has [62]" in str(no_match.content)
+        not_in_chord = await c.call_tool("add_tie", {"pitches": [62]}, raise_on_error=False)
+        assert not_in_chord.is_error and "requested [62]" in str(not_in_chord.content)
+        mock.score.cursor_tick = 480
+        before_rest = await c.call_tool("add_tie", {}, raise_on_error=False)
+        assert before_rest.is_error and "rest" in str(before_rest.content)
+        mock.score.cursor_tick = 1440
+        nothing_at_cursor = await c.call_tool("add_tie", {}, raise_on_error=False)
+        assert nothing_at_cursor.is_error and "No note or chord at the cursor" in str(nothing_at_cursor.content)
+        assert not mock.history  # nothing was changed
+        assert not any(e.get("isTie") for e in mock.score.elements[0])
+
+    score = chord_score((60,), (62,))
+    mock = MockMuseScore(score)
+    mock.score.cursor_tick = 960
+    mock.process_command({"action": "addRest", "params": {"duration": QUARTER, "advanceCursorAfterAction": True}})
+    mock.score.cursor_tick = 0
+    run_with_mock(scenario, score)
+
+
+def test_add_tie_in_a_sequence():
+    async def scenario(c, mock):
+        reply = (await c.call_tool("processSequence", {"sequence": [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            {"action": "addTie", "params": {"pitches": [60]}},
+        ]})).data
+        assert reply["result"]["success"]  # processSequence returns the plugin's reply envelope
+        assert note_ties(mock.score, 0)[60] == (True, False)
+
+    run_with_mock(scenario, chord_score((60,), (60,)))
+
+
 def test_set_tempo_at_a_measure():
     async def scenario(c, mock):
         await c.call_tool("set_tempo", {"bpm": 90, "measure": 2})

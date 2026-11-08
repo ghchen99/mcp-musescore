@@ -8,6 +8,7 @@ __all__ = [
     "addNoteAction", 
     "addRestAction",
     "addTupletAction",
+    "addTieAction",
     "addLyricsAction",
     "addInstrumentAction",
     "setStaffMuteAction",
