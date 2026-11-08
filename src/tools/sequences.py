@@ -14,7 +14,7 @@ def setup_sequence_tools(mcp, client: MuseScoreClient):
             "Run several score commands in order in a single call. "
             'Each item is {"action": <name>, "params": {...}}, using the same camelCase action names '
             'and parameters as the plugin (e.g. "addNote" with pitch, duration, advanceCursorAfterAction). '
-            "Allowed actions: getScore, addNote, addTie, addRest, addTuplet, appendMeasure, deleteSelection, "
+            "Allowed actions: getScore, addNote, addTie, addTiedNote, addRest, addTuplet, appendMeasure, deleteSelection, "
             "getCursorInfo, goToMeasure, nextElement, prevElement, nextStaff, prevStaff, "
             "selectCurrentMeasure, insertMeasure, goToFinalMeasure, goToBeginningOfScore, "
             "setTimeSignature, addLyrics, addInstrument, setStaffMute, setInstrumentSound, setTempo, "

@@ -279,6 +279,65 @@ def test_add_tie_in_a_sequence():
     run_with_mock(scenario, chord_score((60,), (60,)))
 
 
+EIGHTH = {"numerator": 1, "denominator": 8}
+
+
+def test_add_tied_note_after_add_note_makes_a_tie_chain():
+    async def scenario(c, mock):
+        await c.call_tool("add_note", {"pitch": 60, "duration": QUARTER})
+        first = (await c.call_tool("add_tied_note", {"duration": EIGHTH})).data
+        await c.call_tool("add_tied_note", {"duration": EIGHTH})
+        assert first["tiedPitches"] == [60] and first["currentSelection"]["startTick"] == 720
+        assert mock.commands[-1] == {"action": "addTiedNote", "params": {
+            "duration": EIGHTH, "advanceCursorAfterAction": True}}
+        assert [note_ties(mock.score, i)[60] for i in range(3)] == [(True, False), (True, True), (False, True)]
+        assert mock.score.cursor_tick == 960
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert "c'4~ c'8~ c'8" in text
+
+    run_with_mock(scenario)
+
+
+def test_add_tied_note_partial_chord_with_an_extra_pitch():
+    async def scenario(c, mock):
+        mock.score.cursor_tick = 480  # after the C-E-G chord
+        result = (await c.call_tool("add_tied_note", {
+            "duration": QUARTER, "pitches": [60, 64], "extra_pitches": [69]})).data
+        assert result["tiedPitches"] == [60, 64]
+        assert mock.commands[-1]["params"] == {
+            "duration": QUARTER, "advanceCursorAfterAction": True, "pitches": [60, 64], "extraPitches": [69]}
+        assert note_ties(mock.score, 0) == {60: (True, False), 64: (True, False), 67: (False, False)}
+        assert note_ties(mock.score, 1) == {60: (False, True), 64: (False, True), 69: (False, False)}
+
+    run_with_mock(scenario, chord_score((60, 64, 67)))
+
+
+def test_add_tied_note_errors_leave_the_score_unchanged():
+    async def scenario(c, mock):
+        nothing_before = await c.call_tool("add_tied_note", {"duration": QUARTER}, raise_on_error=False)
+        assert nothing_before.is_error and "No note or chord before the cursor" in str(nothing_before.content)
+        mock.score.cursor_tick = 480
+        wrong_pitch = await c.call_tool("add_tied_note", {"duration": QUARTER, "pitches": [62]}, raise_on_error=False)
+        assert wrong_pitch.is_error
+        assert "Pitch 62 is not in the chord before the cursor [60]" in str(wrong_pitch.content)
+        assert not mock.history  # nothing was changed
+        assert len(mock.score.elements[0]) == 1
+
+    run_with_mock(scenario, chord_score((60,)))
+
+
+def test_add_tied_note_in_a_sequence():
+    async def scenario(c, mock):
+        reply = (await c.call_tool("processSequence", {"sequence": [
+            {"action": "addNote", "params": {"pitch": 67, "duration": QUARTER, "advanceCursorAfterAction": True}},
+            {"action": "addTiedNote", "params": {"duration": QUARTER, "advanceCursorAfterAction": True}},
+        ]})).data
+        assert reply["result"]["success"]
+        assert [note_ties(mock.score, i)[67] for i in range(2)] == [(True, False), (False, True)]
+
+    run_with_mock(scenario)
+
+
 def test_set_tempo_at_a_measure():
     async def scenario(c, mock):
         await c.call_tool("set_tempo", {"bpm": 90, "measure": 2})

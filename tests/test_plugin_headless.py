@@ -395,3 +395,80 @@ def test_add_tie_errors_leave_the_music_unchanged(tmp_path):
     (bar,) = bars_of(score)
     assert [(e["name"], e["durationTicks"]) for e in bar] == [("Chord", 480)] * 3 + [("Rest", 480)]
     assert not any(e["isTie"] for e in bar)
+
+
+REST_BAR = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
+QUARTER, EIGHTH, HALF = ({"numerator": 1, "denominator": d} for d in (4, 8, 2))
+
+
+def add_note(pitch, duration=QUARTER, advance=True, add_to_chord=False):
+    return {"action": "addNote", "params": {
+        "pitch": pitch, "duration": duration, "advanceCursorAfterAction": advance, "addToChord": add_to_chord}}
+
+
+def add_tied_note(duration, advance=True, **params):
+    return {"action": "addTiedNote", "params": {"duration": duration, "advanceCursorAfterAction": advance, **params}}
+
+
+def chord_c_e_g():
+    return [add_note(60, advance=False), add_note(64, advance=False, add_to_chord=True),
+            add_note(67, add_to_chord=True)]
+
+
+def test_add_tied_note_chain_after_add_note(tmp_path):
+    results = run([add_note(60), add_tied_note(EIGHTH), add_tied_note(EIGHTH),
+                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}], tie_score(tmp_path, REST_BAR, REST_BAR))
+    (bar,) = bars_of(results[-1]["result"])
+    chords = [e for e in bar if e["name"] == "Chord"]
+    assert [(e["durationTicks"], ties(e)[60]) for e in chords] == [(480, (True, False)), (240, (True, True)), (240, (False, True))]
+    assert [r["result"]["currentSelection"]["startTick"] for r in results[1:3]] == [720, 960]  # after each new note
+
+
+def test_add_tied_note_partial_chord_with_an_extra_pitch(tmp_path):
+    """C-E-G into C-E-A: the A is written with the chord, before the tie (see the next test for why)."""
+    results = run(chord_c_e_g() + [add_tied_note(QUARTER, pitches=[60, 64], extraPitches=[69]),
+                                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}],
+                  tie_score(tmp_path, REST_BAR, REST_BAR))
+    added = results[-2]["result"]
+    assert added["tiedPitches"] == [60, 64] and added["currentSelection"]["startTick"] == 960
+    (bar,) = bars_of(results[-1]["result"])
+    assert ties(bar[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
+    assert ties(bar[1]) == {60: (False, True), 64: (False, True), 69: (False, False)}
+
+
+def test_add_to_chord_after_a_tie_extends_the_tied_chord(tmp_path):
+    """MuseScore treats tied chords as one: a pitch added to the second chord is added, tied, to the first too.
+
+    This is why add_tied_note takes extraPitches, and why add_tie should be used once both chords are complete.
+    """
+    results = run(chord_c_e_g() + [add_tied_note(QUARTER, advance=False, pitches=[60, 64]),
+                                   add_note(69, add_to_chord=True),
+                                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}],
+                  tie_score(tmp_path, REST_BAR, REST_BAR))
+    (bar,) = bars_of(results[-1]["result"])
+    assert ties(bar[0]) == {60: (True, False), 64: (True, False), 67: (False, False), 69: (True, False)}
+    assert ties(bar[1]) == {60: (False, True), 64: (False, True), 69: (False, True)}
+
+
+def test_add_tied_note_longer_than_the_rest_of_the_bar(tmp_path):
+    """MuseScore splits the note at the barline into tied notes; the cursor skips both parts."""
+    results = run([add_note(62), add_note(62), add_note(60), add_tied_note(HALF), add_note(64),
+                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}], tie_score(tmp_path, REST_BAR, REST_BAR))
+    assert results[3]["result"]["currentSelection"]["startTick"] == 2400
+    bar_1, bar_2 = bars_of(results[-1]["result"])
+    assert [(e["startTick"], ties(e)) for e in bar_1[2:]] == [(960, {60: (True, False)}), (1440, {60: (True, True)})]
+    assert [(e["startTick"], ties(e)) for e in bar_2[:2]] == [(1920, {60: (False, True)}), (2400, {64: (False, False)})]
+
+
+def test_add_tied_note_errors_write_nothing(tmp_path):
+    rest = {"action": "addRest", "params": {"duration": QUARTER, "advanceCursorAfterAction": True}}
+    results = run([add_tied_note(QUARTER),  # nothing before the cursor
+                   add_note(60), rest, add_tied_note(QUARTER),  # a rest before the cursor
+                   add_note(64), add_tied_note(QUARTER, pitches=[62]),  # D is not in the chord before
+                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}], tie_score(tmp_path, REST_BAR, REST_BAR))
+    errors = [r["result"].get("error", "") for r in results if r["action"] == "addTiedNote"]
+    assert errors[0] == errors[1] == "No note or chord before the cursor to tie from"
+    assert errors[2].startswith("Pitch 62 is not in the chord before the cursor [64]")
+    (bar,) = bars_of(results[-1]["result"])
+    assert [(e["name"], e["durationTicks"]) for e in bar] == [("Chord", 480), ("Rest", 480), ("Chord", 480), ("Rest", 480)]
+    assert not any(e["isTie"] for e in bar)

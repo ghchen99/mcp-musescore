@@ -24,7 +24,7 @@ from websockets.asyncio.server import serve
 WHOLE_NOTE_TICKS = 1920
 
 SEQUENCE_ACTIONS = {
-    "getScore", "addNote", "addTie", "addRest", "addTuplet", "appendMeasure", "deleteSelection",
+    "getScore", "addNote", "addTie", "addTiedNote", "addRest", "addTuplet", "appendMeasure", "deleteSelection",
     "getCursorInfo", "goToMeasure", "nextElement", "prevElement", "nextStaff", "prevStaff",
     "selectCurrentMeasure", "processSequence", "insertMeasure", "goToFinalMeasure",
     "goToBeginningOfScore", "setTimeSignature", "addLyrics", "addInstrument",
@@ -386,6 +386,49 @@ class MockMuseScore:
             "alreadyTied": already_tied,
             "skippedPitches": skipped,
             "currentSelection": self._placed_selection(second),
+        }
+
+    def _do_addTiedNote(self, params):
+        """Write a chord at the cursor tied to the chord before it, with the plugin's rules (no barline split)."""
+        if (err := self._missing(params, ["duration", "advanceCursorAfterAction"])):
+            return err
+        duration = params["duration"]
+        if not duration.get("numerator") or not duration.get("denominator"):
+            return {"error": "Duration must be specified as { numerator: int, denominator: int }"}
+        score = self.score
+        earlier = [e for e in score.elements[score.cursor_staff] if e["startTick"] < score.cursor_tick]
+        previous = max(earlier, key=lambda e: e["startTick"]) if earlier else None
+        if previous is None or previous["name"] != "Chord":
+            return {"error": "No note or chord before the cursor to tie from"}
+
+        previous_pitches = [n["pitchMidi"] for n in previous["notes"]]
+        pitches = list(dict.fromkeys(params.get("pitches") or previous_pitches))
+        missing = [p for p in pitches if p not in previous_pitches]
+        if missing:
+            return {"error": f"Pitch {', '.join(map(str, missing))} is not in the chord before the cursor "
+                             f"[{', '.join(map(str, previous_pitches))}]: a tie needs the same pitch"}
+        extra = [p for p in dict.fromkeys(params.get("extraPitches") or []) if p not in pitches]
+
+        self._mutating()
+        notes = []
+        for pitch in pitches + extra:
+            note = {"pitchMidi": pitch, "tpc": TPC_BY_PITCH_CLASS[pitch % 12], "pitchName": NOTE_NAMES[pitch % 12]}
+            if pitch in pitches:
+                note["tieBack"] = True
+                next(n for n in previous["notes"] if n["pitchMidi"] == pitch)["tieForward"] = True
+            notes.append(note)
+        previous["isTie"] = True
+        chord = {"name": "Chord", "durationTicks": _ticks(duration), "isTie": False, "isTuplet": False, "notes": notes}
+        self._place(chord, params["advanceCursorAfterAction"])
+        written = pitches + extra
+        message = f"Added tied {'chord' if len(written) > 1 else 'note'} {', '.join(map(str, written))}"
+        if extra:
+            message += f" (tied: {', '.join(map(str, pitches))})"
+        return {
+            "success": True,
+            "message": message,
+            "tiedPitches": pitches,
+            "currentSelection": self.score.cursor_selection(),
         }
 
     def _do_addRest(self, params):
