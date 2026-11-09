@@ -59,9 +59,9 @@ Errors use:
 
 - Plugin source: `musescore-mcp-websocket.qml`.
 - Python entry point: `server.py`.
-- Dependency declaration: `requirements.txt`.
-- The current source imports `fastmcp` (standalone FastMCP 4, declared as `fastmcp>=4,<5` in `requirements.txt`).
-- The upstream project documents MuseScore 3.x and 4.x, but this integration was verified with MuseScore Studio 4.7.4 on macOS. Treat other versions as needing a bridge check.
+- Dependency declaration: `pyproject.toml`, with the exact versions in `uv.lock`. `requirements.txt` is generated from `uv.lock` for setups without uv.
+- The current source imports `fastmcp` (standalone FastMCP 4, declared as `fastmcp>=4.1,<5` in `pyproject.toml`).
+- Supported MuseScore versions: 4.7 or newer. MuseScore 3 is not supported. The full test suite runs on 4.7.5 and 4.7.6; this integration was first verified with MuseScore Studio 4.7.4 on macOS.
 
 ## Failure diagnosis
 
