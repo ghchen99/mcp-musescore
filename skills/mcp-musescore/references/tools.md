@@ -39,6 +39,8 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 | MCP tool | Parameters | What it does |
 |---|---|---|
 | `add_note` | `pitch: int = 64`, `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a note at the current cursor position. |
+| `add_tie` | `pitches: list[int] \| None = None` | Ties notes of the chord at the cursor to the same pitches in the next chord (default: every pitch in both chords) and moves the cursor to the second chord. After `add_note` the cursor is on the next position, so move back first. Write both chords completely before tying: a pitch added later with `add_to_chord` is also added, tied, to the first chord. Fails without changing the score when no pitch can be tied. |
+| `add_tied_note` | `duration: dict`, `pitches: list[int] \| None = None`, `extra_pitches: list[int] \| None = None`, `advance_cursor_after_action: bool = true` | Writes the next note or chord tied to the chord before the cursor, like `+` in note input. Default: every pitch of the chord before; `extra_pitches` are added untied (C-E-G into C-E-A: `pitches=[60, 64], extra_pitches=[69]`). Notes longer than the rest of the bar are split into tied notes. Fails without changing the score when there is no note before the cursor or a pitch is not in it. |
 | `add_rest` | `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a rest at the current cursor position. |
 | `add_tuplet` | `duration: dict = {numerator: 1, denominator: 4}`, `ratio: dict = {numerator: 3, denominator: 2}`, `advance_cursor_after_action: bool = true` | Adds a tuplet; the default ratio represents a triplet. |
 | `add_lyrics` | `lyrics: list[str]`, `verse: int = 0` | Adds syllables to consecutive notes from the current cursor. Verse is zero-based. |
@@ -127,7 +129,7 @@ File edits find the open score's file by its score ID. If the open tab is a part
 The currently accepted inner actions are:
 
 ```text
-getScore, addNote, addRest, addTuplet, appendMeasure, deleteSelection,
+getScore, addNote, addTie, addTiedNote, addRest, addTuplet, appendMeasure, deleteSelection,
 getCursorInfo, goToMeasure, nextElement, prevElement, nextStaff, prevStaff,
 selectCurrentMeasure, processSequence, insertMeasure, goToFinalMeasure,
 goToBeginningOfScore, setTimeSignature, addLyrics, addInstrument,

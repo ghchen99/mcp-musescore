@@ -41,6 +41,27 @@ class addTupletAction(TypedDict):
     params: addTupletParams
 
 
+class addTieParams(TypedDict):
+    pitches: NotRequired[List[int]]
+
+
+class addTieAction(TypedDict):
+    action: Literal["addTie"]
+    params: addTieParams
+
+
+class addTiedNoteParams(TypedDict):
+    duration: Dict[Literal["numerator", "denominator"], int]
+    advanceCursorAfterAction: bool
+    pitches: NotRequired[List[int]]
+    extraPitches: NotRequired[List[int]]
+
+
+class addTiedNoteAction(TypedDict):
+    action: Literal["addTiedNote"]
+    params: addTiedNoteParams
+
+
 class addLyricsParams(TypedDict):
     lyrics: List[str]
     verse: int
@@ -464,7 +485,7 @@ class beamOverRestsAction(TypedDict):
 
 
 ActionSequence = List[
-    getScoreAction | addNoteAction | addRestAction | addTupletAction | 
+    getScoreAction | addNoteAction | addTieAction | addTiedNoteAction | addRestAction | addTupletAction |
     addLyricsAction | addInstrumentAction | setStaffMuteAction | 
     setInstrumentSoundAction | appendMeasureAction | deleteSelectionAction | 
     getCursorInfoAction | goToMeasureAction | nextElementAction | 

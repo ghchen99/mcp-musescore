@@ -269,3 +269,206 @@ def test_delete_measures_inside_a_multi_measure_rest(tmp_path):
     ], source, out=out_dir / "out.mscz"))
     assert results["deleteMeasures"]["numMeasures"] == 4
     assert results["getScore"]["analysis"]["numMeasures"] == 4
+
+
+
+TPC_BY_PITCH_CLASS = [14, 21, 16, 23, 18, 13, 20, 15, 22, 17, 24, 19]
+
+
+def xml_note(pitch, ahead=None, back=None):
+    """A note, optionally tied to the note `ahead` or from the note `back` (fractions of a whole, e.g. "1/4")."""
+    ties = ""
+    if ahead:
+        ties += f'<Spanner type="Tie"><Tie/><next><location><fractions>{ahead}</fractions></location></next></Spanner>'
+    if back:
+        ties += f'<Spanner type="Tie"><prev><location><fractions>-{back}</fractions></location></prev></Spanner>'
+    return f"<Note>{ties}<pitch>{pitch}</pitch><tpc>{TPC_BY_PITCH_CLASS[pitch % 12]}</tpc></Note>"
+
+
+def xml_chord(duration, *notes):
+    """A chord of `notes` (xml_note strings, or plain pitches)."""
+    notes = [n if isinstance(n, str) else xml_note(n) for n in notes]
+    return f"<Chord><durationType>{duration}</durationType>{''.join(notes)}</Chord>"
+
+
+def tie_score(tmp_path, *bars):
+    """A one-staff 4/4 score file with the given bars (voice-1 contents)."""
+    from tests.test_rolls import write_score
+
+    return write_score(tmp_path, list(bars))
+
+
+def bars_of(get_score_result):
+    """The elements of every measure in a getScore result, in time order."""
+    return [
+        sorted(m["elements"]["staff0"], key=lambda e: e["startTick"])
+        for m in get_score_result["analysis"]["measures"]
+    ]
+
+
+def ties(element):
+    """{pitch: (tieForward, tieBack)} for a chord element from getScore."""
+    return {n["pitchMidi"]: (n.get("tieForward", False), n.get("tieBack", False)) for n in element["notes"]}
+
+
+def test_get_score_reports_ties_per_note(tmp_path):
+    """Ties belong to notes. getScore used to read them from the chord, so isTie was always false."""
+    # Bar 1: C-E-G with only C and E tied into C-E-A, then a D tied across the barline into bar 2
+    source = tie_score(
+        tmp_path,
+        xml_chord("quarter", xml_note(60, ahead="1/4"), xml_note(64, ahead="1/4"), 67)
+        + xml_chord("quarter", xml_note(60, back="1/4"), xml_note(64, back="1/4"), 69)
+        + xml_chord("half", xml_note(62, ahead="1/2")),
+        xml_chord("whole", xml_note(62, back="1/2")),
+    )
+    (entry,) = run([{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}], source)
+    bar_1, bar_2 = bars_of(entry["result"])
+
+    assert ties(bar_1[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
+    assert ties(bar_1[1]) == {60: (False, True), 64: (False, True), 69: (False, False)}
+    assert ties(bar_1[2]) == {62: (True, False)}
+    assert ties(bar_2[0]) == {62: (False, True)}
+    assert [e["isTie"] for e in bar_1 + bar_2] == [True, False, True, False]
+
+
+def test_add_tie_partial_chord_then_across_the_barline(tmp_path):
+    source = tie_score(
+        tmp_path,
+        xml_chord("quarter", 60, 64, 67) + xml_chord("quarter", 60, 64, 69) + xml_chord("half", 62),
+        xml_chord("whole", 62),
+    )
+    results = run([
+        {"action": "addTie", "params": {"pitches": [60, 64]}},  # the cursor starts on the first chord
+        {"action": "nextElement", "params": {}},  # addTie left the cursor on C-E-A; move on to the D
+        {"action": "addTie", "params": {}},
+        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}},
+    ], source)
+    partial, _, across, score = (r["result"] for r in results)
+    assert (partial["tiedPitches"], partial["skippedPitches"]) == ([60, 64], [])
+    assert across["tiedPitches"] == [62]
+    bar_1, bar_2 = bars_of(score)
+    assert ties(bar_1[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
+    assert ties(bar_1[1]) == {60: (False, True), 64: (False, True), 69: (False, False)}
+    assert ties(bar_1[2]) == {62: (True, False)} and ties(bar_2[0]) == {62: (False, True)}
+    assert [e["durationTicks"] for e in bar_1 + bar_2] == [480, 480, 960, 1920]  # no notes inserted
+
+
+def test_add_tie_default_pitches_skip_the_ones_not_in_the_next_chord(tmp_path):
+    source = tie_score(tmp_path, xml_chord("quarter", 60, 64, 67) + xml_chord("quarter", 60, 64, 69)
+                       + xml_chord("half", 62))
+    added, score = (r["result"] for r in run([
+        {"action": "addTie", "params": {}},
+        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}},
+    ], source))
+    assert (added["tiedPitches"], added["skippedPitches"]) == ([60, 64], [67])
+    (bar,) = bars_of(score)
+    assert ties(bar[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
+
+
+def test_add_tie_chain(tmp_path):
+    source = tie_score(tmp_path, xml_chord("quarter", 60) * 4)
+    results = run([{"action": "addTie", "params": {}}] * 3
+                  + [{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}], source)
+    (bar,) = bars_of(results[-1]["result"])
+    assert [ties(e)[60] for e in bar] == [(True, False), (True, True), (True, True), (False, True)]
+    # Each addTie reports the chord it moved the cursor to: the one it tied to
+    assert [r["result"]["currentSelection"]["startTick"] for r in results[:3]] == [480, 960, 1440]
+    (reported,) = results[0]["result"]["currentSelection"]["elements"]["staff0"]
+    assert ties(reported) == {60: (False, True)}  # the reported chord already shows its tie back
+
+
+def test_add_tie_errors_leave_the_music_unchanged(tmp_path):
+    """MuseScore's tie command would insert a new tied note here and overwrite the next one."""
+    rest = "<Rest><durationType>quarter</durationType></Rest>"
+    source = tie_score(tmp_path, xml_chord("quarter", 60) + xml_chord("quarter", 62) + xml_chord("quarter", 64) + rest)
+    results = run([
+        {"action": "addTie", "params": {}},  # C, then D: no matching pitch
+        {"action": "addTie", "params": {"pitches": [62]}},  # D is not in the chord at the cursor
+        {"action": "nextElement", "params": {"numElements": 2}},
+        {"action": "addTie", "params": {}},  # E, then a rest
+        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}},
+    ], source)
+    no_match, not_in_chord, _, before_rest, score = (r["result"] for r in results)
+    assert no_match["error"].startswith("No pitch to tie: the chord at the cursor has [60], the next chord has [62]")
+    assert "requested [62]" in not_in_chord["error"]
+    assert "rest" in before_rest["error"]
+    (bar,) = bars_of(score)
+    assert [(e["name"], e["durationTicks"]) for e in bar] == [("Chord", 480)] * 3 + [("Rest", 480)]
+    assert not any(e["isTie"] for e in bar)
+
+
+REST_BAR = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
+QUARTER, EIGHTH, HALF = ({"numerator": 1, "denominator": d} for d in (4, 8, 2))
+
+
+def add_note(pitch, duration=QUARTER, advance=True, add_to_chord=False):
+    return {"action": "addNote", "params": {
+        "pitch": pitch, "duration": duration, "advanceCursorAfterAction": advance, "addToChord": add_to_chord}}
+
+
+def add_tied_note(duration, advance=True, **params):
+    return {"action": "addTiedNote", "params": {"duration": duration, "advanceCursorAfterAction": advance, **params}}
+
+
+def chord_c_e_g():
+    return [add_note(60, advance=False), add_note(64, advance=False, add_to_chord=True),
+            add_note(67, add_to_chord=True)]
+
+
+def test_add_tied_note_chain_after_add_note(tmp_path):
+    results = run([add_note(60), add_tied_note(EIGHTH), add_tied_note(EIGHTH),
+                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}], tie_score(tmp_path, REST_BAR, REST_BAR))
+    (bar,) = bars_of(results[-1]["result"])
+    chords = [e for e in bar if e["name"] == "Chord"]
+    assert [(e["durationTicks"], ties(e)[60]) for e in chords] == [(480, (True, False)), (240, (True, True)), (240, (False, True))]
+    assert [r["result"]["currentSelection"]["startTick"] for r in results[1:3]] == [720, 960]  # after each new note
+
+
+def test_add_tied_note_partial_chord_with_an_extra_pitch(tmp_path):
+    """C-E-G into C-E-A: the A is written with the chord, before the tie (see the next test for why)."""
+    results = run(chord_c_e_g() + [add_tied_note(QUARTER, pitches=[60, 64], extraPitches=[69]),
+                                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}],
+                  tie_score(tmp_path, REST_BAR, REST_BAR))
+    added = results[-2]["result"]
+    assert added["tiedPitches"] == [60, 64] and added["currentSelection"]["startTick"] == 960
+    (bar,) = bars_of(results[-1]["result"])
+    assert ties(bar[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
+    assert ties(bar[1]) == {60: (False, True), 64: (False, True), 69: (False, False)}
+
+
+def test_add_to_chord_after_a_tie_extends_the_tied_chord(tmp_path):
+    """MuseScore treats tied chords as one: a pitch added to the second chord is added, tied, to the first too.
+
+    This is why add_tied_note takes extraPitches, and why add_tie should be used once both chords are complete.
+    """
+    results = run(chord_c_e_g() + [add_tied_note(QUARTER, advance=False, pitches=[60, 64]),
+                                   add_note(69, add_to_chord=True),
+                                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}],
+                  tie_score(tmp_path, REST_BAR, REST_BAR))
+    (bar,) = bars_of(results[-1]["result"])
+    assert ties(bar[0]) == {60: (True, False), 64: (True, False), 67: (False, False), 69: (True, False)}
+    assert ties(bar[1]) == {60: (False, True), 64: (False, True), 69: (False, True)}
+
+
+def test_add_tied_note_longer_than_the_rest_of_the_bar(tmp_path):
+    """MuseScore splits the note at the barline into tied notes; the cursor skips both parts."""
+    results = run([add_note(62), add_note(62), add_note(60), add_tied_note(HALF), add_note(64),
+                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}], tie_score(tmp_path, REST_BAR, REST_BAR))
+    assert results[3]["result"]["currentSelection"]["startTick"] == 2400
+    bar_1, bar_2 = bars_of(results[-1]["result"])
+    assert [(e["startTick"], ties(e)) for e in bar_1[2:]] == [(960, {60: (True, False)}), (1440, {60: (True, True)})]
+    assert [(e["startTick"], ties(e)) for e in bar_2[:2]] == [(1920, {60: (False, True)}), (2400, {64: (False, False)})]
+
+
+def test_add_tied_note_errors_write_nothing(tmp_path):
+    rest = {"action": "addRest", "params": {"duration": QUARTER, "advanceCursorAfterAction": True}}
+    results = run([add_tied_note(QUARTER),  # nothing before the cursor
+                   add_note(60), rest, add_tied_note(QUARTER),  # a rest before the cursor
+                   add_note(64), add_tied_note(QUARTER, pitches=[62]),  # D is not in the chord before
+                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}], tie_score(tmp_path, REST_BAR, REST_BAR))
+    errors = [r["result"].get("error", "") for r in results if r["action"] == "addTiedNote"]
+    assert errors[0] == errors[1] == "No note or chord before the cursor to tie from"
+    assert errors[2].startswith("Pitch 62 is not in the chord before the cursor [64]")
+    (bar,) = bars_of(results[-1]["result"])
+    assert [(e["name"], e["durationTicks"]) for e in bar] == [("Chord", 480), ("Rest", 480), ("Chord", 480), ("Rest", 480)]
+    assert not any(e["isTie"] for e in bar)

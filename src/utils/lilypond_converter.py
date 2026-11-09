@@ -134,18 +134,26 @@ def process_element(element: Dict[str, Any]) -> str:
                 return f"r{lily_duration}{lyric_str}"
             
             lily_notes = []
+            tied = []  # per note: tied to the next note (written as "~" in LilyPond)
             for note in notes:
                 pitch = note.get("pitchMidi")
                 tpc = note.get("tpc")
                 if pitch is not None:
                     lily_notes.append(midi_to_lilypond_pitch(pitch, tpc))
-            
+                    tied.append(bool(note.get("tieForward")))
+
             if not lily_notes:
                 return f"r{lily_duration}{lyric_str}"
             elif len(lily_notes) == 1:
-                return f"{lily_notes[0]}{lily_duration}{lyric_str}"
-            else:
+                tie = "~" if tied[0] else ""
+                return f"{lily_notes[0]}{lily_duration}{tie}{lyric_str}"
+            elif all(tied):
+                # Every note tied: one "~" after the whole chord
                 joined_notes = " ".join(lily_notes)
+                return f"<{joined_notes}>{lily_duration}~{lyric_str}"
+            else:
+                # Some or no notes tied: "~" after each tied pitch inside the chord
+                joined_notes = " ".join(p + ("~" if t else "") for p, t in zip(lily_notes, tied))
                 return f"<{joined_notes}>{lily_duration}{lyric_str}"
         else:
             return ""  # Ignore other elements without crashing
