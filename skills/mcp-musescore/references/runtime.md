@@ -2,16 +2,17 @@
 
 ## Tested dependency line
 
-The repository currently declares:
+`pyproject.toml` declares the runtime dependencies, and `uv.lock` pins the exact tested versions:
 
 ```text
-fastmcp>=4,<5
-websockets
+fastmcp>=4.1,<5
+pydantic>=2.12
+websockets>=14
 ```
 
 `server.py` imports `from fastmcp import FastMCP` (standalone FastMCP 4, built on MCP SDK v2).
 
-Keep the Python environment isolated in the project venv. Do not put secrets in the skill or client entry.
+Keep the Python environment isolated in the project venv. Create it with `uv sync` in the repository: uv puts it in `.venv`, where the start and check scripts look for it. Do not put secrets in the skill or client entry.
 
 ## Start script
 

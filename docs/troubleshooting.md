@@ -37,7 +37,6 @@
 - **Claude follows old instructions**: upload the skill again after changing it
 
 ## API Limitations
-- **Lyrics**: Only first verse supported in MuseScore 3.x plugin API
 - **Selection persistence**: Some operations may affect current selection
 - **Measure-repeat signs**: not available to plugins, hence the [file edit](drum-charts.md#how-measure-repeat-signs-are-applied)
 - **Voltas**: no dedicated plugin API; `add_volta` is experimental

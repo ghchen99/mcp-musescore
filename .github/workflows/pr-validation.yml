@@ -14,19 +14,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
-          cache: pip
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest
+        run: uv sync --locked
+
+      - name: requirements.txt matches uv.lock
+        run: |
+          uv export --no-dev --no-hashes -o requirements.txt
+          git diff --exit-code requirements.txt
 
       - name: Server imports
-        run: python -c "import server"
+        run: uv run python -c "import server"
 
       - name: List registered tools
-        run: fastmcp inspect server.py
+        run: uv run fastmcp inspect server.py
 
       - name: Run tests
-        run: pytest tests
+        run: uv run pytest tests

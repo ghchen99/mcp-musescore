@@ -92,13 +92,14 @@ Everything these tools add can be taken off again, so a chart can be refined ste
 
 ## Version requirements
 
+MuseScore 4.7 is the minimum version; MuseScore 3 is not supported. The full test suite runs on 4.7.5 and 4.7.6.
+
+On MuseScore 4.6, most tools work, but some do not: `clear_highlights` and `remove_annotations` (for voltas) find nothing to remove, and `make_part_score(in_place=True)` needs plugin functions added in 4.7.
+
 | Feature | MuseScore |
 |---|---|
-| Original tools (notes, navigation, lyrics...) | 3.x or 4.x (only 4.7.6 tested with this version of the plugin) |
-| Highlights, labels, beat ranges, measure-repeat signs | 4.x (tested on 4.7.6) |
-| `set_repeat_barlines`, `collapse_to_repeat`, `number_bars_as_played` | 4.6+ (older versions select the bars and say which palette items to click) |
-| `make_part_score(in_place=True)` | 4.7+ |
-| `add_volta` | 4.x (works on 4.7.6; if no volta appears on another version, undo and use the palette: the bars are left selected) |
+| All tools | 4.7+ |
+| `add_volta` | Works on 4.7.6; if no volta appears on another version, undo and use the palette: the bars are left selected |
 
 ## Examples
 

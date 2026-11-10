@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- MuseScore 4.x (some features need a recent version, see [Version requirements](tools.md#version-requirements)). The original tools were written for MuseScore 3.x and 4.x; the newer features were only tested on 4.7.6.
+- MuseScore 4.7 or newer (see [Version requirements](tools.md#version-requirements)). MuseScore 3 is not supported.
 - Python 3.13+
 - Claude Desktop or compatible MCP client
 
@@ -33,7 +33,7 @@ ln -sfn "$PWD/musescore-mcp-websocket.qml" ~/Documents/MuseScore4/Plugins/musesc
 
 ### 3. Configure Claude Desktop (with `uv`)
 
-[uv](https://docs.astral.sh/uv/) creates and caches the Python environment on first launch, so there is no venv to manage and the config needs no `.venv` path. The repository has no `pyproject.toml` and needs no `uv init`: uv runs the server straight from `requirements.txt`.
+[uv](https://docs.astral.sh/uv/) manages the Python version and the environment for you. The repository is a uv project: `pyproject.toml` lists the dependencies and `uv.lock` pins the exact tested versions, so `uv sync` sets everything up and no `uv init` is needed.
 
 **First-time setup:**
 
@@ -51,24 +51,24 @@ ln -sfn "$PWD/musescore-mcp-websocket.qml" ~/Documents/MuseScore4/Plugins/musesc
 
    (`brew install uv`, `winget install --id=astral-sh.uv -e` or `pipx install uv` work too.) Open a new terminal afterwards so `uv` is on your `PATH`.
 
-2. Get the code and a Python 3.13 managed by uv:
+2. Get the code and install the dependencies (uv also downloads a matching Python if you don't have one):
 
    ```bash
    git clone https://github.com/MikFerrari/mcp-musescore.git
    cd mcp-musescore
-   uv python install 3.13
+   uv sync
    ```
 
-3. Check that the server starts. The first run downloads the dependencies into uv's cache; it should end with a summary listing the registered tools:
+3. Check that the server starts. Run this in the repository folder; it should end with a summary listing the registered tools:
 
    ```bash
-   uv run --no-project --python 3.13 --with-requirements requirements.txt fastmcp inspect server.py
+   uv run fastmcp inspect server.py
    ```
 
-**Register the server with Claude Desktop.** The quickest way is to let FastMCP write the Claude Desktop config for you, run through `uvx` so nothing needs installing (run it from the repository folder):
+**Register the server with Claude Desktop.** The quickest way is to let FastMCP write the Claude Desktop config for you. Run this in the repository folder; `--project .` is turned into the full path of the repository:
 
 ```bash
-uvx --from "fastmcp>=4,<5" fastmcp install claude-desktop server.py --name musescore --python 3.13 --with-requirements requirements.txt
+uv run fastmcp install claude-desktop server.py --name musescore --project .
 ```
 
 To print the config instead of writing it, use `fastmcp install mcp-json` with the same options.
@@ -86,19 +86,17 @@ Or add it manually to your Claude Desktop configuration file:
       "command": "uv",
       "args": [
         "run",
-        "--no-project",
-        "--python", "3.13",
-        "--with-requirements", "/path/to/mcp-musescore/requirements.txt",
-        "/path/to/mcp-musescore/server.py"
+        "--directory", "/path/to/mcp-musescore",
+        "server.py"
       ]
     }
   }
 }
 ```
 
-**Note**: Update the paths to match your actual project location.
+**Note**: Replace `/path/to/mcp-musescore` with the location of your clone. Claude Desktop does not start the server from the repository folder, so the full path is needed here: `--directory` makes uv run from that folder, where it finds the project and `server.py`.
 
-**Windows on ARM**: `cryptography` (a FastMCP dependency) has no ARM64 Windows wheel, so uv would try to compile it and fail with `link.exe not found`. Use the x64 Python instead by replacing `"3.13"` with `"cpython-3.13-windows-x86_64"` after `--python`.
+**Windows on ARM**: `cryptography` (a FastMCP dependency) has no ARM64 Windows wheel, so uv would try to compile it and fail with `link.exe not found`. Use the x64 Python instead: run `uv sync --python cpython-3.13-windows-x86_64` once in the repository folder. uv then keeps using that Python for the project's environment.
 
 <details>
 <summary>Without uv (manual virtual environment)</summary>
@@ -111,7 +109,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Then point Claude Desktop at the venv's Python:
+`requirements.txt` is generated from `uv.lock`, so pip installs the same tested versions. Then point Claude Desktop at the venv's Python:
 
 ```json
 {

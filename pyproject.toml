@@ -1,0 +1,36 @@
+[project]
+name = "mcp-musescore"
+version = "0.1.0"
+description = "A Model Context Protocol (MCP) server that provides programmatic control over MuseScore, via a WebSocket-based plugin system."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "George Chen" }]
+keywords = ["mcp", "model-context-protocol", "musescore", "music", "notation", "ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Artistic Software",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastmcp>=4.1,<5",
+    "pydantic>=2.12",
+    "websockets>=14",
+]
+
+[project.urls]
+Repository = "https://github.com/ghchen99/mcp-musescore"
+Issues = "https://github.com/ghchen99/mcp-musescore/issues"
+Documentation = "https://github.com/ghchen99/mcp-musescore/tree/main/docs"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+]

@@ -17,6 +17,34 @@ Ask Claude in plain language; it picks the tools. For example:
 - **Finish the page**: "Tidy the title and call it a drum chart" cleans up the title frame; "Print what changed at the end" adds a summary of the differences from the original after the last bar, so it ends up in the PDF.
 - **Iterate**: everything the tools add can be removed again ("remove the ** marks", "clear the crash highlights", "reset the bar numbers"), so you can refine the result step by step.
 
+## Requirements
+
+- **MuseScore 4.7 or newer.** See [Version requirements](docs/tools.md#version-requirements).
+- **[uv](https://docs.astral.sh/uv/)**, which installs Python 3.13 or newer for you. Without uv you need Python 3.13+ and pip; see [Setup and running](docs/setup.md).
+- **An MCP client**, such as Claude Desktop or Claude Code.
+
+## Quick start
+
+1. **Get the code and its dependencies** (uv also installs a matching Python if needed):
+
+   ```bash
+   git clone https://github.com/ghchen99/mcp-musescore.git
+   cd mcp-musescore
+   uv sync
+   ```
+
+2. **Install the MuseScore plugin:** copy `musescore-mcp-websocket.qml` into your MuseScore plugins folder (usually `~/Documents/MuseScore4/Plugins`), then enable **MuseScore API Server** under **Plugins → Plugin Manager**.
+
+3. **Register the server with Claude Desktop** (run this in the repository folder):
+
+   ```bash
+   uv run fastmcp install claude-desktop server.py --name musescore --project .
+   ```
+
+4. **Start it:** open a score in MuseScore and run **Plugins → MuseScore API Server**. Then restart Claude Desktop and ask it to work on your score. The plugin has to be running whenever Claude uses the tools.
+
+Other MCP clients, a manual configuration, platform notes and the setup without uv are in [Setup and running](docs/setup.md).
+
 ## Example use case: a drum chart from a Songsterr tab
 
 How the [drum-chart skill](docs/skills.md) is used day to day, from a song on [Songsterr](https://www.songsterr.com/) to a printable drum chart.
@@ -58,6 +86,21 @@ How the [drum-chart skill](docs/skills.md) is used day to day, from a song on [S
 | [Agent skills](docs/skills.md) | The bundled skills and how to install them in Claude Desktop or Claude Code |
 | [Development and testing](docs/development.md) | Tests, the mock plugin, running the real plugin headless, console output, file structure |
 | [Troubleshooting](docs/troubleshooting.md) | Connection, plugin, server, score-file and skill problems, API limitations |
+
+## Contributing
+
+Contributions are welcome: fork the repository, work on a branch, and open a pull request against `main`. To set up and check your changes:
+
+```bash
+uv sync         # install the dependencies, including the test tools
+uv run pytest   # run the tests
+```
+
+- **Without MuseScore**, the tests use a mock plugin, and the tests that need MuseScore skip themselves. CI runs the tests this way, so it cannot check changes to the plugin itself.
+- **When you change the plugin** (`musescore-mcp-websocket.qml`), run the tests locally with MuseScore installed, so the MuseScore tests run too.
+- **When you change dependencies**, use `uv add` and commit `uv.lock`, then regenerate `requirements.txt`. CI checks that the two match.
+
+[Development and testing](docs/development.md) has the details: the mock plugin, running the real plugin headless, and managing dependencies.
 
 ## Star History
 
