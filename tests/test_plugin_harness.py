@@ -24,4 +24,4 @@ def test_musescore_bin_wins_over_the_path(monkeypatch, tmp_path):
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.setenv("MUSESCORE_BIN", str(chosen))
     assert find_musescore() == str(chosen)
-    assert os.access(find_musescore(), os.X_OK)
+    assert os.access(chosen, os.X_OK)

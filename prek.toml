@@ -13,11 +13,19 @@ pass_filenames = false
 
 [[repos.hooks]]
 id = "deptry"
-name = "deptry"
+name = "deptry dependency check"
 entry = "uv run deptry ."
 language = "system"
 pass_filenames = false
 always_run = true
+
+[[repos.hooks]]
+id = "ty"
+name = "ty type check"
+entry = "uv run ty check"
+language = "system"
+types = ["python"]
+pass_filenames = false
 
 [[repos.hooks]]
 id = "qml-syntax"

@@ -154,7 +154,7 @@ def test_remove_parts_keeps_system_texts_of_the_removed_top_staff(tmp_path):
     results = results_by_action(run([{"action": "removeParts", "params": {"keepStaves": [3]}}], source, out=out))
     assert results["removeParts"]["numStaves"] == 1
     (staff,) = ScoreFile(out).staves()
-    texts = lambda tag: ["".join(e.find("text").itertext()) for e in staff.iter(tag)]
+    texts = lambda tag: ["".join(e.findall("text")[0].itertext()) for e in staff.iter(tag)]
     assert texts("RehearsalMark") == ["A", "B"] and "q = 90" in texts("Tempo")
     assert staff[0].tag == "VBox" and staff.findall("Measure")[1].find("startRepeat") is not None
 
@@ -184,11 +184,11 @@ def test_coloring_includes_flams(tmp_path):
     results = results_by_action(run([{"action": "colorRange", "params": {
         "startMeasure": 1, "endMeasure": 1, "endBeat": 1, "color": "#2ca02c"}}], source, out=out))
     assert results["colorRange"]["colored"] == 2  # the snare and its flam, not the kicks after beat 1
-    chords = ScoreFile(out).staves()[0].find("Measure/voice").findall("Chord")
+    chords = ScoreFile(out).staves()[0].findall("Measure/voice")[0].findall("Chord")
     grace, main, kick = chords[:3]
     assert grace.find("acciaccatura") is not None
     for colored in (grace, main):
-        assert colored.find("Note/color").attrib == {"r": "44", "g": "160", "b": "44", "a": "255"}
+        assert colored.findall("Note/color")[0].attrib == {"r": "44", "g": "160", "b": "44", "a": "255"}
     assert kick.find("Note/color") is None
 
 
@@ -207,7 +207,7 @@ def test_beam_over_rests_inside_dotted_quarter_groups(tmp_path):
     out = out_dir / "out.mscz"
     results = results_by_action(run([{"action": "beamOverRests", "params": {"startMeasure": 1}}], source, out=out))
     assert results["beamOverRests"]["changed"] == 1
-    rests = ScoreFile(out).staves()[0].find("Measure/voice").findall("Rest")
+    rests = ScoreFile(out).staves()[0].findall("Measure/voice")[0].findall("Rest")
     assert [r.findtext("BeamMode") for r in rests] == ["mid", None, None]
 
 
@@ -227,12 +227,12 @@ def test_section_counts_sit_next_to_the_section_label(tmp_path):
                    {"action": "addSectionCounts", "params": {"counts": [{"measure": 1, "text": "(3x4)"}], **beside}}],
                   source, out=out)
     assert [r["result"]["removed"] for r in results] == [0, 1]
-    texts = ScoreFile(out).staves()[0].find("Measure/voice").findall("StaffText")
-    plain = ["".join(t.find("text").itertext()) for t in texts]
+    texts = ScoreFile(out).staves()[0].findall("Measure/voice")[0].findall("StaffText")
+    plain = ["".join(t.findall("text")[0].itertext()) for t in texts]
     assert sorted(plain) == ["*", "3x4"]
     count = texts[plain.index("3x4")]
     assert count.findtext("autoplace") == "0" and count.find("offset") is not None
-    assert count.findtext("bold") == "1" and count.find("color").attrib == {"r": "214", "g": "39", "b": "40", "a": "255"}
+    assert count.findtext("bold") == "1" and count.findall("color")[0].attrib == {"r": "214", "g": "39", "b": "40", "a": "255"}
 
 
 def test_section_counts_in_the_label_replace_counts_beside_it(tmp_path):
@@ -250,7 +250,7 @@ def test_section_counts_in_the_label_replace_counts_beside_it(tmp_path):
          {"action": "addSectionCounts", "params": {"counts": [{"measure": 1, "text": "(4+2)"}], "clearAll": True}}],
         source, out=out)
     staff = ScoreFile(out).staves()[0]
-    assert "".join(staff.find("Measure/voice/RehearsalMark/text").itertext()) == "Chorus 4 (4+2)"
+    assert "".join(staff.findall("Measure/voice/RehearsalMark/text")[0].itertext()) == "Chorus 4 (4+2)"
     assert not list(staff.iter("StaffText"))
 
 

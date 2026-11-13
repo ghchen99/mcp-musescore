@@ -64,7 +64,7 @@ def _runs(numbers: List[int]) -> List[Tuple[int, int]]:
             runs[-1][1] = n
         else:
             runs.append([n, n])
-    return [tuple(r) for r in runs]
+    return [(first, last) for first, last in runs]
 
 
 def crash_pattern(has_crash: List[bool]) -> Dict[str, Any]:
@@ -403,10 +403,11 @@ def song_structure(measures: Sequence[Dict[str, Any]], staff: str, tolerance: fl
             if not counted[i]:
                 not_counted.append(i + 1)
                 continue
+            cluster = cluster_of[i]
             if not events[i]:
                 rests += counted[i]
-            elif cluster_of[i] in names:
-                grooves[names[cluster_of[i]]] = grooves.get(names[cluster_of[i]], 0) + counted[i]
+            elif cluster is not None and cluster in names:
+                grooves[names[cluster]] = grooves.get(names[cluster], 0) + counted[i]
                 if first_groove is None:
                     first_groove = i
             else:

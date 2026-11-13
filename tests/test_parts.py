@@ -101,15 +101,17 @@ def test_musescore_opens_the_copy(tmp_path, quartet):
     out_dir = tmp_path / "out"  # the CLI clears the folder it writes .mscx into
     out_dir.mkdir()
     out = out_dir / "roundtrip.mscx"
-    result = subprocess.run([find_musescore(), "-o", str(out), str(quartet.path)], timeout=300,
+    musescore = find_musescore()
+    assert musescore is not None
+    result = subprocess.run([musescore, "-o", str(out), str(quartet.path)], timeout=300,
                             env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     assert result.returncode == 0
     reread = ScoreFile(out)
     (staff,) = reread.staves()
-    texts = ["".join(t.find("text").itertext()) for t in staff.iter("RehearsalMark")]
+    texts = ["".join(t.findall("text")[0].itertext()) for t in staff.iter("RehearsalMark")]
     assert texts == ["A", "B"]
-    tempos = ["".join(t.find("text").itertext()) for t in staff.findall("Measure")[1].iter("Tempo")]
+    tempos = ["".join(t.findall("text")[0].itertext()) for t in staff.findall("Measure")[1].iter("Tempo")]
     assert "q = 90" in tempos
 
 
@@ -124,7 +126,7 @@ def score_with_part(tmp_path, score_id="mcp-part-1"):
     part.score[0].text = "Player | Cello"
     tag = ET.SubElement(part.score, "metaTag", {"name": "mcpScoreId"})
     tag.text = score_id
-    chord = part.staves()[0].find("Measure/voice/Chord")
+    chord = part.staves()[0].findall("Measure/voice/Chord")[0]
     ET.SubElement(chord, "linkedTo").text = "Abc123"
     entry = "Excerpts/0_Cello/0_Cello.mscx"
     with zipfile.ZipFile(full, "a") as z:
@@ -173,7 +175,9 @@ def test_musescore_opens_a_detached_part(tmp_path):
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     out = out_dir / "roundtrip.mscx"
-    result = subprocess.run([find_musescore(), "-o", str(out), str(target)], timeout=300,
+    musescore = find_musescore()
+    assert musescore is not None
+    result = subprocess.run([musescore, "-o", str(out), str(target)], timeout=300,
                             env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     assert result.returncode == 0 and len(ScoreFile(out).staves()) == 1

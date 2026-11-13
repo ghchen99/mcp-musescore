@@ -1,6 +1,6 @@
 """Connection and utility tools for MuseScore MCP."""
 
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from ..client import MuseScoreClient
 
@@ -51,7 +51,7 @@ def setup_connection_tools(mcp, client: MuseScoreClient):
     ):
         if end_measure is None:
             end_measure = start_measure + GET_SCORE_WINDOW - 1
-        params = {"startMeasure": start_measure, "endMeasure": end_measure}
+        params: Dict[str, Any] = {"startMeasure": start_measure, "endMeasure": end_measure}
         if staves:
             params["staves"] = staves
 

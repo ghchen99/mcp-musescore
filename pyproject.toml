@@ -35,6 +35,7 @@ dev = [
     "prek>=0.5.10",
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
+    "ty>=0.0.103",
 ]
 
 [tool.coverage.run]
@@ -46,3 +47,6 @@ branch = true
 # tests are added, never lower it: that way the coverage of the repository can only improve.
 fail_under = 86
 show_missing = true
+
+[tool.ty.src]
+include = ["src", "server.py", "dev", "tests"]

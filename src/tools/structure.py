@@ -53,7 +53,7 @@ def _apply_steps(passage: Dict) -> List[str]:
 async def fetch_measures(client: MuseScoreClient, start_measure: int, end_measure: Optional[int],
                          staves: Optional[List[int]]) -> Tuple[List[Dict], List[Dict]]:
     """Read measures start..end (default: to the end) in chunks; returns (measures, staff info)."""
-    params = {"startMeasure": start_measure, "endMeasure": start_measure + FETCH_CHUNK - 1}
+    params: Dict[str, Any] = {"startMeasure": start_measure, "endMeasure": start_measure + FETCH_CHUNK - 1}
     if staves:
         params["staves"] = staves
     analysis = (await client.request("getScore", params))["analysis"]
@@ -74,6 +74,8 @@ def incomplete_measures(measures: List[Dict]) -> List[Dict]:
     out = []
     for measure in measures:
         length = measure.get("durationTicks")
+        if not length:  # without a length nothing can be checked (a length of 0 was never reported either)
+            continue
         for key, elements in (measure.get("elements") or {}).items():
             totals: Dict[int, int] = {}
             for element in elements:

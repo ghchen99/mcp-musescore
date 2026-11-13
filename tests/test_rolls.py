@@ -60,12 +60,12 @@ def test_roll_becomes_one_tied_note_per_bar(tmp_path):
     first, second = ScoreFile(path).staves()[0].findall("Measure")
     assert voices(first) == [[("Chord", "whole", None, ["49"])],
                              [("Chord", "quarter", None, ["35"]), ("Rest", "half", "1", [])]]
-    assert first.find("voice[2]/Rest/visible").text == "0"
+    assert first.findtext("voice[2]/Rest/visible") == "0"
     assert voices(second) == [[("Chord", "half", None, ["49"]), ("Chord", "quarter", None, ["38"]),
                                ("Chord", "quarter", None, ["38"])]]
     assert first.findtext("voice/Chord/TremoloSingleChord/subtype") == "r32"
-    tie_out = first.find("voice/Chord/Note/Spanner[@type='Tie']")
-    tie_in = second.find("voice/Chord/Note/Spanner[@type='Tie']")
+    tie_out = first.findall("voice/Chord/Note/Spanner[@type='Tie']")[0]
+    tie_in = second.findall("voice/Chord/Note/Spanner[@type='Tie']")[0]
     assert tie_out.findtext("next/location/measures") == "1" and tie_in.findtext("prev/location/measures") == "-1"
 
 
@@ -114,6 +114,16 @@ def test_roll_can_start_mid_bar_and_end_on_an_odd_length(tmp_path):
     assert location(eighth, "prev") == (None, "-1/2") and eighth.find("Note/Spanner/next") is None
 
 
+def test_roll_before_a_measure_without_voice(tmp_path):
+    """A measure without <voice> after the roll has no notes, so there is no tie into it to drop."""
+    path = write_score(tmp_path, [chord("whole", 49), chord("whole", 38)])
+    score = ScoreFile(path)
+    second = score.staves()[0].findall("Measure")[1]
+    second.remove(second.findall("voice")[0])
+    report = simplify_roll(score, 0, 1, 1, pitches=(49,))
+    assert report["replaced_chords"] == 1 and second.find("voice") is None
+
+
 def test_roll_must_start_where_a_note_starts(tmp_path):
     path = write_score(tmp_path, [chord("half", 49) * 2])
     with pytest.raises(ScoreFileError, match="No note starts where the roll starts"):
@@ -124,7 +134,9 @@ def musescore_roundtrip(tmp_path, path):
     out_dir = tmp_path / "out"  # the CLI clears the folder it writes .mscx into
     out_dir.mkdir()
     out = out_dir / "roundtrip.mscx"
-    subprocess.run([find_musescore(), "-o", str(out), str(path)], env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+    musescore = find_musescore()
+    assert musescore is not None
+    subprocess.run([musescore, "-o", str(out), str(path)], env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
                    timeout=300, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return ScoreFile(out).staves()[0].findall("Measure")
 
@@ -189,7 +201,9 @@ def test_musescore_reads_the_roll_back(tmp_path):
     out_dir = tmp_path / "out"  # the CLI clears the folder it writes .mscx into
     out_dir.mkdir()
     out = out_dir / "roundtrip.mscx"
-    subprocess.run([find_musescore(), "-o", str(out), str(path)], env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+    musescore = find_musescore()
+    assert musescore is not None
+    subprocess.run([musescore, "-o", str(out), str(path)], env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
                    timeout=300, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     first, second = ScoreFile(out).staves()[0].findall("Measure")
     assert voices(first)[0] == [("Chord", "whole", None, ["49"])]

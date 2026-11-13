@@ -53,7 +53,8 @@ def header_texts(score: ScoreFile) -> Dict[str, str]:
     if vbox is not None:
         by_style = {style: field for field, style in HEADER_STYLES.items()}
         for text in vbox.findall("Text"):
-            field = by_style.get(text.findtext("style"))
+            style = text.findtext("style")
+            field = by_style.get(style) if style is not None else None
             if field:
                 found[field] = plain_text(text.find("text"))
     return found
@@ -231,7 +232,7 @@ def _bars_cell(row: Dict[str, Any]) -> str:
         return str(row["count"])
     bars = row.get("bars")
     n = count_bars(bars) if bars is not None else None
-    return count_label(n) if isinstance(bars, int) or str(bars).strip().isdigit() else str(bars or "")
+    return count_label(n) if n is not None and (isinstance(bars, int) or str(bars).strip().isdigit()) else str(bars or "")
 
 
 def _row_bars(row: Dict[str, Any]) -> Optional[int]:
@@ -323,8 +324,9 @@ def set_structure_page(score: ScoreFile, heading: str, rows: Sequence[Dict[str, 
         rich.text((NBSP * 2 + (NBSP * 2).join(cells[1:])).rstrip().replace(" ", NBSP))
         starts_row = ends_row
     bars = [_row_bars(r) for r in rows]
-    if bars and None not in bars:
+    counted_bars = [b for b in bars if b is not None]
+    if bars and len(counted_bars) == len(bars):
         rich.tag("br")
         rich.tag("br")
-        rich.text(f"Total: {sum(bars)} bars")
+        rich.text(f"Total: {sum(counted_bars)} bars")
     return {"replaced": int(structure is not None), "rows": len(rows), "song": song, "artist": artist}

@@ -142,7 +142,9 @@ def test_musescore_keeps_the_frames(tmp_path, score):
     out_dir.mkdir()
     out = out_dir / "roundtrip.mscx"
     env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
-    subprocess.run([find_musescore(), "-o", str(out), str(score.path)], env=env, timeout=300,
+    musescore = find_musescore()
+    assert musescore is not None
+    subprocess.run([musescore, "-o", str(out), str(score.path)], env=env, timeout=300,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     reread = ScoreFile(out)
     assert header_texts(reread) == {"title": "Hold The Line", "subtitle": "Drum chart", "part_name": "Drums",
