@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from dev.plugin_harness import find_musescore
-from src.mscz import ScoreFile, apply_measure_repeats
+from src.mscz import ScoreFile, ScoreFileError, apply_measure_repeats
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "jazz piano" / "Jazz Piano.mscz"
 
@@ -170,6 +170,14 @@ def test_mscz_keeps_other_entries(tmp_path):
     assert measure.findtext("voice/MeasureRepeat/duration") == "3/4"
 
 
+def test_score_without_score_element_raises(tmp_path):
+    """Loading already refuses a file without <Score>; the property also raises if it is removed later."""
+    score = ScoreFile(write_score(tmp_path, [bar(36, (4, 4))]))
+    score.root.remove(score.root.findall("Score")[0])
+    with pytest.raises(ScoreFileError, match="does not contain a MuseScore score"):
+        score.score
+
+
 @pytest.mark.skipif(find_musescore() is None, reason="MuseScore not installed")
 def test_musescore_reads_the_groups_back(tmp_path):
     """MuseScore loads the edited file and writes the same groups back."""
@@ -181,7 +189,9 @@ def test_musescore_reads_the_groups_back(tmp_path):
 
     out = tmp_path / "roundtrip.mscx"
     env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
-    subprocess.run([find_musescore(), "-o", str(out), str(path)], env=env, timeout=300,
+    musescore = find_musescore()
+    assert musescore is not None
+    subprocess.run([musescore, "-o", str(out), str(path)], env=env, timeout=300,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     assert out.exists()
 

@@ -1031,15 +1031,22 @@ def test_incomplete_bars_are_found():
         {"measure": 52, "staff": 1, "found_ticks": {0: 1920}, "expected_ticks": 1440}]
 
 
+def test_bars_without_a_length_are_skipped():
+    from src.tools.structure import incomplete_measures
+    measures = [{"measure": 1, "elements": {"staff0": [{"name": "Chord", "durationTicks": 960, "voice": 0}]}}]
+    assert incomplete_measures(measures) == []
+
+
 def test_reopens_are_spaced(monkeypatch):
     """MuseScore crashed when a score was closed ~0.3 s after it was opened: the server waits in between."""
     import asyncio
+    from src.client import MuseScoreClient
     from src.tools import score_file
     monkeypatch.setattr(score_file, "REOPEN_GAP", 0.5)
     monkeypatch.setattr(score_file, "_last_reopen", 0.0)
     calls = []
 
-    class Client:
+    class Client(MuseScoreClient):  # never connects: send_command is replaced
         async def send_command(self, action, params=None):
             calls.append((action, asyncio.get_running_loop().time()))
             return {"status": "success", "result": {"success": True}}

@@ -17,7 +17,7 @@ where a note does) raises ScoreFileError and nothing is changed.
 import copy
 import xml.etree.ElementTree as ET
 from fractions import Fraction
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from .measure_repeats import measure_lengths
 from .score_file import ScoreFile, ScoreFileError
@@ -37,7 +37,8 @@ def fraction_ticks(text: str) -> int:
 def element_ticks(element: ET.Element, measure_len: int) -> int:
     kind = element.findtext("durationType")
     if kind == "measure":
-        return fraction_ticks(element.findtext("duration")) if element.findtext("duration") else measure_len
+        duration = element.findtext("duration")
+        return fraction_ticks(duration) if duration else measure_len
     if kind not in DURATION_TICKS:
         raise ScoreFileError(f"Unknown duration {kind!r}")
     dots = int(element.findtext("dots") or 0)
@@ -101,7 +102,7 @@ def _clean_note(note: ET.Element) -> ET.Element:
     return clean
 
 
-def _drop_ties(chord: ET.Element, direction: str, pitches: set) -> int:
+def _drop_ties(chord: ET.Element, direction: str, pitches: Set[str]) -> int:
     """Remove the ties of the roll pitches of `chord` that go in `direction` ("next"/"prev")."""
     dropped = 0
     for note in chord.findall("Note"):
@@ -114,7 +115,7 @@ def _drop_ties(chord: ET.Element, direction: str, pitches: set) -> int:
     return dropped
 
 
-def _has_tie(chord: ET.Element, direction: str, pitches: set) -> bool:
+def _has_tie(chord: ET.Element, direction: str, pitches: Set[str]) -> bool:
     return any(spanner.get("type") == "Tie" and spanner.find(direction) is not None
                for note in chord.findall("Note") if note.findtext("pitch") in pitches
                for spanner in note.findall("Spanner"))
@@ -136,7 +137,7 @@ def _voice_one(measure: ET.Element, length: int) -> Optional[List[Tuple[int, ET.
 
 
 def tie_chain_start(measures: List[ET.Element], lengths: List[int], start_measure: int, start_ticks: int,
-                    pitches: set) -> Tuple[int, int]:
+                    pitches: Set[str]) -> Tuple[int, int]:
     """(measure, ticks) where the roll really starts: walk back while the roll cymbals are tied from the chord
     before, which must hold the roll cymbals too."""
     number, ticks = start_measure, start_ticks
@@ -177,9 +178,9 @@ def simplify_roll(score: ScoreFile, staff_index: int, start_measure: int, end_me
     if slashes not in TREMOLO_SUBTYPES:
         raise ScoreFileError("slashes must be 1-4")
     lengths = [fraction_ticks(length) for length in measure_lengths(staff, staves[0])]
-    pitches = {str(p) for p in pitches}
+    pitch_texts = {str(p) for p in pitches}  # the score file stores pitches as text
     requested = (start_measure, start_ticks)
-    start_measure, start_ticks = tie_chain_start(measures, lengths, start_measure, start_ticks, pitches)
+    start_measure, start_ticks = tie_chain_start(measures, lengths, start_measure, start_ticks, pitch_texts)
 
     plans = []  # per measure: (number, voice, first index, last index, start tick, end tick, chords in span)
     for number in range(start_measure, end_measure + 1):
@@ -217,7 +218,7 @@ def simplify_roll(score: ScoreFile, staff_index: int, start_measure: int, end_me
                 raise ScoreFileError(f"Measure {number} has a rest inside the roll")
             notes = {n.findtext("pitch") for n in child.findall("Note")}
             is_first_chord = number == start_measure and not chords
-            if not notes & pitches or (not is_first_chord and not notes <= pitches):
+            if not notes & pitch_texts or (not is_first_chord and not notes <= pitch_texts):
                 raise ScoreFileError(f"Measure {number} has other notes inside the roll")
             if first is None:
                 first = i
@@ -226,7 +227,7 @@ def simplify_roll(score: ScoreFile, staff_index: int, start_measure: int, end_me
             tick += element_ticks(child, length)
         if tick != stop:
             raise ScoreFileError(f"The roll does not end where a note ends in measure {number}")
-        if not chords:
+        if first is None or last is None:  # no roll chords (both are set when a chord is added)
             raise ScoreFileError(f"No roll notes in measure {number}")
         plans.append((number, voice, first, last, begin, stop, chords))
 
@@ -234,22 +235,24 @@ def simplify_roll(score: ScoreFile, staff_index: int, start_measure: int, end_me
     dangling = 0
     number, voice, first, last, begin, stop, chords = plans[0]
     before = [c for c in list(voice)[:first] if c.tag == "Chord"]
-    if not before and start_measure > 1 and measures[start_measure - 2].find("voice") is not None:
-        before = [c for c in measures[start_measure - 2].find("voice") if c.tag == "Chord"]
+    previous_voice = measures[start_measure - 2].find("voice") if start_measure > 1 else None
+    if not before and previous_voice is not None:
+        before = [c for c in previous_voice if c.tag == "Chord"]
     if before:
-        dangling += _drop_ties(before[-1], "next", pitches)
+        dangling += _drop_ties(before[-1], "next", pitch_texts)
     number, voice, first, last, begin, stop, chords = plans[-1]
     after = [c for c in list(voice)[last + 1:] if c.tag in CHORD_REST]
     if after and after[0].tag == "Chord":
-        dangling += _drop_ties(after[0], "prev", pitches)
+        dangling += _drop_ties(after[0], "prev", pitch_texts)
     elif not after and end_measure < len(measures):
-        following = [c for c in measures[end_measure].find("voice") if c.tag in CHORD_REST]
+        following_voice = measures[end_measure].find("voice")  # None: an empty measure, so no tie into it
+        following = [c for c in following_voice if c.tag in CHORD_REST] if following_voice is not None else []
         if following and following[0].tag == "Chord":
-            dangling += _drop_ties(following[0], "prev", pitches)
+            dangling += _drop_ties(following[0], "prev", pitch_texts)
 
     first_chord = plans[0][6][0]
-    roll_notes = [_clean_note(n) for n in first_chord.findall("Note") if n.findtext("pitch") in pitches]
-    other_notes = [_clean_note(n) for n in first_chord.findall("Note") if n.findtext("pitch") not in pitches]
+    roll_notes = [_clean_note(n) for n in first_chord.findall("Note") if n.findtext("pitch") in pitch_texts]
+    other_notes = [_clean_note(n) for n in first_chord.findall("Note") if n.findtext("pitch") not in pitch_texts]
 
     # The new notes: one per bar, or several tied ones where no single value fits. (measure, tick, value)
     pieces = []

@@ -66,8 +66,10 @@ def measure_lengths(staff: ET.Element, first_staff: ET.Element) -> List[str]:
     first_measures = first_staff.findall("Measure")
     for i, measure in enumerate(staff.findall("Measure")):
         timesig = measure.find("voice/TimeSig")
-        if timesig is not None and timesig.findtext("sigN") and timesig.findtext("sigD"):
-            signature = f"{timesig.findtext('sigN').strip()}/{timesig.findtext('sigD').strip()}"
+        sig_n = timesig.findtext("sigN") if timesig is not None else None
+        sig_d = timesig.findtext("sigD") if timesig is not None else None
+        if sig_n and sig_d:
+            signature = f"{sig_n.strip()}/{sig_d.strip()}"
         length = measure.get("len")
         if not length and i < len(first_measures):
             length = first_measures[i].get("len")

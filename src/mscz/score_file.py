@@ -60,7 +60,10 @@ class ScoreFile:
 
     @property
     def score(self) -> ET.Element:
-        return self.root.find("Score")
+        score = self.root.find("Score")
+        if score is None:
+            raise ScoreFileError(f"{self.path} does not contain a MuseScore score")
+        return score
 
     @property
     def version(self) -> str:

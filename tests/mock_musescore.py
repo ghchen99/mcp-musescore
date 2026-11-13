@@ -103,7 +103,7 @@ class MockScore:
         for number in range(first, last + 1):
             start = (number - 1) * self.measure_ticks
             end = start + self.measure_ticks
-            entry = {"measure": number, "number": self.displayed_numbers()[number - 1], "startTick": start,
+            entry: Dict[str, Any] = {"measure": number, "number": self.displayed_numbers()[number - 1], "startTick": start,
                      "durationTicks": self.measure_ticks}
             repeat = self.repeats.get(number, {})
             if repeat.get("start"):

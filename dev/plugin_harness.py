@@ -138,7 +138,7 @@ def run(commands, score, out=None, png=None, musescore=None, timeout=300, png_dp
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("commands", help="JSON list of commands, inline or a path to a .json file")
     parser.add_argument("score", help="Score to run them on (.mscz or .mscx); it is not modified")
     parser.add_argument("--out", help="Save the edited score here (.mscz)")

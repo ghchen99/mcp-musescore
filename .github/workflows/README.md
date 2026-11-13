@@ -21,6 +21,7 @@ Runs the test suite without MuseScore, the way most contributors run it.
 5. **Checks** (`make check`, which runs `uv run prek run --all-files`): the same checks contributors run before every commit, from `prek.toml`. prek fails when a hook changes a file, so these also act as checks in CI:
    - **generate requirements.txt from uv.lock**: regenerates `requirements.txt` with `uv export`; fails if it was out of date with `uv.lock`;
    - **deptry**: no missing or unused dependencies;
+   - **ty type check**: no type errors in `src/`, `server.py`, `dev/` and `tests/`;
    - **QML plugin syntax check**: `node syntax_check.js` parses the plugin's JavaScript.
 6. **Tests with coverage** (`make test`, which runs `uv run pytest --no-musescore --cov`): the test suite without the MuseScore tests (they run in the `musescore-tests` job), with branch coverage of `src/` as configured in `pyproject.toml`; it fails below 86%. This is the coverage without MuseScore, the same on every machine.
 

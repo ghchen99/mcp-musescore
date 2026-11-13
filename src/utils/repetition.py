@@ -143,7 +143,7 @@ def _merge_runs(placements: List[Tuple[int, int]]) -> List[Tuple[int, int, int]]
             runs[-1][1] = index + size - 1
         else:
             runs.append([index, index + size - 1, size])
-    return [tuple(r) for r in runs]
+    return [(first, last, size) for first, last, size in runs]
 
 
 def _best_passage(ids: List[int], content: List[bool], i: int, max_passage: int, max_ending: int):
