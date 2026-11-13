@@ -92,15 +92,19 @@ How the [drum-chart skill](docs/skills.md) is used day to day, from a song on [S
 Contributions are welcome: fork the repository, work on a branch, and open a pull request against `main`. To set up and check your changes:
 
 ```bash
-uv sync         # install the dependencies, including the test tools
-uv run pytest   # run the tests
+uv sync                            # install the dependencies, including the test tools
+uv run prek install                # check every commit (once per clone)
+uv run pytest --no-musescore --cov # run the tests with coverage
 ```
 
-- **Without MuseScore**, the tests use a mock plugin, and the tests that need MuseScore skip themselves. CI runs the tests this way, so it cannot check changes to the plugin itself.
-- **When you change the plugin** (`musescore-mcp-websocket.qml`), run the tests locally with MuseScore installed, so the MuseScore tests run too.
-- **When you change dependencies**, use `uv add` and commit `uv.lock`, then regenerate `requirements.txt`. CI checks that the two match.
+- **Before every commit**, prek checks the dependencies with deptry, and the plugin's syntax when it changed (needs Node.js). The tests run separately. With `make`, `make check` and `make test` run the checks and the tests, as CI does.
 
-[Development and testing](docs/development.md) has the details: the mock plugin, running the real plugin headless, and managing dependencies.
+- **Without MuseScore**, the tests use a mock plugin, and the tests that need MuseScore skip themselves.
+- **CI runs the tests twice more with MuseScore**: on 4.7.0, the oldest supported version, and on the latest release. So changes to the plugin are checked too.
+- **When you change the plugin** (`musescore-mcp-websocket.qml`), it is still quicker to run the tests locally with MuseScore installed first.
+- **When you change dependencies**, use `uv add` and commit `uv.lock`; the commit hook regenerates `requirements.txt`, and CI checks that the two match.
+
+[Development and testing](docs/development.md) has the details: the checks before committing, the mock plugin, running the real plugin headless, and managing dependencies.
 
 ## Star History
 

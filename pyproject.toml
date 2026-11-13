@@ -31,6 +31,18 @@ Documentation = "https://github.com/ghchen99/mcp-musescore/tree/main/docs"
 
 [dependency-groups]
 dev = [
+    "deptry>=0.25.1",
+    "prek>=0.5.10",
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
 ]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+# 86% is the coverage without MuseScore when this threshold was added (86.07%). Only raise it, in later PRs as
+# tests are added, never lower it: that way the coverage of the repository can only improve.
+fail_under = 86
+show_missing = true

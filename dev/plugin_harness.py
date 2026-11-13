@@ -32,7 +32,12 @@ EXTENSION_URI = f"musescore://extensions/v1/{HARNESS_NAME}"
 
 
 def find_musescore():
-    """MuseScore executable: $MUSESCORE_BIN, an AppImage in ~/.local/bin, or mscore on PATH."""
+    """MuseScore executable: $MUSESCORE_BIN, an AppImage in ~/.local/bin, or mscore on PATH.
+
+    MUSESCORE_BIN=none means no MuseScore, even when one is installed, so the tests that need it skip themselves.
+    """
+    if os.environ.get("MUSESCORE_BIN") == "none":
+        return None
     candidates = [os.environ.get("MUSESCORE_BIN", "")]
     candidates += sorted(glob.glob(os.path.expanduser("~/.local/bin/MuseScore*.AppImage")))
     candidates += [shutil.which(n) or "" for n in ("mscore4portable", "mscore4", "mscore", "musescore")]
