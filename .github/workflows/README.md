@@ -52,7 +52,7 @@ Runs the full test suite, including the tests that need MuseScore (`tests/test_p
    | Fonts | `libfontconfig1`, `libfreetype6` | Fonts, including the music symbols |
    | Utilities | `libglib2.0-0t64` | A library Qt builds on |
 
-   The `t64` in some names is specific to Ubuntu 24.04, which the runner (`ubuntu-latest`) uses.
+   The `t64` in some names is specific to Ubuntu 24.04. That is why both jobs run on `ubuntu-24.04` instead of `ubuntu-latest`, which moves to a newer Ubuntu over time: a newer release can rename these packages and break the job.
 
 2. **Find the MuseScore AppImage.** Asks the GitHub API for the release (`tags/v4.7.0`, or `latest`) and picks its `x86_64.AppImage`.
 3. **Cache the AppImage.** About 190 MB, cached under its file name, so it is downloaded again only when the version changes.
