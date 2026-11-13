@@ -92,7 +92,7 @@ Everything these tools add can be taken off again, so a chart can be refined ste
 
 ## Version requirements
 
-MuseScore 4.7 is the minimum version; MuseScore 3 is not supported. The full test suite runs on 4.7.5 and 4.7.6.
+MuseScore 4.7 is the minimum version; MuseScore 3 is not supported. CI runs the full test suite on MuseScore 4.7.0 and on the latest release.
 
 On MuseScore 4.6, most tools work, but some do not: `clear_highlights` and `remove_annotations` (for voltas) find nothing to remove, and `make_part_score(in_place=True)` needs plugin functions added in 4.7.
 

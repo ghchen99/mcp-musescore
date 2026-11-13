@@ -1,0 +1,28 @@
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "requirements"
+name = "generate requirements.txt from uv.lock"
+entry = "uv export --no-dev --no-hashes -o requirements.txt"
+language = "system"
+files = '^(uv\.lock|pyproject\.toml)$'
+pass_filenames = false
+
+[[repos.hooks]]
+id = "deptry"
+name = "deptry"
+entry = "uv run deptry ."
+language = "system"
+pass_filenames = false
+always_run = true
+
+[[repos.hooks]]
+id = "qml-syntax"
+name = "QML plugin syntax check"
+entry = "node syntax_check.js"
+language = "system"
+files = '\.qml$'
+pass_filenames = false

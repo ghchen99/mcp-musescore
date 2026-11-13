@@ -1,4 +1,19 @@
+import os
+
 import pytest
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--no-musescore", action="store_true",
+        help="Skip the tests that need MuseScore, even when it is installed (the commit hook uses this)",
+    )
+
+
+def pytest_configure(config):
+    """Runs before the tests are collected, where the MuseScore tests decide whether to skip themselves."""
+    if config.getoption("--no-musescore"):
+        os.environ["MUSESCORE_BIN"] = "none"
 
 
 @pytest.fixture(autouse=True)

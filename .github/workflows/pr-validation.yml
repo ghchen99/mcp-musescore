@@ -22,16 +22,114 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
-      - name: requirements.txt matches uv.lock
-        run: |
-          uv export --no-dev --no-hashes -o requirements.txt
-          git diff --exit-code requirements.txt
-
       - name: Server imports
         run: uv run python -c "import server"
 
       - name: List registered tools
         run: uv run fastmcp inspect server.py
 
-      - name: Run tests
-        run: uv run pytest tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Checks (prek hooks)
+        run: make check
+
+      - name: Tests with coverage
+        run: make test
+
+  musescore-tests:
+    name: MuseScore tests (${{ matrix.musescore }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        musescore: ["4.7.0", "latest"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Install the system libraries MuseScore needs
+        run: |
+          packages=(
+            xvfb
+            xauth
+            libegl1
+            libgl1
+            libglx0
+            libopengl0
+            libx11-6
+            libxkbcommon-x11-0
+            libxcb-cursor0
+            libxcb-icccm4
+            libxcb-image0
+            libxcb-keysyms1
+            libxcb-randr0
+            libxcb-render-util0
+            libxcb-shape0
+            libxcb-xinerama0
+            libxcb-xkb1
+            libasound2t64
+            libpipewire-0.3-0t64
+            libfontconfig1
+            libfreetype6
+            libglib2.0-0t64
+          )
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends "${packages[@]}"
+
+      - name: Find the MuseScore AppImage
+        id: appimage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ matrix.musescore }}" = latest ]; then
+            release=latest
+          else
+            release="tags/v${{ matrix.musescore }}"
+          fi
+
+          url=$(
+            gh api "repos/musescore/MuseScore/releases/$release" \
+              --jq '.assets[] | select(.name | test("x86_64\\.AppImage$")) | .browser_download_url'
+          )
+
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$url")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the AppImage
+        uses: actions/cache@v4
+        with:
+          path: ~/musescore.AppImage
+          key: ${{ steps.appimage.outputs.name }}
+
+      - name: Unpack MuseScore
+        run: |
+          if [ ! -f ~/musescore.AppImage ]; then
+            curl -sSL -o ~/musescore.AppImage "${{ steps.appimage.outputs.url }}"
+          fi
+
+          chmod +x ~/musescore.AppImage
+          cd ~
+          ./musescore.AppImage --appimage-extract > /dev/null
+
+          echo "MUSESCORE_BIN=$HOME/squashfs-root/AppRun" >> "$GITHUB_ENV"
+          xvfb-run -a "$HOME/squashfs-root/AppRun" --version
+
+      - name: Run the tests with MuseScore
+        run: |
+          uv run python - <<'EOF'
+          from dev.plugin_harness import find_musescore
+
+          if not find_musescore():
+              raise SystemExit("MuseScore not found, the MuseScore tests would be skipped")
+          EOF
+
+          xvfb-run -a uv run pytest tests
