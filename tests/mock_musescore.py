@@ -891,7 +891,7 @@ class MockMuseScore:
         self._mutating()
         ticks = score.measure_ticks
         score.texts = [t for t in score.texts if keep("texts", t.get("staff") or 0, t["tick"], t["text"])]
-        score.labels = [l for l in score.labels if keep("labels", l["staff"], (l["measure"] - 1) * ticks, l["text"])]
+        score.labels = [lb for lb in score.labels if keep("labels", lb["staff"], (lb["measure"] - 1) * ticks, lb["text"])]
         score.rehearsal_marks = [r for r in score.rehearsal_marks
                                  if keep("rehearsal_marks", 0, (r["measure"] - 1) * ticks, r["text"])]
         score.voltas = [v for v in score.voltas if keep("voltas", 0, (v["startMeasure"] - 1) * ticks, "")]
@@ -914,7 +914,7 @@ class MockMuseScore:
         if "highlights" in kinds:
             score.highlights = [h for h in score.highlights if not inside(h["staff"], h["startMeasure"])]
         if "labels" in kinds:
-            score.labels = [l for l in score.labels if not inside(l["staff"], l["measure"])]
+            score.labels = [lb for lb in score.labels if not inside(lb["staff"], lb["measure"])]
         if "notes" in kinds:
             score.note_highlights = {
                 k: c for k, c in score.note_highlights.items()

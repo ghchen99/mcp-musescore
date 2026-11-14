@@ -1,11 +1,15 @@
 """Integration tests: real MCP tools and WebSocket client against the in-memory mock plugin."""
 
 import asyncio
+import json
+import shutil
+from pathlib import Path
 
 from fastmcp import Client
 from mock_musescore import MockMuseScore, MockScore, demo_score, running_mock
 
 import server
+from src.mscz import ScoreFile
 
 QUARTER = {"numerator": 1, "denominator": 4}
 
@@ -450,12 +454,6 @@ def test_applying_a_passage_shortens_the_score():
 
 # --- score-file edits, groove sections, part scores ----------------------------------
 
-import json
-import shutil
-from pathlib import Path
-
-from src.mscz import ScoreFile
-
 JAZZ = Path(__file__).resolve().parent.parent / "examples" / "jazz piano" / "Jazz Piano.mscz"
 
 
@@ -481,7 +479,6 @@ def bass_staff_repeat(path, measure):
 
 def test_apply_measure_repeats_edits_file_and_reloads(tmp_path, monkeypatch):
     path = jazz_copy(tmp_path, monkeypatch)
-    original = path.read_bytes()
 
     async def scenario(c, mock):
         result = (await c.call_tool("apply_measure_repeats", {
@@ -978,9 +975,14 @@ def test_articulations_and_ghost_notes():
 
 def test_beam_over_rests_only_inside_a_beat():
     score = drum_score("A")
-    note = lambda tick, length: {"name": "Chord", "startTick": tick, "durationTicks": length, "voice": 0,
-                                 "notes": [{"pitchMidi": 42, "tpc": 0, "pitchName": "F#"}]}
-    rest = lambda tick, length: {"name": "Rest", "startTick": tick, "durationTicks": length, "voice": 0}
+
+    def note(tick, length):
+        return {"name": "Chord", "startTick": tick, "durationTicks": length, "voice": 0,
+                "notes": [{"pitchMidi": 42, "tpc": 0, "pitchName": "F#"}]}
+
+    def rest(tick, length):
+        return {"name": "Rest", "startTick": tick, "durationTicks": length, "voice": 0}
+
     # beat 1: 16th, 16th rest, eighth (rest inside the beat); beat 2: rest then a note (rest starts the beat)
     score.elements[0] = [note(0, 120), rest(120, 120), note(240, 240), rest(480, 240), note(720, 240),
                          rest(960, 960)]

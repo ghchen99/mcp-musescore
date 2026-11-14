@@ -256,7 +256,10 @@ def setup_score_file_tools(mcp, client: MuseScoreClient):
             signatures = measure_lengths(score.staves()[staff], score.staves()[0])
             if not 1 <= start_measure <= end_measure <= len(signatures):
                 raise ToolError(f"Invalid measure range {start_measure}-{end_measure}")
-            beat_ticks = lambda measure: 1920 / int(signatures[measure - 1].split("/")[1])
+
+            def beat_ticks(measure):
+                return 1920 / int(signatures[measure - 1].split("/")[1])
+
             end_ticks = round(end_beat * beat_ticks(end_measure)) if end_beat is not None else None
             start_ticks = round((start_beat - 1) * beat_ticks(start_measure))
             return True, write_roll(score, staff, start_measure, end_measure, end_ticks, roll_pitches, slashes,

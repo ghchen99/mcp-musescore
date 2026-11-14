@@ -154,7 +154,10 @@ def test_remove_parts_keeps_system_texts_of_the_removed_top_staff(tmp_path):
     results = results_by_action(run([{"action": "removeParts", "params": {"keepStaves": [3]}}], source, out=out))
     assert results["removeParts"]["numStaves"] == 1
     (staff,) = ScoreFile(out).staves()
-    texts = lambda tag: ["".join(e.findall("text")[0].itertext()) for e in staff.iter(tag)]
+
+    def texts(tag):
+        return ["".join(e.findall("text")[0].itertext()) for e in staff.iter(tag)]
+
     assert texts("RehearsalMark") == ["A", "B"] and "q = 90" in texts("Tempo")
     assert staff[0].tag == "VBox" and staff.findall("Measure")[1].find("startRepeat") is not None
 
