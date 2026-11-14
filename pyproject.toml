@@ -78,6 +78,11 @@ convention = "google"
 # (test names say what they test). Docstrings they do have still
 # follow the layout rules.
 "tests/**" = ["ANN", "D1"]
+# No return types on the MCP tools (yet): FastMCP reads a tool's return
+# type and turns it into an output schema, so adding one changes the tool
+# definition clients see and adds structured content to each result.
+# That is a decision of its own, not part of a lint cleanup.
+"src/tools/*.py" = ["ANN202"]
 
 # Docstring settings (docstring-tailor).
 

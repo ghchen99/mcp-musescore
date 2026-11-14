@@ -2,11 +2,13 @@
 
 from typing import Annotated
 
+from fastmcp import FastMCP
+
 from ..client import MuseScoreClient
 from ..types import ActionSequence
 
 
-def setup_sequence_tools(mcp, client: MuseScoreClient):
+def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup sequence processing tools."""
     
     @mcp.tool(

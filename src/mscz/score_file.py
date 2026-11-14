@@ -5,7 +5,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 
 class ScoreFileError(Exception):
@@ -20,7 +20,7 @@ class ScoreFile:
     <multiMeasureRest> (not a bar) and rebuilds them on layout, so measure positions count real bars only.
     """
 
-    def __init__(self, path):
+    def __init__(self, path: Union[str, Path]) -> None:
         self.path = Path(path)
         self._entries: List[Tuple[zipfile.ZipInfo, bytes]] = []
         self._mscx_name: Optional[str] = None
@@ -92,7 +92,7 @@ class ScoreFile:
     def to_bytes(self) -> bytes:
         return ET.tostring(self.root, encoding="UTF-8", xml_declaration=True)
 
-    def save(self, path=None) -> Path:
+    def save(self, path: Optional[Union[str, Path]] = None) -> Path:
         """Write the score (to its own path by default) via a temporary file and an atomic rename."""
         target = Path(path) if path else self.path
         fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")

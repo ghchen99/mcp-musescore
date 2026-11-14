@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Annotated, Optional
 
+from fastmcp import FastMCP
 from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
@@ -15,7 +16,7 @@ VIEWER_HTML = Path(__file__).resolve().parent.parent / "ui" / "score_viewer.html
 DEFAULT_MEASURE_TICKS = 1920
 
 
-def setup_viewer_tools(mcp, client: MuseScoreClient):
+def setup_viewer_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup the score viewer (an MCP App: tool plus ui:// resource)."""
 
     @mcp.resource(

@@ -11,7 +11,7 @@ of suggestions come out of it:
 Bars that already hold a measure-repeat sign count as copies of the bars they repeat.
 """
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 Fingerprint = Tuple[Tuple[Any, ...], ...]
 
@@ -73,7 +73,8 @@ def core_fingerprint(elements: Sequence[Dict[str, Any]], measure_start_tick: int
 
 
 def staff_fingerprints(measures: Sequence[Dict[str, Any]], staff: str,
-                       fingerprint=measure_fingerprint) -> Tuple[List[Fingerprint], set]:
+                       fingerprint: Callable[[Sequence[Dict[str, Any]], int], Fingerprint] = measure_fingerprint
+                       ) -> Tuple[List[Fingerprint], set]:
     """Fingerprints of one staff's measures, with existing measure-repeat signs resolved.
 
     Returns (fingerprints, indices of bars covered by an existing measure-repeat group).
@@ -146,7 +147,8 @@ def _merge_runs(placements: List[Tuple[int, int]]) -> List[Tuple[int, int, int]]
     return [(first, last, size) for first, last, size in runs]
 
 
-def _best_passage(ids: List[int], content: List[bool], i: int, max_passage: int, max_ending: int):
+def _best_passage(ids: List[int], content: List[bool], i: int, max_passage: int,
+                  max_ending: int) -> Optional[Tuple[int, Dict[str, Any]]]:
     """Best repeat structure starting at index i, as (saved_bars, suggestion_kwargs) or None."""
     n = len(ids)
     best = None

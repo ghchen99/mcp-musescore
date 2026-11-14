@@ -24,6 +24,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "musescore-mcp-websocket.qml"
@@ -31,7 +32,7 @@ HARNESS_NAME = "mcp-harness.qml"
 EXTENSION_URI = f"musescore://extensions/v1/{HARNESS_NAME}"
 
 
-def find_musescore():
+def find_musescore() -> Optional[str]:
     """MuseScore executable: $MUSESCORE_BIN, an AppImage in ~/.local/bin, or mscore on PATH.
 
     MUSESCORE_BIN=none means no MuseScore, even when one is installed, so the tests that need it skip themselves.
@@ -44,7 +45,7 @@ def find_musescore():
     return next((c for c in candidates if c and os.access(c, os.X_OK)), None)
 
 
-def build_harness(commands, plugin_source=PLUGIN):
+def build_harness(commands: List[Dict[str, Any]], plugin_source: Union[str, Path] = PLUGIN) -> str:
     """Plugin source whose onRun runs `commands` and stores the results in a meta tag."""
     code = Path(plugin_source).read_text(encoding="utf-8")
     on_run = code.index("    onRun: {")
@@ -67,7 +68,7 @@ def build_harness(commands, plugin_source=PLUGIN):
     return head.replace('title: "MuseScore API Server"', 'title: "MCP Harness"') + runner
 
 
-def read_results(score_path):
+def read_results(score_path: Union[str, Path]) -> Optional[List[Dict[str, Any]]]:
     """Results stored by the harness in the output score, or None."""
     with zipfile.ZipFile(score_path) as z:
         name = next(n for n in z.namelist() if n.endswith(".mscx") and "/" not in n)
@@ -76,7 +77,7 @@ def read_results(score_path):
     return json.loads(tag.text) if tag is not None and tag.text else None
 
 
-def _musescore(binary, args, home, timeout):
+def _musescore(binary: str, args: List[str], home: Path, timeout: float) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "HOME": str(home),
@@ -87,7 +88,9 @@ def _musescore(binary, args, home, timeout):
     return subprocess.run([binary, *args], env=env, timeout=timeout, capture_output=True, text=True)
 
 
-def run(commands, score, out=None, png=None, musescore=None, timeout=300, png_dpi=130):
+def run(commands: List[Dict[str, Any]], score: Union[str, Path], out: Optional[Union[str, Path]] = None,
+        png: Optional[Union[str, Path]] = None, musescore: Optional[str] = None, timeout: float = 300,
+        png_dpi: int = 130) -> List[Dict[str, Any]]:
     """Run commands on a copy of `score`. Returns the list of {"action", "result"} entries.
 
     out: where to save the edited score (.mscz); png: where to render it (one file per page,
@@ -137,7 +140,7 @@ def run(commands, score, out=None, png=None, musescore=None, timeout=300, png_dp
         return results
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("commands", help="JSON list of commands, inline or a path to a .json file")
     parser.add_argument("score", help="Score to run them on (.mscz or .mscx); it is not modified")

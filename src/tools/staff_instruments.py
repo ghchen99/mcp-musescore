@@ -2,10 +2,12 @@
 
 from typing import Annotated
 
+from fastmcp import FastMCP
+
 from ..client import MuseScoreClient
 
 
-def setup_staff_instruments_tools(mcp, client: MuseScoreClient):
+def setup_staff_instruments_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup staff and instrument tools."""
     
     @mcp.tool(

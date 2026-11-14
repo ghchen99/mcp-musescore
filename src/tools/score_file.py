@@ -10,8 +10,18 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+)
 
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
@@ -89,7 +99,8 @@ def part_file_name(source: Path, name: str) -> Path:
     return target
 
 
-async def open_part_as_score(client: MuseScoreClient, source: Path, entry: str, shape, reopen: bool = True) -> Path:
+async def open_part_as_score(client: MuseScoreClient, source: Path, entry: str, shape: Tuple[int, int],
+                             reopen: bool = True) -> Path:
     """The open score is a part tab of `source`: file edits can't touch a part alone (it is linked to the full
     score), so the part becomes a score file of its own, opened in place of the full score (now, or by the
     caller's own reopen after its edit when `reopen` is False).
@@ -163,13 +174,13 @@ def split_groups(groups: List[RepeatGroup]) -> List[tuple]:
     return pairs
 
 
-def setup_score_file_tools(mcp, client: MuseScoreClient):
+def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup tools that edit the score file on disk."""
 
     async def reopen(path: Path) -> Dict:
         return await reopen_in_place(client, path)
 
-    async def edit_file(score_path: Optional[str], edit) -> Dict:
+    async def edit_file(score_path: Optional[str], edit: Callable[[ScoreFile], Tuple[bool, Dict]]) -> Dict:
         """Save the open score, apply `edit(score) -> (changed, report)` to its file, back up and reload if changed."""
         # A part tab becomes a file of its own: edit that file first, then open it once (two quick reopens
         # crashed MuseScore)
@@ -211,7 +222,7 @@ def setup_score_file_tools(mcp, client: MuseScoreClient):
     ):
         pairs = split_groups(groups)
 
-        def edit(score):
+        def edit(score: ScoreFile):
             report = write_measure_repeats(score, staff, pairs)
             return bool(report["applied"]), report
 
@@ -250,14 +261,14 @@ def setup_score_file_tools(mcp, client: MuseScoreClient):
     ):
         roll_pitches = pitches or drum_pitches(drums)
 
-        def edit(score):
+        def edit(score: ScoreFile):
             if not 0 <= staff < len(score.staves()):
                 raise ToolError(f"Staff {staff} does not exist")
             signatures = measure_lengths(score.staves()[staff], score.staves()[0])
             if not 1 <= start_measure <= end_measure <= len(signatures):
                 raise ToolError(f"Invalid measure range {start_measure}-{end_measure}")
 
-            def beat_ticks(measure):
+            def beat_ticks(measure: int):
                 return 1920 / int(signatures[measure - 1].split("/")[1])
 
             end_ticks = round(end_beat * beat_ticks(end_measure)) if end_beat is not None else None
@@ -289,7 +300,7 @@ def setup_score_file_tools(mcp, client: MuseScoreClient):
         if all(v is None for v in fields.values()):
             raise ToolError("Pass at least one of title, subtitle, composer, lyricist, part_name")
 
-        def edit(score):
+        def edit(score: ScoreFile):
             before = header_texts(score)
             changes = set_header(score, **fields)
             changed = any(header_texts(score).get(k) != before.get(k) for k in fields)
@@ -313,7 +324,7 @@ def setup_score_file_tools(mcp, client: MuseScoreClient):
         append: Annotated[bool, "Keep the lines already printed and add these after them (skipping repeats), e.g. when finishing a chart made in an earlier session"] = False,
         score_path: Annotated[Optional[str], "Path of the score file. Defaults to the file of the score open in MuseScore."] = None,
     ):
-        def edit(score):
+        def edit(score: ScoreFile):
             report = write_end_notes(score, heading, lines, append)
             return True, report
 
@@ -341,7 +352,7 @@ def setup_score_file_tools(mcp, client: MuseScoreClient):
             if not isinstance(row, dict) or not str(row.get("section") or "").strip():
                 raise ToolError(f"Every row needs a section name: {row!r}")
 
-        def edit(score):
+        def edit(score: ScoreFile):
             return True, set_structure_page(score, heading, rows, song, artist)
 
         return await edit_file(score_path, edit)

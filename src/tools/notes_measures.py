@@ -2,10 +2,12 @@
 
 from typing import Annotated, List, Optional
 
+from fastmcp import FastMCP
+
 from ..client import MuseScoreClient
 
 
-def setup_notes_measures_tools(mcp, client: MuseScoreClient):
+def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup notes and measures tools."""
     
     @mcp.tool(

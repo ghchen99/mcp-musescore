@@ -1,14 +1,16 @@
 """Cursor and navigation tools for MuseScore MCP."""
 
-from typing import Annotated
+from typing import Annotated, Any, Dict, Optional
+
+from fastmcp import FastMCP
 
 from ..client import MuseScoreClient
 
 
-def setup_navigation_tools(mcp, client: MuseScoreClient):
+def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup cursor and navigation tools."""
     
-    async def _run_and_convert(action: str, params=None):
+    async def _run_and_convert(action: str, params: Optional[Dict[str, Any]] = None):
         res = await client.send_command(action, params)
         result = res.get("result")
         if isinstance(result, dict) and result.get("success") and "currentSelection" in result:

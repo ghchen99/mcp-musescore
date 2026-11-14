@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from ..client import MuseScoreClient
@@ -128,7 +129,7 @@ def _road_map_line(section: Dict) -> str:
     return f"Bars {section['start']}-{section['end']}: " + ", ".join(parts)
 
 
-def setup_structure_tools(mcp, client: MuseScoreClient):
+def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup repeat structure tools."""
 
     async def staff_header() -> List[Dict]:

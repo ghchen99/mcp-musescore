@@ -3,12 +3,13 @@
 import re
 from typing import Annotated, List, Literal, Optional
 
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from ..client import MuseScoreClient
 
 
-def range_params(start_measure, end_measure, first_staff, last_staff) -> dict:
+def range_params(start_measure: int, end_measure: Optional[int], first_staff: int, last_staff: Optional[int]) -> dict:
     """Plugin range parameters; the plugin's endStaff is exclusive, the tools' last_staff inclusive."""
     params = {
         "startMeasure": start_measure,
@@ -20,7 +21,7 @@ def range_params(start_measure, end_measure, first_staff, last_staff) -> dict:
     return params
 
 
-def beat_params(params: dict, start_beat, end_beat) -> dict:
+def beat_params(params: dict, start_beat: Optional[float], end_beat: Optional[float]) -> dict:
     """Add the optional beat range (start_beat in the first measure, end_beat inclusive in the last)."""
     if start_beat is not None:
         params["startBeat"] = start_beat
@@ -69,7 +70,7 @@ def translucent(color: str, opacity: float) -> str:
     return f"#{round(opacity * 255):02x}{color[1:]}"
 
 
-def setup_formatting_tools(mcp, client: MuseScoreClient):
+def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup score coloring tools."""
 
     @mcp.tool(

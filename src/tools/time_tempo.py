@@ -2,10 +2,12 @@
 
 from typing import Annotated, Optional
 
+from fastmcp import FastMCP
+
 from ..client import MuseScoreClient
 
 
-def setup_time_tempo_tools(mcp, client: MuseScoreClient):
+def setup_time_tempo_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup time signature and tempo tools."""
     
     @mcp.tool(

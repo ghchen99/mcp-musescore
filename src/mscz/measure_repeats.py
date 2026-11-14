@@ -77,7 +77,7 @@ def measure_lengths(staff: ET.Element, first_staff: ET.Element) -> List[str]:
     return lengths
 
 
-def _split_voice(voice: ET.Element):
+def _split_voice(voice: ET.Element) -> Tuple[List[ET.Element], List[ET.Element], List[ET.Element]]:
     """(leading, body, trailing) children of a voice; leading/trailing sit at the measure's edges."""
     children = list(voice)
     starts = [i for i, c in enumerate(children) if c.tag in BODY_START_TAGS]

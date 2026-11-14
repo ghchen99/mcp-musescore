@@ -2,12 +2,14 @@
 
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
+from fastmcp import FastMCP
+
 from ..client import MuseScoreClient
 
 GET_SCORE_WINDOW = 16
 
 
-def setup_connection_tools(mcp, client: MuseScoreClient):
+def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup connection and utility tools."""
     
     @mcp.tool(

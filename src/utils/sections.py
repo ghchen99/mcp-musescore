@@ -321,7 +321,7 @@ def count_in_label(label: str) -> Optional[str]:
     return found.group(1).replace(" ", "") if found else None
 
 
-def count_bars(label: Any) -> Optional[int]:
+def count_bars(label: object) -> Optional[int]:
     """Bars in a count label ("2x4+2" -> 10) or a plain number; None if it is neither."""
     if isinstance(label, int):
         return label

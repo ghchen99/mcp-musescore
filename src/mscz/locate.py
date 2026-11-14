@@ -89,7 +89,7 @@ def part_with_score_id(path: Path, score_id: str) -> Optional[str]:
 class OpenPartError(ScoreFileError):
     """The open score is a part (excerpt) stored inside another score's file."""
 
-    def __init__(self, path: Path, entry: str):
+    def __init__(self, path: Path, entry: str) -> None:
         super().__init__(f"The open score is the part {entry} of {path}")
         self.path, self.entry = path, entry
 

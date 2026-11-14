@@ -9,7 +9,7 @@ in the file.
 import textwrap
 import xml.etree.ElementTree as ET
 from itertools import zip_longest
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..utils.sections import count_bars, count_label
 from .score_file import ScoreFile
@@ -122,7 +122,7 @@ def _set_page_break(element: ET.Element, on: bool) -> None:
             element.append(brk)
 
 
-def _end(staff: ET.Element):
+def _end(staff: ET.Element) -> Tuple[List[ET.Element], int, Optional[ET.Element]]:
     """(children, index of the last measure, structure frame or None) of the first staff."""
     children = list(staff)
     last_measure = max((i for i, c in enumerate(children) if c.tag == "Measure"), default=-1)
@@ -150,7 +150,7 @@ def _place_structure_break(staff: ET.Element) -> None:
 class _Rich:
     """Builds MuseScore rich text (mixed XML content) inside a <text> element."""
 
-    def __init__(self, node: ET.Element):
+    def __init__(self, node: ET.Element) -> None:
         self.node, self.last = node, None
 
     def text(self, value: str) -> None:

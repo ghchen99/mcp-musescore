@@ -28,11 +28,11 @@ def unwrap_result(response: dict) -> dict:
 class MuseScoreClient:
     """Client to communicate with MuseScore WebSocket API."""
     
-    def __init__(self, host: str = "localhost", port: int = 8765):
+    def __init__(self, host: str = "localhost", port: int = 8765) -> None:
         self.uri = f"ws://{host}:{port}"
         self.websocket = None
     
-    async def connect(self):
+    async def connect(self) -> bool:
         """Connect to the MuseScore WebSocket API."""
         try:
             # Score analyses of large scores can exceed the 1 MiB default frame limit.
@@ -43,7 +43,7 @@ class MuseScoreClient:
             logger.error(f"Failed to connect to MuseScore API: {str(e)}")
             return False
     
-    async def _reset_socket(self):
+    async def _reset_socket(self) -> None:
         """Drop the current socket so the next call reconnects from scratch.
 
         MuseScore restarting (or the plugin reloading) leaves us holding a dead
@@ -97,7 +97,7 @@ class MuseScoreClient:
         """Send a command and return the unwrapped result, raising ToolError on failure."""
         return unwrap_result(await self.send_command(action, params))
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the WebSocket connection."""
         if self.websocket:
             await self.websocket.close()

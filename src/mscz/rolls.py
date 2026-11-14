@@ -264,7 +264,7 @@ def simplify_roll(score: ScoreFile, staff_index: int, start_measure: int, end_me
             pieces.append((k, tick, name, dots))
             tick += int(DURATION_TICKS[name] * DOT_FACTORS[dots])
 
-    def piece_chord(i):
+    def piece_chord(i: int) -> ET.Element:
         k, tick, name, dots = pieces[i]
         chord = _duration(ET.Element("Chord"), name, dots)
         for note in roll_notes:
