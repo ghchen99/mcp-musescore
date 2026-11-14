@@ -20,6 +20,27 @@ pass_filenames = false
 always_run = true
 
 [[repos.hooks]]
+id = "ruff-lint"
+name = "Ruff lint"
+entry = "uv run ruff check --fix --force-exclude"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
+id = "ruff-format"
+name = "Ruff format"
+entry = "uv run ruff format --force-exclude"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
+id = "docstring-tailor"
+name = "docstring-tailor docstring format"
+entry = "uv run docstring_tailor format"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
 id = "ty"
 name = "ty type check"
 entry = "uv run ty check"
