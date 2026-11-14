@@ -55,6 +55,16 @@ If a hook fails, the commit is stopped; fix the problem and commit again. Plain 
 uv run prek run --all-files
 ```
 
+## Docstrings
+
+Docstrings follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html#s3.8-comments-and-docstrings); the existing code shows how. In short:
+
+- A one-line summary that fits on one line, then a blank line and the description. docstring-tailor wraps the rest of the text, but a summary it has to wrap fails Ruff's docstring rules.
+- `Args:`, `Returns:` (only when something is returned) and `Raises:` sections. Every argument in `Args:` has its type, also when the signature is annotated, and a `Returns:` entry names the returned value, e.g. `ticks (int): The length in ticks.`
+- Classes get an `Attributes:` section when they have attributes, and classes that users create themselves an `Example:` in Python REPL style (`>>> `).
+- The MCP tool functions have no docstrings: FastMCP ignores them, because each tool's description comes from `description=` in its decorator and its parameters from `Annotated[...]`. Likewise, the classes behind tool parameters (the `TypedDict`s in `src/types/action_types.py` and `RepeatGroup`) have no docstrings, since pydantic would add them to the tool's input schema.
+- Tests need no docstrings; test names say what they test.
+
 ## Tests with coverage
 
 The tests are not a commit hook: they run separately, locally and as their own step in CI.
