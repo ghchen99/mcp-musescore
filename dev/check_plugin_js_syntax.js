@@ -1,5 +1,7 @@
 const fs = require('fs');
-const code = fs.readFileSync('musescore-mcp-websocket.qml', 'utf8');
+const path = require('path');
+// Relative to this script, so it works from any folder.
+const code = fs.readFileSync(path.join(__dirname, '..', 'musescore-mcp-websocket.qml'), 'utf8');
 // The plugin's functions (from the first "function" up to the onRun handler) are plain JS,
 // so they can be parsed on their own without the QML imports and object declarations.
 const body = code.slice(code.indexOf('    function '), code.indexOf('    onRun:'));

@@ -28,9 +28,9 @@ types = ["python"]
 pass_filenames = false
 
 [[repos.hooks]]
-id = "qml-syntax"
-name = "QML plugin syntax check"
-entry = "node syntax_check.js"
+id = "plugin-js-syntax"
+name = "plugin JavaScript syntax check"
+entry = "node dev/check_plugin_js_syntax.js"
 language = "system"
 files = '\.qml$'
 pass_filenames = false

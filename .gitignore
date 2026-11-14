@@ -214,3 +214,6 @@ AGENTS.md
 CLAUDE.md
 
 /mcp_config.json
+
+# Generated files (make skill)
+artifacts/
