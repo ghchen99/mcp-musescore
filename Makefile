@@ -3,15 +3,19 @@
 install:
 	uv sync
 	uv run prek install
+	@echo "📥 Successfully installed the dependencies and the commit hooks."
 
 check:
 	uv run prek run --all-files
+	@echo "🔍 Successfully executed the checks."
 
 test:
 	uv run pytest --no-musescore --cov
+	@echo "🧪 Successfully executed the tests."
 
 test-musescore:
 	uv run pytest
+	@echo "🧪 Successfully executed the tests, including MuseScore."
 
 clean:
 	@find . -type d \( -name '__pycache__' -o -name '.ruff_cache' -o -name '.pytest_cache' \) -exec rm -rf {} +
