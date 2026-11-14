@@ -52,6 +52,7 @@ jobs:
         with:
           python-version: "3.13"
           enable-cache: true
+          save-cache: false
 
       - name: Install dependencies
         run: uv sync --locked
