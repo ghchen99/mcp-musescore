@@ -17,12 +17,13 @@ Runs the test suite without MuseScore, the way most contributors run it.
 1. **`uv sync --locked`** installs the exact versions from `uv.lock`, and fails if the lock file is out of date with `pyproject.toml`.
 2. **Server imports**: `import server` must work.
 3. **List registered tools**: `fastmcp inspect server.py` must succeed.
-4. **Node.js** (`actions/setup-node`), for the QML syntax check.
+4. **Node.js** (`actions/setup-node`), for the plugin JavaScript syntax check.
 5. **Checks** (`make check`, which runs `uv run prek run --all-files`): the same checks contributors run before every commit, from `prek.toml`. prek fails when a hook changes a file, so these also act as checks in CI:
    - **generate requirements.txt from uv.lock**: regenerates `requirements.txt` with `uv export`; fails if it was out of date with `uv.lock`;
    - **deptry**: no missing or unused dependencies;
+   - **ruff lint**, **ruff format** and **docstring-tailor docstring format**: the code follows the lint rules and is formatted; in CI these fail if they would change a file;
    - **ty type check**: no type errors in `src/`, `server.py`, `dev/` and `tests/`;
-   - **QML plugin syntax check**: `node syntax_check.js` parses the plugin's JavaScript.
+   - **plugin JavaScript syntax check**: `node dev/check_plugin_js_syntax.js` parses the JavaScript functions in the plugin.
 6. **Tests with coverage** (`make test`, which runs `uv run pytest --no-musescore --cov`): the test suite without the MuseScore tests (they run in the `musescore-tests` job), with branch coverage of `src/` as configured in `pyproject.toml`; it fails below 86%. This is the coverage without MuseScore, the same on every machine.
 
    See [docs/development.md](../../docs/development.md#checks-before-committing-prek) for both.
@@ -52,7 +53,7 @@ Runs the full test suite, including the tests that need MuseScore (`tests/test_p
    | Fonts | `libfontconfig1`, `libfreetype6` | Fonts, including the music symbols |
    | Utilities | `libglib2.0-0t64` | A library Qt builds on |
 
-   The `t64` in some names is specific to Ubuntu 24.04, which the runner (`ubuntu-latest`) uses.
+   The `t64` in some names is specific to Ubuntu 24.04. That is why both jobs run on `ubuntu-24.04` instead of `ubuntu-latest`, which moves to a newer Ubuntu over time: a newer release can rename these packages and break the job.
 
 2. **Find the MuseScore AppImage.** Asks the GitHub API for the release (`tags/v4.7.0`, or `latest`) and picks its `x86_64.AppImage`.
 3. **Cache the AppImage.** About 190 MB, cached under its file name, so it is downloaded again only when the version changes.

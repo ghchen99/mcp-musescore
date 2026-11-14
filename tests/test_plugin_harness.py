@@ -9,7 +9,9 @@ def test_musescore_bin_none_means_no_musescore(monkeypatch, tmp_path):
     musescore = tmp_path / "mscore"
     musescore.write_text("#!/bin/sh\n")
     musescore.chmod(0o755)
-    monkeypatch.delenv("MUSESCORE_BIN", raising=False)  # also when pytest runs with --no-musescore
+    monkeypatch.delenv(
+        "MUSESCORE_BIN", raising=False
+    )  # also when pytest runs with --no-musescore
     monkeypatch.setenv("PATH", str(tmp_path))
     assert find_musescore() == str(musescore)  # found on the PATH
     monkeypatch.setenv("MUSESCORE_BIN", "none")

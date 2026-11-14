@@ -1,13 +1,15 @@
 """Keep only some instruments of a score, editing the file.
 
-MuseScore can remove instruments itself (Score.removeParts, 4.7+), but only in an open score, and a
-score with a damaged bar in another instrument (e.g. a Guitar Pro import with an incomplete measure)
-cannot be opened by a plugin at all. Removing the other parts in the file first avoids both problems.
+MuseScore can remove instruments itself (Score.removeParts, 4.7+), but only in
+an open score, and a score with a damaged bar in another instrument (e.g. a
+Guitar Pro import with an incomplete measure) cannot be opened by a plugin at
+all. Removing the other parts in the file first avoids both problems.
 
-Things that belong to the whole system are stored on the first staff only: frames (title frame),
-measure-level settings (repeat barlines, layout breaks, jumps, markers, bar numbering) and system
-texts (tempo, rehearsal marks, system text, voltas). When the first staff is removed, they move to
-the first staff that is kept.
+Things that belong to the whole system are stored on the first staff only:
+frames (title frame), measure-level settings (repeat barlines, layout breaks,
+jumps, markers, bar numbering) and system texts (tempo, rehearsal marks, system
+text, voltas). When the first staff is removed, they move to the first staff
+that is kept.
 """
 
 import copy
@@ -17,22 +19,52 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
-from .rolls import element_ticks, fraction_ticks
 from .measure_repeats import measure_lengths
+from .rolls import element_ticks, fraction_ticks
 from .score_file import ScoreFile, ScoreFileError
 
 FRAMES = {"VBox", "TBox", "HBox", "FBox"}
 # Measure children that describe one staff, not the whole system
-PER_STAFF_MEASURE_TAGS = {"voice", "measureRepeatCount", "vspacerUp", "vspacerDown", "vspacerFixed", "visible",
-                          "slashStyle", "stemless", "StaffTypeChange", "MeasureNumber", "MMRestRange"}
-SYSTEM_TEXTS = {"Tempo", "RehearsalMark", "SystemText", "Jump", "Marker", "TempoChangeRanged", "GradualTempoChange"}
+PER_STAFF_MEASURE_TAGS = {
+    "voice",
+    "measureRepeatCount",
+    "vspacerUp",
+    "vspacerDown",
+    "vspacerFixed",
+    "visible",
+    "slashStyle",
+    "stemless",
+    "StaffTypeChange",
+    "MeasureNumber",
+    "MMRestRange",
+}
+SYSTEM_TEXTS = {
+    "Tempo",
+    "RehearsalMark",
+    "SystemText",
+    "Jump",
+    "Marker",
+    "TempoChangeRanged",
+    "GradualTempoChange",
+}
 SYSTEM_SPANNERS = {"Volta", "TempoChangeRanged", "GradualTempoChange"}
 
 
 def _part_staves(score: ScoreFile) -> List[Tuple[ET.Element, List[int]]]:
-    """Each <Part> with the body staff indices it owns (its <Staff> children are positional)."""
+    """Pair each <Part> with the body staves it owns.
+
+    A part's <Staff> children are positional: the first part owns the first
+    staves of the body, and so on.
+
+    Args:
+        score (ScoreFile): The score.
+
+    Returns:
+        parts (List[Tuple[ET.Element, List[int]]]): Each <Part> with the 0-based
+            indices of its body staves.
+    """
     out, index = [], 0
     for part in score.score.findall("Part"):
         count = max(len(part.findall("Staff")), 1)
@@ -42,13 +74,36 @@ def _part_staves(score: ScoreFile) -> List[Tuple[ET.Element, List[int]]]:
 
 
 def _is_system(element: ET.Element) -> bool:
+    """Check whether an element belongs to the whole system, not one staff.
+
+    Args:
+        element (ET.Element): A child of a voice.
+
+    Returns:
+        is_system (bool): True for system texts (tempo, rehearsal marks...) and
+            system spanners (voltas, tempo changes).
+    """
     if element.tag == "Spanner":
         return element.get("type") in SYSTEM_SPANNERS
     return element.tag in SYSTEM_TEXTS
 
 
-def _voice_positions(voice: ET.Element, measure_len: int) -> List[Tuple[int, int]]:
-    """(child index, tick) for every child of a voice; tuplets scale the durations inside them."""
+def _voice_positions(
+    voice: ET.Element, measure_len: int
+) -> List[Tuple[int, int]]:
+    """Return the tick at which each child of a voice starts.
+
+    Tuplets scale the durations inside them, and <location> elements move the
+    position.
+
+    Args:
+        voice (ET.Element): The <voice> element.
+        measure_len (int): The measure's length in ticks, for measure rests.
+
+    Returns:
+        positions (List[Tuple[int, int]]): The (child index, tick) of every
+            child, in order.
+    """
     positions, tick, scale = [], 0, []
     for i, child in enumerate(voice):
         positions.append((i, tick))
@@ -71,11 +126,29 @@ def _voice_positions(voice: ET.Element, measure_len: int) -> List[Tuple[int, int
     return positions
 
 
-def _insert_at_tick(voice: ET.Element, element: ET.Element, tick: int, measure_len: int) -> bool:
-    """Insert `element` before the first chord/rest starting at `tick`; False if no chord/rest starts there."""
+def _insert_at_tick(
+    voice: ET.Element, element: ET.Element, tick: int, measure_len: int
+) -> bool:
+    """Insert an element before the chord or rest that starts at a tick.
+
+    Args:
+        voice (ET.Element): The <voice> element.
+        element (ET.Element): The element to insert.
+        tick (int): The position in the measure, in ticks.
+        measure_len (int): The measure's length in ticks, for measure rests.
+
+    Returns:
+        inserted (bool): True if inserted, False if no chord, rest or tuplet
+            starts at `tick`.
+    """
     for index, position in _voice_positions(voice, measure_len):
         child = voice[index]
-        if position == tick and child.tag in ("Chord", "Rest", "MeasureRepeat", "Tuplet"):
+        if position == tick and child.tag in (
+            "Chord",
+            "Rest",
+            "MeasureRepeat",
+            "Tuplet",
+        ):
             voice.insert(index, element)
             return True
         if position > tick:
@@ -83,13 +156,39 @@ def _insert_at_tick(voice: ET.Element, element: ET.Element, tick: int, measure_l
     return False
 
 
-def _merge_measure(system_measure: ET.Element, kept_measure: ET.Element, measure_len: int,
-                   number: int, report: Dict) -> ET.Element:
-    """The kept staff's measure, with the system-level content of the old first staff's measure."""
+def _merge_measure(
+    system_measure: ET.Element,
+    kept_measure: ET.Element,
+    measure_len: int,
+    number: int,
+    report: Dict,
+) -> ET.Element:
+    """Merge the system-level content of the old first staff into a measure.
+
+    The kept staff's measure gets the old first staff's measure attributes, its
+    measure-level tags, and its system texts and spanners at the same ticks. A
+    system element at a tick where no note starts on the kept staff goes on the
+    nearest earlier note, and is reported.
+
+    Args:
+        system_measure (ET.Element): The measure of the old first staff.
+        kept_measure (ET.Element): The same measure of the kept staff.
+        measure_len (int): The measure's length in ticks.
+        number (int): The measure number, 1-based, for the report.
+        report (Dict): The report, updated in place ("system_texts" and
+            "moved_earlier").
+
+    Returns:
+        merged (ET.Element): A new measure; the input measures are not changed.
+    """
     merged = copy.deepcopy(kept_measure)
     for key, value in system_measure.attrib.items():
         merged.attrib.setdefault(key, value)
-    system_tags = [copy.deepcopy(c) for c in system_measure if c.tag not in PER_STAFF_MEASURE_TAGS]
+    system_tags = [
+        copy.deepcopy(c)
+        for c in system_measure
+        if c.tag not in PER_STAFF_MEASURE_TAGS
+    ]
     for position, child in enumerate(system_tags):
         merged.insert(position, child)
 
@@ -106,26 +205,60 @@ def _merge_measure(system_measure: ET.Element, kept_measure: ET.Element, measure
         moved = copy.deepcopy(child)
         if not _insert_at_tick(target_voice, moved, tick, measure_len):
             # No note starts there on the kept staff: put it on the nearest earlier note
-            positions = [(i, t) for i, t in _voice_positions(target_voice, measure_len)
-                         if target_voice[i].tag in ("Chord", "Rest", "MeasureRepeat") and t <= tick]
+            positions = [
+                (i, t)
+                for i, t in _voice_positions(target_voice, measure_len)
+                if target_voice[i].tag in ("Chord", "Rest", "MeasureRepeat")
+                and t <= tick
+            ]
             target_voice.insert(positions[-1][0] if positions else 0, moved)
-            report["moved_earlier"].append({"measure": number, "element": child.tag})
+            report["moved_earlier"].append(
+                {"measure": number, "element": child.tag}
+            )
         report["system_texts"] += 1
     return merged
 
 
 def keep_parts(score: ScoreFile, keep_staves: Sequence[int]) -> Dict:
-    """Remove every part that has none of `keep_staves` (0-based body staff indices). Returns a report."""
+    """Remove every part that has none of the given staves.
+
+    When the first staff is removed, the first kept staff takes over what is
+    stored on the first staff only: frames, measure-level settings and system
+    texts.
+
+    Args:
+        score (ScoreFile): The score, changed in place.
+        keep_staves (Sequence[int]): The body staves to keep, 0-based; their
+            whole parts are kept.
+
+    Returns:
+        report (Dict): "kept_parts" (their names), "removed_parts", "staves",
+            "system_texts" (the number moved), "moved_earlier" and "dropped"
+            (settings and part scores removed).
+
+    Raises:
+        ScoreFileError: If a staff does not exist, or the kept staff has fewer
+            measures than the first staff.
+    """
     parts = _part_staves(score)
     staves = score.staves()
     keep = set(keep_staves)
     if not keep or not keep <= set(range(len(staves))):
-        raise ScoreFileError(f"Staves {sorted(keep_staves)} do not all exist (score has {len(staves)})")
+        raise ScoreFileError(
+            f"Staves {sorted(keep_staves)} do not all exist (score has {len(staves)})"
+        )
     kept_parts = [(part, owned) for part, owned in parts if keep & set(owned)]
-    kept_indices = sorted(i for _, owned in kept_parts for i in owned if i < len(staves))
-    report = {"kept_parts": [p.findtext("trackName") or "" for p, _ in kept_parts],
-              "removed_parts": len(parts) - len(kept_parts), "staves": len(kept_indices),
-              "system_texts": 0, "moved_earlier": [], "dropped": []}
+    kept_indices = sorted(
+        i for _, owned in kept_parts for i in owned if i < len(staves)
+    )
+    report = {
+        "kept_parts": [p.findtext("trackName") or "" for p, _ in kept_parts],
+        "removed_parts": len(parts) - len(kept_parts),
+        "staves": len(kept_indices),
+        "system_texts": 0,
+        "moved_earlier": [],
+        "dropped": [],
+    }
 
     first_old = staves[0]
     new_staves = []
@@ -133,18 +266,33 @@ def keep_parts(score: ScoreFile, keep_staves: Sequence[int]) -> Dict:
         new_staves = [staves[i] for i in kept_indices]
     else:
         # Rebuild the first kept staff on the old first staff's frame/measure sequence
-        lengths = [fraction_ticks(length) for length in measure_lengths(first_old, first_old)]
+        lengths = [
+            fraction_ticks(length)
+            for length in measure_lengths(first_old, first_old)
+        ]
         kept_first = staves[kept_indices[0]].findall("Measure")
         first = ET.Element("Staff")
         number = 0
         for child in first_old:
             if child.tag == "Measure":
                 if number >= len(kept_first):
-                    raise ScoreFileError("The kept staff has fewer measures than the first staff")
-                first.append(_merge_measure(child, kept_first[number], lengths[number], number + 1, report))
+                    raise ScoreFileError(
+                        "The kept staff has fewer measures than the first staff"
+                    )
+                first.append(
+                    _merge_measure(
+                        child,
+                        kept_first[number],
+                        lengths[number],
+                        number + 1,
+                        report,
+                    )
+                )
                 number += 1
             else:
-                first.append(child)  # frames (title frame...) live on the first staff only
+                first.append(
+                    child
+                )  # frames (title frame...) live on the first staff only
         new_staves = [first] + [staves[i] for i in kept_indices[1:]]
 
     body = score.score
@@ -174,32 +322,60 @@ def keep_parts(score: ScoreFile, keep_staves: Sequence[int]) -> Dict:
 
 
 def part_name(path: Path, entry: str) -> str:
-    """The name of a part stored in a score file (its Score <name>)."""
+    """Return the name of a part stored in a score file.
+
+    Args:
+        path (Path): The score file.
+        entry (str): The part's archive entry (Excerpts/...mscx).
+
+    Returns:
+        name (str): The part score's <name>, or else the entry's file name
+            without its suffix.
+    """
     with zipfile.ZipFile(path) as z:
         name = ET.fromstring(z.read(entry)).findtext("Score/name")
     return name or Path(entry).stem
 
 
 def detach_part(path: Path, entry: str, target: Path) -> Path:
-    """Write the part `entry` (Excerpts/...mscx) of the score file `path` as a score file of its own.
+    """Write a part of a score file as a score file of its own.
 
-    A part is stored as a complete score whose elements point at the full score's (<linkedTo>); without
-    those links MuseScore opens it as an ordinary score with just the part's staves.
+    A part is stored as a complete score whose elements point at the full
+    score's (<linkedTo>); without those links MuseScore opens it as an ordinary
+    score with just the part's staves.
+
+    Args:
+        path (Path): The score file that holds the part.
+        entry (str): The part's archive entry (Excerpts/...mscx).
+        target (Path): The new .mscz file to write.
+
+    Returns:
+        target (Path): The file that was written.
     """
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
         data = z.read(entry).decode("utf-8")
         folder = entry.rsplit("/", 1)[0] + "/"
-        style = next((n for n in names if n.startswith(folder) and n.endswith(".mss")), None)
-        style = style or next((n for n in names if n.endswith(".mss") and "/" not in n), None)
+        style = next(
+            (n for n in names if n.startswith(folder) and n.endswith(".mss")),
+            None,
+        )
+        style = style or next(
+            (n for n in names if n.endswith(".mss") and "/" not in n), None
+        )
         style_data = z.read(style) if style else None
     data = re.sub(r"\s*<linkedTo>[^<]*</linkedTo>", "", data)
     main = f"{target.stem}.mscx"
     rootfiles = f'<rootfile full-path="{main}"/>'
-    container = ('<?xml version="1.0" encoding="UTF-8"?>\n<container><rootfiles>' + rootfiles
-                 + "</rootfiles></container>\n")
+    container = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<container><rootfiles>'
+        + rootfiles
+        + "</rootfiles></container>\n"
+    )
 
-    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(
+        dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
+    )
     os.close(fd)
     umask = os.umask(0)
     os.umask(umask)

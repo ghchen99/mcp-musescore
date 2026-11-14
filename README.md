@@ -97,7 +97,7 @@ uv run prek install                # check every commit (once per clone)
 uv run pytest --no-musescore --cov # run the tests with coverage
 ```
 
-- **Before every commit**, prek checks the dependencies with deptry, the types with ty, and the plugin's syntax when it changed (needs Node.js). The tests run separately. With `make`, `make check` and `make test` run the checks and the tests, as CI does.
+- **Before every commit**, prek checks the dependencies with deptry, lints and formats the code with Ruff and docstring-tailor, checks the types with ty, and the plugin's JavaScript syntax when it changed (needs Node.js). The tests run separately. With `make`, `make check` and `make test` run the checks and the tests, as CI does.
 
 - **Without MuseScore**, the tests use a mock plugin, and the tests that need MuseScore skip themselves.
 - **CI runs the tests twice more with MuseScore**: on 4.7.0, the oldest supported version, and on the latest release. So changes to the plugin are checked too.

@@ -18,16 +18,10 @@ The `skills/` folder holds skills: instructions that teach Claude (or another ag
 
 ## Installing a skill in Claude Desktop (or claude.ai)
 
-1. **Package the skill** as a ZIP whose top level is the skill folder (Claude looks for `musescore-drum-chart/SKILL.md` inside the archive; a `SKILL.md` at the root of the ZIP is not recognized):
-
-   ```bash
-   cd skills
-   zip -r ../musescore-drum-chart.zip musescore-drum-chart
-   # without the zip command: python3 -m zipfile -c ../musescore-drum-chart.zip musescore-drum-chart
-   ```
+1. **Package the skill** with `make skill`, which writes `artifacts/musescore-drum-chart.zip`. The ZIP's top level is the skill folder, as Claude expects (`musescore-drum-chart/SKILL.md` inside the archive; a `SKILL.md` at the root of the ZIP is not recognized). Without `make`: `cd skills && zip -r ../artifacts/musescore-drum-chart.zip musescore-drum-chart`.
 
 2. **Enable code execution**: in Claude Desktop, open **Settings → Capabilities** and make sure file creation / code execution ("Create and edit files") is on. Skills need it.
-3. **Upload the skill**: open **Customize → Skills**, click **+**, choose **Create skill → Upload a skill**, and select `musescore-drum-chart.zip`. Make sure the skill is switched on in the list.
+3. **Upload the skill**: open **Customize → Skills**, click **+**, choose **Create skill → Upload a skill**, and select `artifacts/musescore-drum-chart.zip`. Make sure the skill is switched on in the list.
 4. **Use it**: with MuseScore open and the plugin running, ask for example "make a drum chart from the open score". Claude picks the skill from its description.
 
 **Updating a skill**: after editing `SKILL.md` (or pulling a new version), package it again and upload the new ZIP; if Claude Desktop keeps the old version, delete it under Customize → Skills first. Claude Desktop uses its own uploaded copy, so edits in the repository have no effect until you upload again.

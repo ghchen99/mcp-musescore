@@ -1,29 +1,60 @@
-"""Repeat structure tools for MuseScore MCP: find repeated material and mark it."""
+"""Repeat and song structure tools: find repeated material and mark it."""
 
 import re
-from datetime import datetime
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from ..client import MuseScoreClient
-from ..utils.repetition import core_fingerprint, find_repeats, staff_fingerprints
-from ..utils.sections import find_sections, song_structure as analyse_structure
-from .formatting import range_params
 from ..mscz import ScoreFile, ScoreFileError
-from ..mscz.locate import SCORE_ID_TAG, backup_dir, backup_score, locate_open_score, new_score_id
+from ..mscz.locate import (
+    SCORE_ID_TAG,
+    backup_dir,
+    backup_score,
+    locate_open_score,
+    new_score_id,
+)
 from ..mscz.parts import keep_parts
-from .score_file import KNOWN_PATHS, PART_SOURCES, open_score_path, reopen_in_place
+from ..utils.repetition import (
+    core_fingerprint,
+    find_repeats,
+    staff_fingerprints,
+)
+from ..utils.sections import find_sections
+from ..utils.sections import song_structure as analyse_structure
+from .formatting import range_params
+from .score_file import (
+    KNOWN_PATHS,
+    PART_SOURCES,
+    open_score_path,
+    reopen_in_place,
+)
 
 FETCH_CHUNK = 16
-PASSAGE_COLORS = ["#1f77b4", "#2ca02c", "#9467bd", "#8c564b", "#e377c2", "#17becf"]
+PASSAGE_COLORS = [
+    "#1f77b4",
+    "#2ca02c",
+    "#9467bd",
+    "#8c564b",
+    "#e377c2",
+    "#17becf",
+]
 MEASURE_REPEAT_COLOR = "#ff7f0e"
 
 
 def _contiguous(indices: List[int]) -> List[List[int]]:
-    """Split sorted staff indices into [first, last] runs of consecutive staves."""
+    """Group staff indices into runs of consecutive staves.
+
+    Args:
+        indices (List[int]): The staff indices, in any order.
+
+    Returns:
+        runs (List[List[int]]): The [first, last] of each run.
+    """
     runs: List[List[int]] = []
     for idx in sorted(indices):
         if runs and runs[-1][1] + 1 == idx:
@@ -34,14 +65,28 @@ def _contiguous(indices: List[int]) -> List[List[int]]:
 
 
 def _apply_steps(passage: Dict) -> List[str]:
-    """Tool calls that compress one passage, ordered so earlier measure numbers stay valid."""
+    """List the tool calls that compress one repeated passage.
+
+    The calls are ordered so that the measure numbers in the later calls are
+    still valid when they run.
+
+    Args:
+        passage (Dict): A passage from find_repeats: a "repeat" or a
+            "repeat_with_endings".
+
+    Returns:
+        steps (List[str]): The tool calls, e.g. "delete_measures(9, 16)".
+    """
     dup_first, dup_last = passage["duplicate_measures"]
     if passage["type"] == "repeat":
         return [
             f"delete_measures({dup_first}, {dup_last})",
             f"set_repeat_barlines({passage['start']}, {passage['end']}, play_count={passage['times']})",
         ]
-    first_ending, second_ending = passage["first_ending"], passage["second_ending"]
+    first_ending, second_ending = (
+        passage["first_ending"],
+        passage["second_ending"],
+    )
     return [
         f"add_volta({second_ending[0]}, {second_ending[1]}, endings=[2])",
         f"delete_measures({dup_first}, {dup_last})",
@@ -50,10 +95,36 @@ def _apply_steps(passage: Dict) -> List[str]:
     ]
 
 
-async def fetch_measures(client: MuseScoreClient, start_measure: int, end_measure: Optional[int],
-                         staves: Optional[List[int]]) -> Tuple[List[Dict], List[Dict]]:
-    """Read measures start..end (default: to the end) in chunks; returns (measures, staff info)."""
-    params: Dict[str, Any] = {"startMeasure": start_measure, "endMeasure": start_measure + FETCH_CHUNK - 1}
+async def fetch_measures(
+    client: MuseScoreClient,
+    start_measure: int,
+    end_measure: Optional[int],
+    staves: Optional[List[int]],
+) -> Tuple[List[Dict], List[Dict]]:
+    """Read a range of measures from the plugin, in chunks.
+
+    Reading FETCH_CHUNK measures at a time keeps each reply small, so large
+    scores work too.
+
+    Args:
+        client (MuseScoreClient): The client to the plugin.
+        start_measure (int): The first measure, 1-based.
+        end_measure (Optional[int]): The last measure, 1-based and inclusive.
+            Defaults to the end of the score.
+        staves (Optional[List[int]]): The staves to read, 0-based. Defaults to
+            all staves.
+
+    Returns:
+        result (Tuple[List[Dict], List[Dict]]): The measures, and the staff
+            info.
+
+    Raises:
+        ToolError: If the plugin reports an error.
+    """
+    params: Dict[str, Any] = {
+        "startMeasure": start_measure,
+        "endMeasure": start_measure + FETCH_CHUNK - 1,
+    }
     if staves:
         params["staves"] = staves
     analysis = (await client.request("getScore", params))["analysis"]
@@ -63,14 +134,33 @@ async def fetch_measures(client: MuseScoreClient, start_measure: int, end_measur
 
     next_start = params["endMeasure"] + 1
     while next_start <= last:
-        chunk = {**params, "startMeasure": next_start, "endMeasure": min(next_start + FETCH_CHUNK - 1, last)}
-        measures.extend((await client.request("getScore", chunk))["analysis"].get("measures", []))
+        chunk = {
+            **params,
+            "startMeasure": next_start,
+            "endMeasure": min(next_start + FETCH_CHUNK - 1, last),
+        }
+        measures.extend(
+            (await client.request("getScore", chunk))["analysis"].get(
+                "measures", []
+            )
+        )
         next_start = chunk["endMeasure"] + 1
     return measures, analysis.get("staves", [])
 
 
 def incomplete_measures(measures: List[Dict]) -> List[Dict]:
-    """Bars where a voice's notes and rests don't add up to the bar's length (voice 1 must fill it)."""
+    """Find bars whose notes and rests don't add up to the bar's length.
+
+    Voice 1 must fill the bar exactly; other voices may not be longer than it.
+    Measures without a length are skipped.
+
+    Args:
+        measures (List[Dict]): The measures from the plugin's analysis.
+
+    Returns:
+        incomplete (List[Dict]): Per bad bar and staff: "measure", "staff",
+            "found_ticks" (per voice) and "expected_ticks".
+    """
     out = []
     for measure in measures:
         length = measure.get("durationTicks")
@@ -81,25 +171,53 @@ def incomplete_measures(measures: List[Dict]) -> List[Dict]:
             for element in elements:
                 if element.get("name") in ("Chord", "Rest", "MeasureRepeat"):
                     voice = element.get("voice", 0)
-                    totals[voice] = totals.get(voice, 0) + element.get("durationTicks", 0)
-            bad = {v: t for v, t in totals.items() if t > length or (v == 0 and t != length)}
+                    totals[voice] = totals.get(voice, 0) + element.get(
+                        "durationTicks", 0
+                    )
+            bad = {
+                v: t
+                for v, t in totals.items()
+                if t > length or (v == 0 and t != length)
+            }
             if length and bad:
-                out.append({"measure": measure["measure"], "staff": int(key.replace("staff", "")),
-                            "found_ticks": bad, "expected_ticks": length})
+                out.append(
+                    {
+                        "measure": measure["measure"],
+                        "staff": int(key.replace("staff", "")),
+                        "found_ticks": bad,
+                        "expected_ticks": length,
+                    }
+                )
     return out
 
 
 def _road_map_line(section: Dict) -> str:
-    """One line of the section map, e.g. "Bars 6-13: groove bar 6, 5 exact copies, near 9, fill 13"."""
+    """Write one line of the section map.
+
+    Args:
+        section (Dict): A section from find_sections.
+
+    Returns:
+        line (str): E.g. "Bars 6-13: groove bar 6, 5 exact copies, near 9, fill
+            13", followed by its runs.
+    """
     parts = [f"groove bar {section['groove_bar']}"]
     if section["exact"]:
-        parts.append(f"{len(section['exact'])} exact cop{'y' if len(section['exact']) == 1 else 'ies'}")
+        parts.append(
+            f"{len(section['exact'])} exact cop{'y' if len(section['exact']) == 1 else 'ies'}"
+        )
     if section["near"]:
-        parts.append("near " + ", ".join(str(n["bar"]) for n in section["near"]))
+        parts.append(
+            "near " + ", ".join(str(n["bar"]) for n in section["near"])
+        )
     if section["fills"]:
         parts.append("fill " + ", ".join(str(b) for b in section["fills"]))
     for run in section.get("runs", []):
-        keep = f"{run['keep'][0]}" if run["phrase_bars"] == 1 else f"{run['keep'][0]}-{run['keep'][1]}"
+        keep = (
+            f"{run['keep'][0]}"
+            if run["phrase_bars"] == 1
+            else f"{run['keep'][0]}-{run['keep'][1]}"
+        )
         text = f"collapse {run['start']}-{run['end']} to {keep} x{run['play_count']}"
         crash = run["crash_on_1"]
         if crash.get("legend"):
@@ -112,13 +230,27 @@ def _road_map_line(section: Dict) -> str:
     return f"Bars {section['start']}-{section['end']}: " + ", ".join(parts)
 
 
-def setup_structure_tools(mcp, client: MuseScoreClient):
-    """Setup repeat structure tools."""
+def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
+    """Register the repeat, section and song structure tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     async def staff_header() -> List[Dict]:
-        analysis = (await client.request(
-            "getScore", {"startMeasure": 1, "endMeasure": 1, "includeElements": False}
-        ))["analysis"]
+        """Read the staff info of the open score, without the notes.
+
+        Returns:
+            staves (List[Dict]): The info of each staff.
+        """
+        analysis = (
+            await client.request(
+                "getScore",
+                {"startMeasure": 1, "endMeasure": 1, "includeElements": False},
+            )
+        )["analysis"]
         return analysis.get("staves", [])
 
     @mcp.tool(
@@ -134,23 +266,38 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
     )
     async def find_repeated_measures(
         start_measure: Annotated[int, "First measure to analyse (1-based)"] = 1,
-        end_measure: Annotated[Optional[int], "Last measure to analyse (1-based, inclusive). Defaults to the end of the score."] = None,
-        staves: Annotated[Optional[List[int]], "Staff indices to analyse (0-based). Defaults to all staves."] = None,
+        end_measure: Annotated[
+            Optional[int],
+            "Last measure to analyse (1-based, inclusive). Defaults to the end of the score.",
+        ] = None,
+        staves: Annotated[
+            Optional[List[int]],
+            "Staff indices to analyse (0-based). Defaults to all staves.",
+        ] = None,
         highlight: Annotated[
             bool,
             "Also color the results in the score: duplicate measures of each passage in a passage color, "
             "per-staff measure repeats in orange. Undo or clear_color removes it.",
         ] = False,
     ):
-        measures, staff_info = await fetch_measures(client, start_measure, end_measure, staves)
+        measures, staff_info = await fetch_measures(
+            client, start_measure, end_measure, staves
+        )
         staff_names = [st["name"] for st in staff_info]
         found = find_repeats(measures, staff_names)
         for passage in found["passages"]:
             passage["apply"] = _apply_steps(passage)
 
         result = {
-            "measures_analysed": [measures[0]["measure"], measures[-1]["measure"]] if measures else [],
-            "staves_analysed": [st.get("index", i) for i, st in enumerate(staff_info)],
+            "measures_analysed": [
+                measures[0]["measure"],
+                measures[-1]["measure"],
+            ]
+            if measures
+            else [],
+            "staves_analysed": [
+                st.get("index", i) for i, st in enumerate(staff_info)
+            ],
             "passages": found["passages"],
             "measure_repeats": found["measure_repeats"],
             "notes": [
@@ -165,24 +312,41 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
             legend = []
             for group in found["measure_repeats"]:
                 for first, last_staff in _contiguous(group["staves"]):
-                    await client.request("colorRange", {
-                        **range_params(group["from"], group["to"], first, last_staff),
-                        "color": MEASURE_REPEAT_COLOR,
-                    })
+                    await client.request(
+                        "colorRange",
+                        {
+                            **range_params(
+                                group["from"], group["to"], first, last_staff
+                            ),
+                            "color": MEASURE_REPEAT_COLOR,
+                        },
+                    )
             if found["measure_repeats"]:
-                legend.append({"color": MEASURE_REPEAT_COLOR, "meaning": "per-staff measure repeat"})
+                legend.append(
+                    {
+                        "color": MEASURE_REPEAT_COLOR,
+                        "meaning": "per-staff measure repeat",
+                    }
+                )
             for i, passage in enumerate(found["passages"]):
                 color = PASSAGE_COLORS[i % len(PASSAGE_COLORS)]
                 dup_first, dup_last = passage["duplicate_measures"]
                 for first, last_staff in _contiguous(analysed):
-                    await client.request("colorRange", {
-                        **range_params(dup_first, dup_last, first, last_staff),
+                    await client.request(
+                        "colorRange",
+                        {
+                            **range_params(
+                                dup_first, dup_last, first, last_staff
+                            ),
+                            "color": color,
+                        },
+                    )
+                legend.append(
+                    {
                         "color": color,
-                    })
-                legend.append({
-                    "color": color,
-                    "meaning": f"duplicate of measures {passage['start']}-{passage['end']} (passage {i + 1})",
-                })
+                        "meaning": f"duplicate of measures {passage['start']}-{passage['end']} (passage {i + 1})",
+                    }
+                )
             result["highlight_legend"] = legend
 
         return result
@@ -196,17 +360,28 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         tags={"structure"},
     )
     async def set_repeat_barlines(
-        start_measure: Annotated[int, "Measure that gets the start repeat (1-based)"],
-        end_measure: Annotated[int, "Measure that gets the end repeat (1-based, inclusive)"],
-        play_count: Annotated[int, "How many times the passage is played in total"] = 2,
-        clear: Annotated[bool, "True to remove the repeat barlines instead of adding them"] = False,
+        start_measure: Annotated[
+            int, "Measure that gets the start repeat (1-based)"
+        ],
+        end_measure: Annotated[
+            int, "Measure that gets the end repeat (1-based, inclusive)"
+        ],
+        play_count: Annotated[
+            int, "How many times the passage is played in total"
+        ] = 2,
+        clear: Annotated[
+            bool, "True to remove the repeat barlines instead of adding them"
+        ] = False,
     ):
-        return await client.request("setRepeatBarlines", {
-            "startMeasure": start_measure,
-            "endMeasure": end_measure,
-            "playCount": play_count,
-            "clear": clear,
-        })
+        return await client.request(
+            "setRepeatBarlines",
+            {
+                "startMeasure": start_measure,
+                "endMeasure": end_measure,
+                "playCount": play_count,
+                "clear": clear,
+            },
+        )
 
     @mcp.tool(
         description=(
@@ -217,14 +392,27 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         tags={"structure"},
     )
     async def add_volta(
-        start_measure: Annotated[int, "First measure under the volta (1-based)"],
-        end_measure: Annotated[Optional[int], "Last measure under the volta (1-based, inclusive). Defaults to start_measure."] = None,
-        endings: Annotated[List[int], "Which repeat passes play this ending, e.g. [1] for a first ending, [2] for a second"] = [1],
-        text: Annotated[Optional[str], 'Volta label. Defaults to the endings, e.g. "1." or "1, 2."'] = None,
+        start_measure: Annotated[
+            int, "First measure under the volta (1-based)"
+        ],
+        end_measure: Annotated[
+            Optional[int],
+            "Last measure under the volta (1-based, inclusive). Defaults to start_measure.",
+        ] = None,
+        endings: Annotated[
+            List[int],
+            "Which repeat passes play this ending, e.g. [1] for a first ending, [2] for a second",
+        ] = [1],
+        text: Annotated[
+            Optional[str],
+            'Volta label. Defaults to the endings, e.g. "1." or "1, 2."',
+        ] = None,
     ):
         params = {
             "startMeasure": start_measure,
-            "endMeasure": end_measure if end_measure is not None else start_measure,
+            "endMeasure": end_measure
+            if end_measure is not None
+            else start_measure,
             "endings": endings,
         }
         if text:
@@ -239,16 +427,28 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         tags={"structure"},
     )
     async def prepare_measure_repeat(
-        start_measure: Annotated[int, "First measure to turn into a repeat sign (1-based); it repeats the bars before it"],
-        end_measure: Annotated[Optional[int], "Last measure (1-based, inclusive). Defaults to start_measure + bars - 1."] = None,
-        bars: Annotated[Literal[1, 2, 4], "Size of the measure-repeat sign: 1, 2 or 4 bars"] = 1,
+        start_measure: Annotated[
+            int,
+            "First measure to turn into a repeat sign (1-based); it repeats the bars before it",
+        ],
+        end_measure: Annotated[
+            Optional[int],
+            "Last measure (1-based, inclusive). Defaults to start_measure + bars - 1.",
+        ] = None,
+        bars: Annotated[
+            Literal[1, 2, 4], "Size of the measure-repeat sign: 1, 2 or 4 bars"
+        ] = 1,
         first_staff: Annotated[int, "First staff (0-based)"] = 0,
-        last_staff: Annotated[Optional[int], "Last staff (0-based, inclusive). Defaults to the last staff."] = None,
+        last_staff: Annotated[
+            Optional[int],
+            "Last staff (0-based, inclusive). Defaults to the last staff.",
+        ] = None,
     ):
         if end_measure is None:
             end_measure = start_measure + bars - 1
         result = await client.request(
-            "selectMeasures", range_params(start_measure, end_measure, first_staff, last_staff)
+            "selectMeasures",
+            range_params(start_measure, end_measure, first_staff, last_staff),
         )
         sign = "measure repeat" if bars == 1 else f"{bars}-measure repeat"
         result["next_step"] = (
@@ -268,28 +468,52 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         tags={"structure"},
     )
     async def find_groove_sections(
-        staves: Annotated[Optional[List[int]], "Staff indices to analyse (0-based). Defaults to the drum staves."] = None,
+        staves: Annotated[
+            Optional[List[int]],
+            "Staff indices to analyse (0-based). Defaults to the drum staves.",
+        ] = None,
         start_measure: Annotated[int, "First measure to analyse (1-based)"] = 1,
-        end_measure: Annotated[Optional[int], "Last measure to analyse (1-based, inclusive). Defaults to the end of the score."] = None,
-        tolerance: Annotated[float, "How similar (0-1, share of identical hits) a bar must be to its groove to count as a near copy"] = 0.85,
+        end_measure: Annotated[
+            Optional[int],
+            "Last measure to analyse (1-based, inclusive). Defaults to the end of the score.",
+        ] = None,
+        tolerance: Annotated[
+            float,
+            "How similar (0-1, share of identical hits) a bar must be to its groove to count as a near copy",
+        ] = 0.85,
     ):
         if not staves:
-            staves = [st["index"] for st in await staff_header() if st.get("isDrums")]
+            staves = [
+                st["index"] for st in await staff_header() if st.get("isDrums")
+            ]
             if not staves:
-                raise ToolError("No drum staff found in the score; pass the staves to analyse")
+                raise ToolError(
+                    "No drum staff found in the score; pass the staves to analyse"
+                )
 
-        measures, staff_info = await fetch_measures(client, start_measure, end_measure, staves)
+        measures, staff_info = await fetch_measures(
+            client, start_measure, end_measure, staves
+        )
         result = []
         for st in staff_info:
             sections = find_sections(measures, st["name"], tolerance)
-            groups = [g for sec in sections for g in sec["proposed_repeat_signs"]]
-            result.append({
-                "staff": st.get("index"),
-                "name": st.get("partName") or st["name"],
-                "road_map": [_road_map_line(sec) for sec in sections],
-                "sections": sections,
-                "apply_exact_copies": {"staff": st.get("index"), "groups": groups} if groups else None,
-            })
+            groups = [
+                g for sec in sections for g in sec["proposed_repeat_signs"]
+            ]
+            result.append(
+                {
+                    "staff": st.get("index"),
+                    "name": st.get("partName") or st["name"],
+                    "road_map": [_road_map_line(sec) for sec in sections],
+                    "sections": sections,
+                    "apply_exact_copies": {
+                        "staff": st.get("index"),
+                        "groups": groups,
+                    }
+                    if groups
+                    else None,
+                }
+            )
         return {
             "staves": result,
             "notes": [
@@ -316,23 +540,37 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         tags={"structure"},
     )
     async def song_structure(
-        staff: Annotated[Optional[int], "Staff to analyse (0-based). Defaults to the first drum staff."] = None,
-        tolerance: Annotated[float, "How similar (0-1, share of identical hits) bars must be to share a groove name"] = 0.8,
+        staff: Annotated[
+            Optional[int],
+            "Staff to analyse (0-based). Defaults to the first drum staff.",
+        ] = None,
+        tolerance: Annotated[
+            float,
+            "How similar (0-1, share of identical hits) bars must be to share a groove name",
+        ] = 0.8,
     ):
         if staff is None:
-            drums = [st["index"] for st in await staff_header() if st.get("isDrums")]
+            drums = [
+                st["index"] for st in await staff_header() if st.get("isDrums")
+            ]
             staff = drums[0] if drums else 0
         measures, staff_info = await fetch_measures(client, 1, None, [staff])
         if not staff_info:
             raise ToolError(f"Staff {staff} not found")
         result = analyse_structure(measures, staff_info[0]["name"], tolerance)
-        result["suggested_rows"] = [{
-            "section": sec["section"],
-            "bars": sec["bars_played"],
-            "count": sec["count"],
-            "groove": ", ".join(g["name"] for g in sec["grooves"]),
-            "fill": "; ".join(f"bar {f['bar']} ({', '.join(f['drums'])})" for f in sec["fills"]),
-        } for sec in result["sections"]]
+        result["suggested_rows"] = [
+            {
+                "section": sec["section"],
+                "bars": sec["bars_played"],
+                "count": sec["count"],
+                "groove": ", ".join(g["name"] for g in sec["grooves"]),
+                "fill": "; ".join(
+                    f"bar {f['bar']} ({', '.join(f['drums'])})"
+                    for f in sec["fills"]
+                ),
+            }
+            for sec in result["sections"]
+        ]
         result["staff"] = staff
         return result
 
@@ -350,43 +588,98 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         tags={"formatting"},
     )
     async def label_section_counts(
-        counts: Annotated[Optional[List[Dict[str, Any]]], 'Counts to write: [{"measure": 8, "text": "2x4+2"}] (measure '
-                                                         '= the bar holding the section label). Defaults to song_structure\'s counts.'] = None,
-        staff: Annotated[Optional[int], "Staff to analyse when counts are computed (0-based). Defaults to the first drum staff."] = None,
-        placement: Annotated[Literal["label", "beside"], "In parentheses in the section label, or as red text beside it"] = "label",
+        counts: Annotated[
+            Optional[List[Dict[str, Any]]],
+            'Counts to write: [{"measure": 8, "text": "2x4+2"}] (measure '
+            "= the bar holding the section label). Defaults to song_structure's counts.",
+        ] = None,
+        staff: Annotated[
+            Optional[int],
+            "Staff to analyse when counts are computed (0-based). Defaults to the first drum staff.",
+        ] = None,
+        placement: Annotated[
+            Literal["label", "beside"],
+            "In parentheses in the section label, or as red text beside it",
+        ] = "label",
         color: Annotated[str, "Text color (placement='beside')"] = "#d62728",
         size: Annotated[float, "Font size in points (placement='beside')"] = 12,
-        label_size: Annotated[Optional[float], "Section label font size in points (placement='label'; MuseScore's default is 14); None leaves it"] = 12,
-        label_clearance: Annotated[Optional[float], "Minimum space around section labels in staff spaces (placement='label'; MuseScore's default is 0.5); None leaves it"] = 1,
-        clear: Annotated[bool, "Remove the counts instead (at the given measures, or at every section label)"] = False,
+        label_size: Annotated[
+            Optional[float],
+            "Section label font size in points (placement='label'; MuseScore's default is 14); None leaves it",
+        ] = 12,
+        label_clearance: Annotated[
+            Optional[float],
+            "Minimum space around section labels in staff spaces (placement='label'; MuseScore's default is 0.5); None leaves it",
+        ] = 1,
+        clear: Annotated[
+            bool,
+            "Remove the counts instead (at the given measures, or at every section label)",
+        ] = False,
     ):
         computed = counts is None
         if counts is None:
             if staff is None:
-                drums = [st["index"] for st in await staff_header() if st.get("isDrums")]
+                drums = [
+                    st["index"]
+                    for st in await staff_header()
+                    if st.get("isDrums")
+                ]
                 staff = drums[0] if drums else 0
-            measures, staff_info = await fetch_measures(client, 1, None, [staff])
+            measures, staff_info = await fetch_measures(
+                client, 1, None, [staff]
+            )
             if not staff_info:
                 raise ToolError(f"Staff {staff} not found")
-            sections = analyse_structure(measures, staff_info[0]["name"])["sections"]
-            counts = [{"measure": sec["first_bar"], "text": sec["count"]} for sec in sections if sec["section"] != "Start"]
+            sections = analyse_structure(measures, staff_info[0]["name"])[
+                "sections"
+            ]
+            counts = [
+                {"measure": sec["first_bar"], "text": sec["count"]}
+                for sec in sections
+                if sec["section"] != "Start"
+            ]
         for c in counts:
-            if not isinstance(c, dict) or not isinstance(c.get("measure"), int) or not str(c.get("text") or "").strip():
-                raise ToolError(f'Each count needs a measure and a text, e.g. {{"measure": 8, "text": "2x4+2"}}: {c!r}')
-        params = {"counts": [{"measure": c["measure"], "text": str(c["text"]).strip().strip("()").strip()} for c in counts],
-                  "mode": placement, "color": color, "fontSize": size}
+            if (
+                not isinstance(c, dict)
+                or not isinstance(c.get("measure"), int)
+                or not str(c.get("text") or "").strip()
+            ):
+                raise ToolError(
+                    f'Each count needs a measure and a text, e.g. {{"measure": 8, "text": "2x4+2"}}: {c!r}'
+                )
+        params = {
+            "counts": [
+                {
+                    "measure": c["measure"],
+                    "text": str(c["text"]).strip().strip("()").strip(),
+                }
+                for c in counts
+            ],
+            "mode": placement,
+            "color": color,
+            "fontSize": size,
+        }
         if computed or placement == "label":
-            params["clearAll"] = True  # counts beside the labels left anywhere by earlier edits go too
+            params["clearAll"] = (
+                True  # counts beside the labels left anywhere by earlier edits go too
+            )
         if clear:
             params["clear"] = True
         result = await client.request("addSectionCounts", params)
         result["counts"] = params["counts"]
         if placement == "label" and not clear:
-            styles = {"rehearsalMarkFontSize": label_size, "rehearsalMarkMinDistance": label_clearance}
+            styles = {
+                "rehearsalMarkFontSize": label_size,
+                "rehearsalMarkMinDistance": label_clearance,
+            }
             for key, value in styles.items():
                 if value is not None:
-                    await client.request("setStyle", {"key": key, "value": value})
-            result["label_style"] = {k: v for k, v in styles.items() if v is not None}
+                    await client.request(
+                        "setStyle", {"key": key, "value": value}
+                    )
+            result["label_style"] = {
+                k: v for k, v in styles.items() if v is not None
+            }
         return result
 
     @mcp.tool(
@@ -402,29 +695,55 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         tags={"structure"},
     )
     async def collapse_to_repeat(
-        start: Annotated[int, "First bar of the run (1-based); the phrase starting here is kept"],
+        start: Annotated[
+            int,
+            "First bar of the run (1-based); the phrase starting here is kept",
+        ],
         end: Annotated[int, "Last bar of the run (1-based, inclusive)"],
-        phrase_bars: Annotated[int, "Length of the repeated phrase in bars (1, 2, 4...); the run must be a whole number of phrases"] = 1,
-        force: Annotated[bool, "Collapse even if copies differ in more than ghost notes and crashes on beat 1 (those differences are lost)"] = False,
+        phrase_bars: Annotated[
+            int,
+            "Length of the repeated phrase in bars (1, 2, 4...); the run must be a whole number of phrases",
+        ] = 1,
+        force: Annotated[
+            bool,
+            "Collapse even if copies differ in more than ghost notes and crashes on beat 1 (those differences are lost)",
+        ] = False,
     ):
         length = end - start + 1
         if phrase_bars < 1 or length < 2 * phrase_bars or length % phrase_bars:
-            raise ToolError(f"Bars {start}-{end} are not a whole number (at least 2) of {phrase_bars}-bar phrases")
+            raise ToolError(
+                f"Bars {start}-{end} are not a whole number (at least 2) of {phrase_bars}-bar phrases"
+            )
         measures, staff_info = await fetch_measures(client, start, end, None)
         differing, minor = [], []
         for st in staff_info:
             core, _ = staff_fingerprints(measures, st["name"], core_fingerprint)
             full, _ = staff_fingerprints(measures, st["name"])
             name = st.get("partName") or st["name"]
-            bars = [measures[i]["measure"] for i in range(phrase_bars, len(core)) if core[i] != core[i % phrase_bars]]
+            bars = [
+                measures[i]["measure"]
+                for i in range(phrase_bars, len(core))
+                if core[i] != core[i % phrase_bars]
+            ]
             if bars:
-                differing.append({"staff": st.get("index"), "name": name, "bars": bars})
-            small = [measures[i]["measure"] for i in range(phrase_bars, len(full))
-                     if full[i] != full[i % phrase_bars] and measures[i]["measure"] not in bars]
+                differing.append(
+                    {"staff": st.get("index"), "name": name, "bars": bars}
+                )
+            small = [
+                measures[i]["measure"]
+                for i in range(phrase_bars, len(full))
+                if full[i] != full[i % phrase_bars]
+                and measures[i]["measure"] not in bars
+            ]
             if small:
-                minor.append({"staff": st.get("index"), "name": name, "bars": small})
+                minor.append(
+                    {"staff": st.get("index"), "name": name, "bars": small}
+                )
         if differing and not force:
-            listed = "; ".join(f"{d['name']} (staff {d['staff']}): bars {d['bars']}" for d in differing)
+            listed = "; ".join(
+                f"{d['name']} (staff {d['staff']}): bars {d['bars']}"
+                for d in differing
+            )
             raise ToolError(
                 f"Not every phrase in {start}-{end} is a copy of bars {start}-{start + phrase_bars - 1}: {listed}. "
                 "Collapsing would delete those differences (kicks, snares, hats or articulations). Try a longer "
@@ -434,16 +753,27 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         play_count = length // phrase_bars
         kept_end = start + phrase_bars - 1
         repeat = await client.request(
-            "setRepeatBarlines", {"startMeasure": start, "endMeasure": kept_end, "playCount": play_count}
+            "setRepeatBarlines",
+            {
+                "startMeasure": start,
+                "endMeasure": kept_end,
+                "playCount": play_count,
+            },
         )
         if repeat.get("fallback"):
             return repeat
-        await client.request("deleteMeasures", {"startMeasure": kept_end + 1, "endMeasure": end})
+        await client.request(
+            "deleteMeasures", {"startMeasure": kept_end + 1, "endMeasure": end}
+        )
         try:
-            await client.request("setStyle", {"key": "repeatPlayCountShow", "value": True})
+            await client.request(
+                "setStyle", {"key": "repeatPlayCountShow", "value": True}
+            )
         except ToolError:
             pass
-        kept = f"Bar {start}" if phrase_bars == 1 else f"Bars {start}-{kept_end}"
+        kept = (
+            f"Bar {start}" if phrase_bars == 1 else f"Bars {start}-{kept_end}"
+        )
         return {
             "success": True,
             "message": (
@@ -454,14 +784,40 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
             "ghost_or_crash_differences_dropped": minor,
         }
 
-    async def remove_other_parts(staves: List[int], score_path: Optional[str]) -> Dict:
-        """make_part_score(in_place=True). Nothing is saved before the other parts are gone: saving the full
-        score would write again (and MuseScore would flag as corrupted) a damaged bar in another instrument, and
-        an imported score would first ask where to save."""
+    async def remove_other_parts(
+        staves: List[int], score_path: Optional[str]
+    ) -> Dict:
+        """Remove the other parts from the open score itself.
+
+        This is make_part_score(in_place=True).
+
+        Nothing is saved before the other parts are gone: saving the full score
+        would write again (and MuseScore would flag as corrupted) a damaged bar
+        in another instrument, and an imported score would first ask where to
+        save. The full score is backed up first, as MusicXML and, if its file is
+        found, as a copy.
+
+        Args:
+            staves (List[int]): The staves to keep, 0-based.
+            score_path (Optional[str]): A score file given by the user, for the
+                backup. Defaults to the open score's own file.
+
+        Returns:
+            result (Dict): "kept_parts", "staves_now", "full_score_backups",
+                "incomplete_bars", "warnings" and a "message".
+
+        Raises:
+            ToolError: If the plugin reports an error.
+        """
         score_id = (await client.request("ensureScoreId"))["scoreId"]
         info = await client.request("scoreFileInfo")
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        name = re.sub(r'[\\/:*?"<>|]+', "-", info.get("scoreName") or "score").strip(" -.") or "score"
+        name = (
+            re.sub(
+                r'[\\/:*?"<>|]+', "-", info.get("scoreName") or "score"
+            ).strip(" -.")
+            or "score"
+        )
         backups, warnings = [], []
         # The full score as MusicXML: always possible, without saving
         export = backup_dir() / f"{name}.{stamp}.full-score.mxl"
@@ -473,14 +829,23 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
             warnings.append(f"MusicXML backup failed: {e}")
         # The score's own file, if it is certainly this score (it carries its ID and shape)
         try:
-            path = locate_open_score(score_id, info.get("numStaves", 0), info.get("numMeasures", 0),
-                                     explicit=score_path, known=[KNOWN_PATHS[score_id]] if score_id in KNOWN_PATHS else [])
+            path = locate_open_score(
+                score_id,
+                info.get("numStaves", 0),
+                info.get("numMeasures", 0),
+                explicit=score_path,
+                known=[KNOWN_PATHS[score_id]]
+                if score_id in KNOWN_PATHS
+                else [],
+            )
             backups.append(str(backup_score(path)))
         except ScoreFileError:
             pass
         if not backups:
-            warnings.append("No backup of the full score could be made; its file on disk is untouched until the "
-                            "score is saved.")
+            warnings.append(
+                "No backup of the full score could be made; its file on disk is untouched until the "
+                "score is saved."
+            )
 
         result = await client.request("removeParts", {"keepStaves": staves})
         measures, _ = await fetch_measures(client, 1, None, None)
@@ -488,7 +853,10 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         if incomplete:
             warnings.append(
                 "Bars whose notes don't fill the bar (MuseScore calls the file corrupted when it has these): "
-                + ", ".join(f"bar {i['measure']} staff {i['staff']}" for i in incomplete[:10])
+                + ", ".join(
+                    f"bar {i['measure']} staff {i['staff']}"
+                    for i in incomplete[:10]
+                )
                 + (" ..." if len(incomplete) > 10 else "")
             )
         return {
@@ -498,9 +866,10 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
             "incomplete_bars": incomplete,
             "warnings": warnings,
             "message": "Removed the other instruments from the open score (Ctrl+Z undoes it). Nothing was saved: "
-                       "the first file edit (or File > Save) saves the chart. If the score was imported (e.g. from "
-                       "Guitar Pro), MuseScore asks once where to save it. Full-score backups: "
-                       + (", ".join(backups) or "none") + " (open the .mxl with File > Open).",
+            "the first file edit (or File > Save) saves the chart. If the score was imported (e.g. from "
+            "Guitar Pro), MuseScore asks once where to save it. Full-score backups: "
+            + (", ".join(backups) or "none")
+            + " (open the .mxl with File > Open).",
         }
 
     @mcp.tool(
@@ -518,10 +887,21 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         tags={"structure"},
     )
     async def make_part_score(
-        staves: Annotated[List[int], "Staff indices (0-based) whose parts to keep"],
-        output_path: Annotated[Optional[str], "Where to save the new score (.mscz). Defaults to next to the original, named after the part."] = None,
-        score_path: Annotated[Optional[str], "Path of the current score's file. Defaults to the file of the score open in MuseScore."] = None,
-        in_place: Annotated[bool, "Remove the other instruments from the open score (after backing up the full score) instead of making a copy"] = False,
+        staves: Annotated[
+            List[int], "Staff indices (0-based) whose parts to keep"
+        ],
+        output_path: Annotated[
+            Optional[str],
+            "Where to save the new score (.mscz). Defaults to next to the original, named after the part.",
+        ] = None,
+        score_path: Annotated[
+            Optional[str],
+            "Path of the current score's file. Defaults to the file of the score open in MuseScore.",
+        ] = None,
+        in_place: Annotated[
+            bool,
+            "Remove the other instruments from the open score (after backing up the full score) instead of making a copy",
+        ] = False,
     ):
         header = await staff_header()
         kept = [st for st in header if st["index"] in staves]
@@ -531,7 +911,9 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
             return await remove_other_parts(staves, score_path)
         # The plugin's writeScore() cannot write .mscz in MuseScore 4.7, so copy the saved file instead.
         source = await open_score_path(client, score_path, reopen_part=False)
-        fallback = PART_SOURCES.pop(source, source)  # a part tab's own file isn't open yet: fall back to the full score
+        fallback = PART_SOURCES.pop(
+            source, source
+        )  # a part tab's own file isn't open yet: fall back to the full score
 
         if output_path:
             target = Path(output_path).expanduser()
@@ -539,15 +921,22 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
                 target = target.with_suffix(source.suffix)
         else:
             # Part names can be long ("Player | Instrument | Drums"): use the short name or the last segment
-            label = kept[0].get("shortName") or (kept[0].get("partName") or "part").split("|")[-1]
+            label = (
+                kept[0].get("shortName")
+                or (kept[0].get("partName") or "part").split("|")[-1]
+            )
             label = re.sub(r'[\\/:*?"<>|]+', "-", label).strip(" -.") or "part"
             target = source.with_name(f"{source.stem} - {label}{source.suffix}")
             n = 2
             while target.exists():
-                target = source.with_name(f"{source.stem} - {label} ({n}){source.suffix}")
+                target = source.with_name(
+                    f"{source.stem} - {label} ({n}){source.suffix}"
+                )
                 n += 1
         if target.exists():
-            raise ToolError(f"{target} already exists; choose another output_path")
+            raise ToolError(
+                f"{target} already exists; choose another output_path"
+            )
 
         # The other instruments are removed in the file, before MuseScore opens it: a damaged bar in a removed
         # instrument (common in Guitar Pro imports) would otherwise stop MuseScore from opening the copy.
@@ -555,12 +944,18 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
             copy_score = ScoreFile(source)
             report = keep_parts(copy_score, staves)
         except ScoreFileError as e:
-            raise ToolError(f"Could not make the copy: {e}. Nothing was changed.")
-        copy_id = new_score_id()  # its own score ID, so it can never be mistaken for the original
+            raise ToolError(
+                f"Could not make the copy: {e}. Nothing was changed."
+            )
+        copy_id = (
+            new_score_id()
+        )  # its own score ID, so it can never be mistaken for the original
         for tag in copy_score.score.findall("metaTag"):
             if tag.get("name") == SCORE_ID_TAG:
                 copy_score.score.remove(tag)
-        copy_score.score.insert(0, ET.Element("metaTag", {"name": SCORE_ID_TAG}))
+        copy_score.score.insert(
+            0, ET.Element("metaTag", {"name": SCORE_ID_TAG})
+        )
         copy_score.score[0].text = copy_id
         copy_score.save(target)
         KNOWN_PATHS[copy_id] = target
@@ -581,8 +976,8 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
             "staves_now": info.get("numStaves"),
             "system_texts_moved": report["system_texts"],
             "message": f"Opened {target.name} with only {', '.join(report['kept_parts'])}. "
-                       f"The original ({source.name}) is saved and unchanged; it was closed so the plugin "
-                       "works on the copy (reopen it from File > Open Recent when needed).",
+            f"The original ({source.name}) is saved and unchanged; it was closed so the plugin "
+            "works on the copy (reopen it from File > Open Recent when needed).",
         }
 
     @mcp.tool(
@@ -598,9 +993,12 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
     )
     async def number_bars_as_played(
         exclude_from_count: Annotated[
-            Optional[List[int]], "Bar positions (1-based) to exclude from the count, e.g. [1]"
+            Optional[List[int]],
+            "Bar positions (1-based) to exclude from the count, e.g. [1]",
         ] = None,
-        reset: Annotated[bool, "Undo the numbering: plain 1..N, no offsets or excluded bars"] = False,
+        reset: Annotated[
+            bool, "Undo the numbering: plain 1..N, no offsets or excluded bars"
+        ] = False,
     ):
         params = {"exclude": exclude_from_count} if exclude_from_count else {}
         if reset:
@@ -616,8 +1014,13 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
     )
     async def set_measure_number(
         measure: Annotated[int, "Bar position (1-based)"],
-        add_to_number: Annotated[Optional[int], "Value for 'Add to measure number' (0 to remove an offset)"] = None,
-        exclude_from_count: Annotated[Optional[bool], "Value for 'Exclude from measure count'"] = None,
+        add_to_number: Annotated[
+            Optional[int],
+            "Value for 'Add to measure number' (0 to remove an offset)",
+        ] = None,
+        exclude_from_count: Annotated[
+            Optional[bool], "Value for 'Exclude from measure count'"
+        ] = None,
     ):
         if add_to_number is None and exclude_from_count is None:
             raise ToolError("Pass add_to_number and/or exclude_from_count")
@@ -636,5 +1039,6 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
         measure: Annotated[int, "Measure number (1-based)"],
         text: Annotated[str, 'Label, e.g. "A" or "Verse 1"'],
     ):
-        return await client.request("addRehearsalMark", {"measure": measure, "text": text})
-
+        return await client.request(
+            "addRehearsalMark", {"measure": measure, "text": text}
+        )

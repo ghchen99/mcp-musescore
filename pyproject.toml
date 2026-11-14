@@ -32,21 +32,70 @@ Documentation = "https://github.com/ghchen99/mcp-musescore/tree/main/docs"
 [dependency-groups]
 dev = [
     "deptry>=0.25.1",
+    "docstring-tailor>=0.4.1",
     "prek>=0.5.10",
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
+    "ruff>=0.17.5",
     "ty>=0.0.103",
 ]
+
+# Pytest and coverage settings.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.coverage.run]
 source = ["src"]
 branch = true
 
 [tool.coverage.report]
-# 86% is the coverage without MuseScore when this threshold was added (86.07%). Only raise it, in later PRs as
-# tests are added, never lower it: that way the coverage of the repository can only improve.
+# 86% is the coverage without MuseScore when this threshold was
+# added (86.07%). Only raise it, in later PRs as tests are added,
+# never lower it: that way the coverage can only improve.
 fail_under = 86
 show_missing = true
+
+# Linter and formatter settings (Ruff).
+
+[tool.ruff]
+line-length = 80
+# Python files only. Ruff can also format code blocks in Markdown,
+# but the examples in docs/ are left as written.
+include = ["*.py", "*.pyi"]
+
+[tool.ruff.lint]
+# Listed in full, so that a Ruff upgrade which changes the default
+# rules does not change what is checked.
+select = ["E4", "E7", "E9", "F", "I", "ANN", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests are not held to annotation rules, and need no docstrings
+# (test names say what they test). Docstrings they do have still
+# follow the layout rules.
+"tests/**" = ["ANN", "D1"]
+# No return types on the MCP tools (yet): FastMCP reads a tool's return
+# type and turns it into an output schema, so adding one changes the tool
+# definition clients see and adds structured content to each result.
+# That is a decision of its own, not part of a lint cleanup.
+"src/tools/*.py" = ["ANN202"]
+# Class docstrings here would become descriptions in a tool's input schema
+# (the TypedDicts behind processSequence, and RepeatGroup), changing what
+# clients see: a decision of its own too.
+"src/types/action_types.py" = ["D101"]
+"src/tools/score_file.py" = ["D101"]
+
+# Docstring settings (docstring-tailor).
+
+[tool.docstring_tailor]
+line-length = 80
+style = "google"
+
+# Type checker settings (ty).
 
 [tool.ty.src]
 include = ["src", "server.py", "dev", "tests"]

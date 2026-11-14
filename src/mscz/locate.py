@@ -1,8 +1,9 @@
-"""Find the file behind the score open in MuseScore, and keep backups before editing it.
+"""Find the file behind the open score, and back it up before editing.
 
-The plugin API does not expose a score's path. The plugin stores an ID in the score's metadata
-(ensureScoreId) and saves it; the file is then looked up among the paths the server already knows
-and MuseScore's open (session/session.json) and recent (recent_files.json) files, by that ID.
+The plugin API does not expose a score's path. The plugin stores an ID in the
+score's metadata (ensureScoreId) and saves it; the file is then looked up among
+the paths the server already knows and MuseScore's open (session/session.json)
+and recent (recent_files.json) files, by that ID.
 """
 
 import json
@@ -22,6 +23,12 @@ SCORE_SUFFIXES = (".mscz", ".mscx")
 
 
 def musescore_data_dirs() -> List[Path]:
+    """Return MuseScore 4's data folders on Linux, macOS and Windows.
+
+    Returns:
+        dirs (List[Path]): The folders to look in; only MUSESCORE_DATA_DIR if
+            that variable is set.
+    """
     if os.environ.get("MUSESCORE_DATA_DIR"):
         return [Path(os.environ["MUSESCORE_DATA_DIR"])]
     home = Path.home()
@@ -30,11 +37,25 @@ def musescore_data_dirs() -> List[Path]:
         home / "Library" / "Application Support" / "MuseScore" / "MuseScore4",
     ]
     if os.environ.get("LOCALAPPDATA"):
-        dirs.append(Path(os.environ["LOCALAPPDATA"]) / "MuseScore" / "MuseScore4")
+        dirs.append(
+            Path(os.environ["LOCALAPPDATA"]) / "MuseScore" / "MuseScore4"
+        )
     return dirs
 
 
 def _listed_paths(path: Path) -> List[Path]:
+    """Read the file paths listed in one of MuseScore's JSON files.
+
+    Handles both a plain list of paths and a list of objects with a "path" or
+    "filePath" key, as in session.json and recent_files.json.
+
+    Args:
+        path (Path): The JSON file.
+
+    Returns:
+        paths (List[Path]): The listed paths; empty if the file is missing or
+            not valid JSON.
+    """
     try:
         entries = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -53,13 +74,25 @@ _SCORE_ID = re.compile(rb'<metaTag name="mcpScoreId">([^<]*)</metaTag>')
 
 
 def read_score_id(path: Path) -> Optional[str]:
-    """The score ID the plugin stores in a score's metadata (`mcpScoreId`), or None."""
+    """Read the score ID the plugin stores in a score's metadata.
+
+    Args:
+        path (Path): The score file, .mscz or .mscx.
+
+    Returns:
+        score_id (Optional[str]): The value of the `mcpScoreId` meta tag, or
+            None if the file has none or cannot be read.
+    """
     try:
         if path.suffix.lower() == ".mscx":
             data = path.read_bytes()
         else:
             with zipfile.ZipFile(path) as z:
-                names = [n for n in z.namelist() if n.endswith(".mscx") and "/" not in n]
+                names = [
+                    n
+                    for n in z.namelist()
+                    if n.endswith(".mscx") and "/" not in n
+                ]
                 data = z.read(names[0]) if names else b""
     except (OSError, zipfile.BadZipFile):
         return None
@@ -68,9 +101,20 @@ def read_score_id(path: Path) -> Optional[str]:
 
 
 def part_with_score_id(path: Path, score_id: str) -> Optional[str]:
-    """The archive entry of the part score (Excerpts/...mscx) that carries `score_id`, or None.
+    """Find the part score in a .mscz that carries a score ID.
 
-    A score ID lands in a part when the plugin runs while a part's tab is open in MuseScore."""
+    A score ID lands in a part when the plugin runs while a part's tab is open
+    in MuseScore.
+
+    Args:
+        path (Path): The score file.
+        score_id (str): The score ID to look for.
+
+    Returns:
+        entry (Optional[str]): The archive entry of the part score
+            (Excerpts/...mscx), or None if no part carries the ID or the file is
+            not a .mscz.
+    """
     if path.suffix.lower() != ".mscz":
         return None
     try:
@@ -86,19 +130,43 @@ def part_with_score_id(path: Path, score_id: str) -> Optional[str]:
 
 
 class OpenPartError(ScoreFileError):
-    """The open score is a part (excerpt) stored inside another score's file."""
+    """The open score is a part (excerpt) stored inside another score's file.
 
-    def __init__(self, path: Path, entry: str):
+    Attributes:
+        path (Path): The score file that holds the part.
+        entry (str): The part's archive entry in that file.
+    """
+
+    def __init__(self, path: Path, entry: str) -> None:
+        """Record the score file and the part's entry in it.
+
+        Args:
+            path (Path): The score file that holds the part.
+            entry (str): The part's archive entry in that file.
+        """
         super().__init__(f"The open score is the part {entry} of {path}")
         self.path, self.entry = path, entry
 
 
 def new_score_id() -> str:
+    """Make a new ID to tag a score with.
+
+    Returns:
+        score_id (str): "mcp-" and 12 random hex digits, e.g.
+            "mcp-1a2b3c4d5e6f".
+    """
     return f"mcp-{uuid.uuid4().hex[:12]}"
 
 
 def write_score_id(path: Path, score_id: str) -> None:
-    """Store a score ID in a score file's metadata (replacing any existing one)."""
+    """Store a score ID in a score file's metadata, and save the file.
+
+    Any existing score ID is replaced.
+
+    Args:
+        path (Path): The score file.
+        score_id (str): The score ID to store.
+    """
     score = ScoreFile(path)
     for tag in score.score.findall("metaTag"):
         if tag.get("name") == SCORE_ID_TAG:
@@ -110,27 +178,72 @@ def write_score_id(path: Path, score_id: str) -> None:
 
 
 def score_shape(path: Path) -> Tuple[int, int]:
-    """(staves, measures) of a score file."""
+    """Count the staves and measures of a score file.
+
+    Args:
+        path (Path): The score file.
+
+    Returns:
+        shape (Tuple[int, int]): The number of staves and the number of measures
+            (of the first staff).
+    """
     staves = ScoreFile(path).staves()
     return len(staves), len(staves[0].findall("Measure")) if staves else 0
 
 
 def candidate_files(known: Iterable[Path] = ()) -> List[Path]:
-    """Score files the open score may be saved in: `known` first, then MuseScore's open and recent files."""
+    """List the score files the open score may be saved in.
+
+    Args:
+        known (Iterable[Path]): Paths the server already knows, which come
+            first.
+
+    Returns:
+        paths (List[Path]): `known`, then MuseScore's open and recent files:
+            existing .mscz and .mscx files, without duplicates.
+    """
     paths = list(known)
     for data_dir in musescore_data_dirs():
         paths += _listed_paths(data_dir / "session" / "session.json")
         paths += _listed_paths(data_dir / "recent_files.json")
-    return [p for p in dict.fromkeys(paths) if p.suffix.lower() in SCORE_SUFFIXES and p.is_file()]
+    return [
+        p
+        for p in dict.fromkeys(paths)
+        if p.suffix.lower() in SCORE_SUFFIXES and p.is_file()
+    ]
 
 
-def locate_open_score(score_id: str, staves: int, measures: int,
-                      explicit: Optional[str] = None, known: Iterable[Path] = ()) -> Path:
-    """The file of the score open in MuseScore, identified by its score ID.
+def locate_open_score(
+    score_id: str,
+    staves: int,
+    measures: int,
+    explicit: Optional[str] = None,
+    known: Iterable[Path] = (),
+) -> Path:
+    """Find the file of the score open in MuseScore, by its score ID.
 
-    The score must have been saved just before, so that its file holds the ID. Among several files
-    with the ID (copies made with Save As), the most recently saved wins. The file must also have
-    the open score's number of staves and measures, otherwise nothing is edited.
+    The score must have been saved just before, so that its file holds the ID.
+    Among several files with the ID (copies made with Save As), the most
+    recently saved wins. The file must also have the open score's number of
+    staves and measures, otherwise nothing is edited.
+
+    Args:
+        score_id (str): The open score's score ID.
+        staves (int): The open score's number of staves.
+        measures (int): The open score's number of measures.
+        explicit (Optional[str]): A score file given by the user, checked
+            instead of searching.
+        known (Iterable[Path]): Paths the server already knows, searched first.
+
+    Returns:
+        path (Path): The score file.
+
+    Raises:
+        OpenPartError: If the ID is found in a part inside a score file: the
+            open score is that part.
+        ScoreFileError: If no file with the ID is found, `explicit` does not
+            exist or is another score, or the file's staves and measures do not
+            match the open score.
     """
     if explicit:
         path = Path(explicit).expanduser()
@@ -145,7 +258,9 @@ def locate_open_score(score_id: str, staves: int, measures: int,
         parts = [(p, part_with_score_id(p, score_id)) for p in candidates]
         parts = [(p, entry) for p, entry in parts if entry]
         if parts:
-            raise OpenPartError(*max(parts, key=lambda pe: pe[0].stat().st_mtime))
+            raise OpenPartError(
+                *max(parts, key=lambda pe: pe[0].stat().st_mtime)
+            )
         if explicit:
             raise ScoreFileError(
                 f"{candidates[0]} is not the file of the score open in MuseScore. Open that file in MuseScore "
@@ -167,11 +282,27 @@ def locate_open_score(score_id: str, staves: int, measures: int,
 
 
 def backup_dir() -> Path:
-    return Path(os.environ.get("MCP_MUSESCORE_BACKUP_DIR") or Path.home() / ".mcp-musescore" / "backups")
+    """Return the folder that backups go into.
+
+    Returns:
+        directory (Path): MCP_MUSESCORE_BACKUP_DIR if set, else ~/.mcp-
+            musescore/backups.
+    """
+    return Path(
+        os.environ.get("MCP_MUSESCORE_BACKUP_DIR")
+        or Path.home() / ".mcp-musescore" / "backups"
+    )
 
 
 def backup_score(path: Path) -> Path:
-    """Copy a score into the backup directory as <name>.<timestamp><suffix>."""
+    """Copy a score into the backup folder, as <name>.<timestamp><suffix>.
+
+    Args:
+        path (Path): The score file to back up.
+
+    Returns:
+        target (Path): The backup file.
+    """
     directory = backup_dir()
     directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -181,13 +312,24 @@ def backup_score(path: Path) -> Path:
 
 
 def list_backups(path: Path) -> List[Path]:
-    """Backups of a score, newest first."""
+    """List the backups of a score, newest first.
+
+    Args:
+        path (Path): The score file.
+
+    Returns:
+        backups (List[Path]): Its backup files, newest first; empty if there are
+            none.
+    """
     directory = backup_dir()
     if not directory.is_dir():
         return []
     prefix = f"{path.stem}."
     found = [
-        p for p in directory.iterdir()
-        if p.name.startswith(prefix) and p.suffix == path.suffix and p.stem[len(prefix):][:8].isdigit()
+        p
+        for p in directory.iterdir()
+        if p.name.startswith(prefix)
+        and p.suffix == path.suffix
+        and p.stem[len(prefix) :][:8].isdigit()
     ]
     return sorted(found, key=lambda p: p.name, reverse=True)

@@ -2,24 +2,37 @@
 
 from typing import Annotated, Optional
 
+from fastmcp import FastMCP
+
 from ..client import MuseScoreClient
 
 
-def setup_time_tempo_tools(mcp, client: MuseScoreClient):
-    """Setup time signature and tempo tools."""
-    
+def setup_time_tempo_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
+    """Register the time signature and tempo tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
+
     @mcp.tool(
         description="Set the time signature.",
         tags={"time"},
     )
     async def set_time_signature(
-        numerator: Annotated[int, "Top number of time signature (beats per measure)"] = 4,
-        denominator: Annotated[int, "Bottom number of time signature (note value that gets the beat)"] = 4,
+        numerator: Annotated[
+            int, "Top number of time signature (beats per measure)"
+        ] = 4,
+        denominator: Annotated[
+            int,
+            "Bottom number of time signature (note value that gets the beat)",
+        ] = 4,
     ):
-        return await client.send_command("setTimeSignature", {
-            "numerator": numerator,
-            "denominator": denominator
-        })
+        return await client.send_command(
+            "setTimeSignature",
+            {"numerator": numerator, "denominator": denominator},
+        )
 
     @mcp.tool(
         description=(
@@ -29,8 +42,13 @@ def setup_time_tempo_tools(mcp, client: MuseScoreClient):
         tags={"time"},
     )
     async def set_tempo(
-        bpm: Annotated[float, "Tempo in quarter-note beats per minute (e.g. 120)"],
-        measure: Annotated[Optional[int], "Measure number (1-based) to place the tempo at. Defaults to the cursor position."] = None,
+        bpm: Annotated[
+            float, "Tempo in quarter-note beats per minute (e.g. 120)"
+        ],
+        measure: Annotated[
+            Optional[int],
+            "Measure number (1-based) to place the tempo at. Defaults to the cursor position.",
+        ] = None,
     ):
         params = {"bpm": bpm}
         if measure is not None:

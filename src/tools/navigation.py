@@ -1,36 +1,65 @@
 """Cursor and navigation tools for MuseScore MCP."""
 
-from typing import Annotated
+from typing import Annotated, Any, Dict, Optional
+
+from fastmcp import FastMCP
 
 from ..client import MuseScoreClient
 
 
-def setup_navigation_tools(mcp, client: MuseScoreClient):
-    """Setup cursor and navigation tools."""
-    
-    async def _run_and_convert(action: str, params=None):
+def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
+    """Register the cursor and navigation tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
+
+    async def _run_and_convert(
+        action: str, params: Optional[Dict[str, Any]] = None
+    ):
+        """Run a cursor command and describe the new selection in LilyPond.
+
+        Args:
+            action (str): The plugin action to run.
+            params (Optional[Dict[str, Any]]): The action's parameters. Defaults
+                to no parameters.
+
+        Returns:
+            result (Union[Dict[str, Any], str]): A header (measure, beat, staff,
+                title) and the selection as LilyPond, or the plugin's reply as
+                it is when it has no selection.
+        """
         res = await client.send_command(action, params)
         result = res.get("result")
-        if isinstance(result, dict) and result.get("success") and "currentSelection" in result:
+        if (
+            isinstance(result, dict)
+            and result.get("success")
+            and "currentSelection" in result
+        ):
             from ..utils.lilypond_converter import json_to_lilypond
+
             sel = result["currentSelection"]
             lily_str = json_to_lilypond(sel)
-            
+
             meta = []
             score_info = result.get("currentScore", {})
             if not isinstance(score_info, dict):
                 score_info = {}
-                
+
             if "startTick" in sel:
                 tick = sel["startTick"]
                 # Default math fallback
                 measure_num = (tick // 1920) + 1
                 beat_num = ((tick % 1920) // 480) + 1
-                
+
                 if "measures" in score_info:
                     measures = score_info["measures"]
                     # Sort and find
-                    measures = sorted(measures, key=lambda m: m.get("startTick", 0))
+                    measures = sorted(
+                        measures, key=lambda m: m.get("startTick", 0)
+                    )
                     current_m = measures[0] if measures else {}
                     for i, m in enumerate(measures):
                         if m.get("startTick", 0) > tick:
@@ -42,12 +71,14 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
 
                 meta.append(f"Mesure: {measure_num}")
                 meta.append(f"Temps: {beat_num}")
-                
+
             if "startStaff" in sel:
                 start_s = sel["startStaff"]
                 end_s = sel.get("endStaff", start_s)
-                staff_name = f"{start_s}-{end_s}" if start_s != end_s else str(start_s)
-                
+                staff_name = (
+                    f"{start_s}-{end_s}" if start_s != end_s else str(start_s)
+                )
+
                 if "staves" in score_info:
                     staves = score_info["staves"]
                     if 0 <= start_s < len(staves):
@@ -55,14 +86,14 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
                         name = st_info.get("shortName") or st_info.get("name")
                         if name:
                             staff_name = name
-                            
+
                 meta.append(f"Portée: {staff_name}")
-            
+
             if "title" in score_info and score_info["title"]:
                 meta.append(f"Titre: {score_info['title']}")
             if "numMeasures" in score_info:
                 meta.append(f"Total Mesures: {score_info['numMeasures']}")
-            
+
             meta_str = ", ".join(meta) if meta else "Aucune métadonnée"
             return f"[Métadonnées] {meta_str}\n[Partition]\n{lily_str}"
         return res
@@ -83,7 +114,10 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
         tags={"navigation"},
     )
     async def go_to_measure(
-        measure: Annotated[int, "Measure number (1-based, must not exceed the number of measures in the score)"],
+        measure: Annotated[
+            int,
+            "Measure number (1-based, must not exceed the number of measures in the score)",
+        ],
     ):
         return await _run_and_convert("goToMeasure", {"measure": measure})
 
@@ -135,7 +169,7 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
     )
     async def select_current_measure():
         return await _run_and_convert("selectCurrentMeasure")
-        
+
     @mcp.tool(
         description=(
             "Select a custom range of ticks across staves. "
@@ -144,7 +178,10 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
         tags={"navigation"},
     )
     async def select_custom_range(
-        start_tick: Annotated[int, "Start of the range in ticks (0-based; a quarter note is 480 ticks, so a 4/4 measure is 1920)"],
+        start_tick: Annotated[
+            int,
+            "Start of the range in ticks (0-based; a quarter note is 480 ticks, so a 4/4 measure is 1920)",
+        ],
         end_tick: Annotated[int, "End of the range in ticks (exclusive)"],
         start_staff: Annotated[int, "First staff index (0-based)"],
         end_staff: Annotated[int, "Last staff index (0-based)"],
@@ -153,6 +190,6 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
             "startTick": start_tick,
             "endTick": end_tick,
             "startStaff": start_staff,
-            "endStaff": end_staff
+            "endStaff": end_staff,
         }
         return await _run_and_convert("selectCustomRange", params)
