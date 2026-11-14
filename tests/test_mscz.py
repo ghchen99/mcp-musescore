@@ -249,7 +249,8 @@ def test_mscz_keeps_other_entries(tmp_path):
 def test_score_without_score_element_raises(tmp_path):
     """The score property raises when <Score> is missing.
 
-    Loading already refuses a file without <Score>; the property also raises if it is removed later.
+    Loading already refuses a file without <Score>; the property also raises if
+    it is removed later.
     """
     score = ScoreFile(write_score(tmp_path, [bar(36, (4, 4))]))
     score.root.remove(score.root.findall("Score")[0])

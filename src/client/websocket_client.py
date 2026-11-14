@@ -17,8 +17,8 @@ logger = logging.getLogger("MuseScoreMCP.Client")
 def unwrap_result(response: dict) -> dict:
     """Return the plugin's result payload, or raise ToolError on an error.
 
-    The plugin replies {"status": "success", "result": {...}}; handler errors arrive
-    either as {"status": "error", "message": ...} or as result.error.
+    The plugin replies {"status": "success", "result": {...}}; handler errors
+    arrive either as {"status": "error", "message": ...} or as result.error.
 
     Args:
         response (dict): The plugin's reply, as returned by
@@ -28,8 +28,7 @@ def unwrap_result(response: dict) -> dict:
         result (dict): The "result" part of a successful reply.
 
     Raises:
-        ToolError: If the reply reports an error, or has no result
-            dictionary.
+        ToolError: If the reply reports an error, or has no result dictionary.
     """
     if response.get("status") == "error" or "error" in response:
         raise ToolError(
@@ -56,8 +55,8 @@ class MuseScoreClient:
 
     Attributes:
         uri (str): The plugin's WebSocket address, e.g. "ws://localhost:8765".
-        websocket (Optional[ClientConnection]): The open connection, or None when
-            not connected.
+        websocket (Optional[ClientConnection]): The open connection, or None
+            when not connected.
 
     Example:
         >>> client = MuseScoreClient()
@@ -123,8 +122,8 @@ class MuseScoreClient:
                 to no parameters.
 
         Returns:
-            response (Dict[str, Any]): The plugin's parsed reply, or
-                {"error": ...} if MuseScore could not be reached.
+            response (Dict[str, Any]): The plugin's parsed reply, or {"error":
+                ...} if MuseScore could not be reached.
         """
         if params is None:
             params = {}

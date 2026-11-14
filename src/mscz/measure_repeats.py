@@ -3,11 +3,12 @@
 Layout of a group of N repeated measures on one staff (MuseScore 4.x, see
 Score::cmdAddMeasureRepeat and the vtest/engraving test scores):
 - every measure gets <measureRepeatCount>k</measureRepeatCount>, k = 1..N;
-- the sign (<MeasureRepeat><subtype>N</subtype>...) sits in measure 1 for N = 1 or 2 and in
-  measure 2 for N = 4; the other measures hold a full-measure rest, which playback needs;
+- the sign (<MeasureRepeat><subtype>N</subtype>...) sits in measure 1 for N = 1
+  or 2 and in measure 2 for N = 4; the other measures hold a full-measure rest,
+  which playback needs;
 - voices 2-4 are emptied;
-- every measure but the last gets a "nobreak" layout break (stored on the first staff) and loses
-  its end barline on this staff.
+- every measure but the last gets a "nobreak" layout break (stored on the first
+  staff) and loses its end barline on this staff.
 """
 
 import xml.etree.ElementTree as ET
@@ -132,9 +133,9 @@ def measure_lengths(staff: ET.Element, first_staff: ET.Element) -> List[str]:
             irregular measures when the staff itself does not.
 
     Returns:
-        lengths (List[str]): The length of each measure as "N/D": the
-            irregular-measure `len`, else the time signature in force (4/4
-            until the first one).
+        lengths (List[str]): The length of each measure as "N/D": the irregular-
+            measure `len`, else the time signature in force (4/4 until the first
+            one).
     """
     lengths = []
     signature = "4/4"
@@ -163,9 +164,9 @@ def _split_voice(
         voice (ET.Element): The <voice> element.
 
     Returns:
-        parts (Tuple[List[ET.Element], List[ET.Element], List[ET.Element]]):
-            The leading children, the body and the trailing children; all
-            children are leading if the voice has no body.
+        parts (Tuple[List[ET.Element], List[ET.Element], List[ET.Element]]): The
+            leading children, the body and the trailing children; all children
+            are leading if the voice has no body.
     """
     children = list(voice)
     starts = [i for i, c in enumerate(children) if c.tag in BODY_START_TAGS]
@@ -183,9 +184,9 @@ def _check_measure(measure: ET.Element) -> Tuple[Optional[str], List[str]]:
         measure (ET.Element): The <Measure> element.
 
     Returns:
-        check (Tuple[Optional[str], List[str]]): The reason it can't be
-            replaced (a spanner crossing its barline) or None, and the kinds
-            of content that replacing it would drop.
+        check (Tuple[Optional[str], List[str]]): The reason it can't be replaced
+            (a spanner crossing its barline) or None, and the kinds of content
+            that replacing it would drop.
     """
     dropped = []
     voices = measure.findall("voice")
@@ -234,8 +235,8 @@ def _sign_or_rest(size: int, holds_sign: bool, length: str) -> ET.Element:
 def _set_repeat_count(measure: ET.Element, count: int) -> None:
     """Set a measure's position in a measure-repeat group.
 
-    The <measureRepeatCount> goes after the measure-level tags, where
-    MuseScore writes it.
+    The <measureRepeatCount> goes after the measure-level tags, where MuseScore
+    writes it.
 
     Args:
         measure (ET.Element): The <Measure> element.
@@ -261,12 +262,12 @@ def _add_nobreak(first_staff_measure: ET.Element) -> bool:
     break.
 
     Args:
-        first_staff_measure (ET.Element): The measure on the first staff,
-            where layout breaks are stored.
+        first_staff_measure (ET.Element): The measure on the first staff, where
+            layout breaks are stored.
 
     Returns:
-        added (bool): True if the break was added, False if the measure
-            already had one.
+        added (bool): True if the break was added, False if the measure already
+            had one.
     """
     if first_staff_measure.find("LayoutBreak") is not None:
         return False
@@ -331,8 +332,8 @@ def apply_measure_repeats(
 ) -> Dict:
     """Turn measures into measure-repeat signs on one staff.
 
-    A group repeats the `size` measures before it. Groups that cannot be applied safely are skipped
-    and reported.
+    A group repeats the `size` measures before it. Groups that cannot be applied
+    safely are skipped and reported.
 
     Args:
         score (ScoreFile): The score.
@@ -342,9 +343,9 @@ def apply_measure_repeats(
 
     Returns:
         report (Dict): "applied", "unchanged" (groups already there) and
-            "skipped" (with a reason) group entries, "dropped" (content
-            removed per measure) and "kept_layout_breaks" (measures whose
-            existing layout break was kept).
+            "skipped" (with a reason) group entries, "dropped" (content removed
+            per measure) and "kept_layout_breaks" (measures whose existing
+            layout break was kept).
 
     Raises:
         ScoreFileError: If the staff does not exist.

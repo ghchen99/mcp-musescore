@@ -1,19 +1,23 @@
 """Rewrite a cymbal roll as one long note per bar, with a tremolo.
 
-A roll is a run of repeated or tied cymbal notes. The new notes are tied across barlines: fewer symbols for
-the same sound.
+A roll is a run of repeated or tied cymbal notes. The new notes are tied across
+barlines: fewer symbols for the same sound.
 
-Notes of the first chord that are not part of the roll (e.g. a kick on beat 1) move to voice 2 with their
-own length, followed by invisible rests, so the tremolo only applies to the cymbals.
+Notes of the first chord that are not part of the roll (e.g. a kick on beat 1)
+move to voice 2 with their own length, followed by invisible rests, so the
+tremolo only applies to the cymbals.
 
-Only voice 1 of one staff is rewritten. The span starts in `start_measure` (at its beginning, or
-`start_ticks` into it) and ends in `end_measure` (its end, or `end_ticks` into it). If the cymbals at the
-start are tied from earlier notes (a crash left ringing into the roll, as Guitar Pro imports write it), the
-roll starts where that tie chain starts: one continuous roll, not a held crash and then a roll. A length that no single
-note value can hold (e.g. five eighths) is written as several tied notes. Every chord in the span must
-hold only roll pitches, except the first one, whose other notes (e.g. a kick) are kept. Anything that
-cannot be rewritten safely (other notes or rests in the span, tuplets, a span that does not start or end
-where a note does) raises ScoreFileError and nothing is changed.
+Only voice 1 of one staff is rewritten. The span starts in `start_measure` (at
+its beginning, or `start_ticks` into it) and ends in `end_measure` (its end, or
+`end_ticks` into it). If the cymbals at the start are tied from earlier notes (a
+crash left ringing into the roll, as Guitar Pro imports write it), the roll
+starts where that tie chain starts: one continuous roll, not a held crash and
+then a roll. A length that no single note value can hold (e.g. five eighths) is
+written as several tied notes. Every chord in the span must hold only roll
+pitches, except the first one, whose other notes (e.g. a kick) are kept.
+Anything that cannot be rewritten safely (other notes or rests in the span,
+tuplets, a span that does not start or end where a note does) raises
+ScoreFileError and nothing is changed.
 """
 
 import copy
@@ -87,8 +91,8 @@ def note_value(ticks: int) -> Tuple[str, int]:
             number of dots.
 
     Raises:
-        ScoreFileError: If no single note value, with up to two dots, has
-            that length.
+        ScoreFileError: If no single note value, with up to two dots, has that
+            length.
     """
     for name, base in DURATION_TICKS.items():
         for dots, factor in DOT_FACTORS.items():
@@ -106,8 +110,8 @@ def rest_values(ticks: int) -> List[Tuple[str, int]]:
         ticks (int): The length in ticks.
 
     Returns:
-        values (List[Tuple[str, int]]): The (durationType, dots) of each
-            value; together they add up to `ticks`.
+        values (List[Tuple[str, int]]): The (durationType, dots) of each value;
+            together they add up to `ticks`.
 
     Raises:
         ScoreFileError: If the length cannot be filled with note values.
@@ -163,8 +167,8 @@ def _fraction(ticks: int) -> str:
 def _tie(direction: str, measures: int, ticks: int = 0) -> ET.Element:
     """Make one half of a tie: the link from a note to the next or previous one.
 
-    The location of the other note is relative: whole measures, then a
-    fraction within them.
+    The location of the other note is relative: whole measures, then a fraction
+    within them.
 
     Args:
         direction (str): "next" or "prev".
@@ -281,7 +285,8 @@ def tie_chain_start(
 ) -> Tuple[int, int]:
     """Find where the roll really starts, as (measure, ticks).
 
-    Walks back while the roll cymbals are tied from the chord before, which must hold the roll cymbals too.
+    Walks back while the roll cymbals are tied from the chord before, which must
+    hold the roll cymbals too.
 
     Args:
         measures (List[ET.Element]): The staff's measures.
@@ -357,14 +362,14 @@ def simplify_roll(
         pitches (Sequence[int]): The roll's MIDI pitches. Defaults to the two
             crash cymbals (49, 57).
         slashes (int): The tremolo strokes, 1-4 (eighths to 64ths).
-        start_ticks (int): Where the roll starts inside start_measure.
-            Defaults to its beginning.
+        start_ticks (int): Where the roll starts inside start_measure. Defaults
+            to its beginning.
 
     Returns:
         report (Dict): "measures", "replaced_chords",
             "ties_removed_at_the_edges", "new_notes", "starts_at_tick",
-            "moved_to_voice_2" and "tremolo"; "start_moved_back" when the
-            start moved back along a tie chain.
+            "moved_to_voice_2" and "tremolo"; "start_moved_back" when the start
+            moved back along a tie chain.
 
     Raises:
         ScoreFileError: If the staff, range or slashes are invalid, or the span

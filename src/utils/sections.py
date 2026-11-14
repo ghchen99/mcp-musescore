@@ -1,16 +1,19 @@
 """Split a staff (typically drums) into groove sections for a chart layout.
 
-A section starts with a groove bar. The bars after it are exact copies of the groove,
-near copies (similar enough, e.g. one extra kick), or fills (bars that break the pattern).
-A section ends where a new groove starts or after a fill that is not followed by the groove.
+A section starts with a groove bar. The bars after it are exact copies of the
+groove, near copies (similar enough, e.g. one extra kick), or fills (bars that
+break the pattern). A section ends where a new groove starts or after a fill
+that is not followed by the groove.
 
-Within a section, `runs` are the stretches that can be collapsed: a phrase of 1, 2 or 4 bars repeated
-back to back, where the copies are identical except for ghost notes and crashes on beat 1 (the core
-fingerprint). Kicks, snares, open hats and articulations must match, so a groove whose open hat comes
-every second bar is a 2-bar phrase, not a 1-bar groove with dropped differences.
+Within a section, `runs` are the stretches that can be collapsed: a phrase of 1,
+2 or 4 bars repeated back to back, where the copies are identical except for
+ghost notes and crashes on beat 1 (the core fingerprint). Kicks, snares, open
+hats and articulations must match, so a groove whose open hat comes every second
+bar is a 2-bar phrase, not a 1-bar groove with dropped differences.
 
-Near copies are never proposed for replacement on their own: replacing them with a repeat
-sign would delete their differences, so they are reported for the user to approve.
+Near copies are never proposed for replacement on their own: replacing them with
+a repeat sign would delete their differences, so they are reported for the user
+to approve.
 """
 
 import re
@@ -85,8 +88,8 @@ def similarity(a: Set[Event], b: Set[Event]) -> float:
         b (Set[Event]): The hits of the other bar.
 
     Returns:
-        similarity (float): The shared hits out of all hits, from 0 to 1;
-            1.0 for two empty bars.
+        similarity (float): The shared hits out of all hits, from 0 to 1; 1.0
+            for two empty bars.
     """
     if not a and not b:
         return 1.0
@@ -179,8 +182,8 @@ def crash_legend(
 
     Args:
         pattern (Dict[str, Any]): The crash pattern, from crash_pattern.
-        unit (str): "bar" for a 1-bar groove, "time" for a longer phrase
-            (crash every other time through it).
+        unit (str): "bar" for a 1-bar groove, "time" for a longer phrase (crash
+            every other time through it).
 
     Returns:
         legend (Optional[Tuple[str, str]]): The mark ("*" or "**") and its
@@ -233,11 +236,13 @@ def plan_runs(
 ) -> List[Tuple[int, int, int]]:
     """Plan the runs that leave the fewest bars on the page.
 
-    A run is a phrase of 1, 2 or 4 bars repeated back to back (same core fingerprint); it takes the
-    space of one phrase. A 2- or 4-bar run must start on the phrase grid: a whole number of phrases after
-    the latest of `phrase_starts` (and `start`), so a chart reads 4 + 2 bars rather than 1 + 2x2 + 1.
-    Among plans with as few bars, the one with fewer runs (repeat signs) wins, then the one whose runs start
-    earlier (a section's first bar rather than the bar after it).
+    A run is a phrase of 1, 2 or 4 bars repeated back to back (same core
+    fingerprint); it takes the space of one phrase. A 2- or 4-bar run must start
+    on the phrase grid: a whole number of phrases after the latest of
+    `phrase_starts` (and `start`), so a chart reads 4 + 2 bars rather than 1 +
+    2x2 + 1. Among plans with as few bars, the one with fewer runs (repeat
+    signs) wins, then the one whose runs start earlier (a section's first bar
+    rather than the bar after it).
 
     Args:
         core (List[Fingerprint]): The core fingerprint of each bar.
@@ -246,8 +251,8 @@ def plan_runs(
         phrase_starts (Iterable[int]): Indices where a new phrase starts.
 
     Returns:
-        plan (List[Tuple[int, int, int]]): The (first bar index, phrase
-            length, times) of each run.
+        plan (List[Tuple[int, int, int]]): The (first bar index, phrase length,
+            times) of each run.
     """
     grid = sorted({start, *(b for b in phrase_starts if start <= b <= end)})
 
@@ -259,8 +264,8 @@ def plan_runs(
             length (int): The phrase length in bars.
 
         Returns:
-            aligned (bool): True if the bar lies a whole number of phrases
-                after the latest phrase start.
+            aligned (bool): True if the bar lies a whole number of phrases after
+                the latest phrase start.
         """
         origin = max(g for g in grid if g <= i)
         return (i - origin) % length == 0
@@ -315,9 +320,9 @@ def phrase_runs(
 
     Returns:
         runs (List[Dict[str, Any]]): Per run: "start", "end", "phrase_bars",
-            "play_count", "keep" (the bars written out), "crash_on_1" (the
-            crash pattern, with its mark and legend) and "dropped" (the hits
-            a collapsed copy would lose).
+            "play_count", "keep" (the bars written out), "crash_on_1" (the crash
+            pattern, with its mark and legend) and "dropped" (the hits a
+            collapsed copy would lose).
     """
     runs = []
     for i, length, times in plan_runs(core, start, end, phrase_starts):
@@ -374,8 +379,8 @@ def find_sections(
         measures (Sequence[Dict[str, Any]]): The measures from the plugin's
             analysis.
         staff (str): The staff name, e.g. "staff0".
-        tolerance (float): How alike a bar must be to the groove (0-1) to
-            count as a near copy.
+        tolerance (float): How alike a bar must be to the groove (0-1) to count
+            as a near copy.
 
     Returns:
         sections (List[Dict[str, Any]]): Per section, with 1-based measure
@@ -396,8 +401,7 @@ def find_sections(
             groove (int): The index of the groove bar.
 
         Returns:
-            kind (str): "exact", "near" (similar within `tolerance`) or
-                "other".
+            kind (str): "exact", "near" (similar within `tolerance`) or "other".
         """
         if fps[j] == fps[groove]:
             return "exact"
@@ -537,16 +541,17 @@ def _fours(n: int) -> str:
 def count_label(bars: int, lead_in: int = 0, groups: Sequence[int] = ()) -> str:
     """Write a section's length the way drummers count it, in fours.
 
-    A lead-in of LEAD_IN_MIN bars or more before the first groove bar (e.g. a rest bar and a pickup fill) is
-    counted on its own: 8 with a 2-bar lead-in -> "2+4+2". `groups` are the sizes of the runs of equally long
-    bars after the lead-in: a run in another time signature is counted on its own, e.g. 4 bars of 4/4, 2 of 3/4
-    and 2 of 4/4 -> "4+2+2".
+    A lead-in of LEAD_IN_MIN bars or more before the first groove bar (e.g. a
+    rest bar and a pickup fill) is counted on its own: 8 with a 2-bar lead-in ->
+    "2+4+2". `groups` are the sizes of the runs of equally long bars after the
+    lead-in: a run in another time signature is counted on its own, e.g. 4 bars
+    of 4/4, 2 of 3/4 and 2 of 4/4 -> "4+2+2".
 
     Args:
         bars (int): The section's length in bars, as played.
         lead_in (int): The bars before the first groove bar.
-        groups (Sequence[int]): The sizes of the runs of equally long bars
-            after the lead-in; used only if they add up to the bars.
+        groups (Sequence[int]): The sizes of the runs of equally long bars after
+            the lead-in; used only if they add up to the bars.
 
     Returns:
         label (str): The count label, e.g. "2x4+2".
@@ -593,8 +598,8 @@ def count_in_label(label: str) -> Optional[str]:
         label (str): The section label, e.g. "Chorus 1 (2x4)".
 
     Returns:
-        count (Optional[str]): The count without spaces, e.g. "2x4", or None
-            if the label has none.
+        count (Optional[str]): The count without spaces, e.g. "2x4", or None if
+            the label has none.
     """
     found = COUNT_IN_LABEL.search(label)
     return found.group(1).replace(" ", "") if found else None
@@ -607,8 +612,8 @@ def count_bars(label: object) -> Optional[int]:
         label (object): A count label such as "2x4+2", or a number of bars.
 
     Returns:
-        bars (Optional[int]): The number of bars, e.g. 10 for "2x4+2", or
-            None if the label is neither.
+        bars (Optional[int]): The number of bars, e.g. 10 for "2x4+2", or None
+            if the label is neither.
     """
     if isinstance(label, int):
         return label
@@ -652,12 +657,16 @@ def song_structure(
 ) -> Dict[str, Any]:
     """Describe the song structure of one staff, section by section.
 
-    Sections come from the rehearsal marks. Grooves are bars with at least GROOVE_MIN_HITS onsets whose hits, within `tolerance`, are played at least
-    twice in a row (ghost notes, the cymbal on beat 1 and hi-hat openings aside); they are named Groove A, B...
-    in order of appearance. Other bars with notes are fills (or one-off hits); empty bars are counted as rests.
-    Bars excluded from the bar count (`irregular`, e.g. a count-in bar) are left out of the lengths. `count`
-    is the section's length in fours: the count already written in its label ("Chorus 1 (4+2+2)", the user's
-    phrasing) when it adds up to the bars played, else count_label's (lead-in, runs of other bar lengths).
+    Sections come from the rehearsal marks. Grooves are bars with at least
+    GROOVE_MIN_HITS onsets whose hits, within `tolerance`, are played at least
+    twice in a row (ghost notes, the cymbal on beat 1 and hi-hat openings
+    aside); they are named Groove A, B... in order of appearance. Other bars
+    with notes are fills (or one-off hits); empty bars are counted as rests.
+    Bars excluded from the bar count (`irregular`, e.g. a count-in bar) are left
+    out of the lengths. `count` is the section's length in fours: the count
+    already written in its label ("Chorus 1 (4+2+2)", the user's phrasing) when
+    it adds up to the bars played, else count_label's (lead-in, runs of other
+    bar lengths).
 
     Args:
         measures (Sequence[Dict[str, Any]]): The measures from the plugin's

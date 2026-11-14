@@ -40,12 +40,11 @@ def find_musescore() -> Optional[str]:
     """Find the MuseScore executable.
 
     Looks at $MUSESCORE_BIN, then an AppImage in ~/.local/bin, then mscore (and
-    similar names) on the PATH. MUSESCORE_BIN=none means no MuseScore, even when one is installed, so the
-    tests that need it skip themselves.
+    similar names) on the PATH. MUSESCORE_BIN=none means no MuseScore, even when
+    one is installed, so the tests that need it skip themselves.
 
     Returns:
-        binary (Optional[str]): The path of the first executable found, or
-            None.
+        binary (Optional[str]): The path of the first executable found, or None.
     """
     if os.environ.get("MUSESCORE_BIN") == "none":
         return None
@@ -68,8 +67,8 @@ def build_harness(
     The results are stored in a "harness" meta tag of the score.
 
     Args:
-        commands (List[Dict[str, Any]]): The commands, as the server sends
-            them: {"action": ..., "params": {...}}.
+        commands (List[Dict[str, Any]]): The commands, as the server sends them:
+            {"action": ..., "params": {...}}.
         plugin_source (Union[str, Path]): The plugin's QML file.
 
     Returns:
@@ -137,8 +136,8 @@ def _musescore(
         timeout (float): The time limit in seconds.
 
     Returns:
-        proc (subprocess.CompletedProcess[str]): The finished process, with
-            its output.
+        proc (subprocess.CompletedProcess[str]): The finished process, with its
+            output.
     """
     env = {
         **os.environ,
@@ -168,23 +167,21 @@ def run(
     """Run plugin commands on a copy of a score, in MuseScore.
 
     Args:
-        commands (List[Dict[str, Any]]): The commands, as the server sends
-            them: {"action": ..., "params": {...}}.
-        score (Union[str, Path]): The score to run them on; it is not
-            changed.
+        commands (List[Dict[str, Any]]): The commands, as the server sends them:
+            {"action": ..., "params": {...}}.
+        score (Union[str, Path]): The score to run them on; it is not changed.
         out (Optional[Union[str, Path]]): Where to save the edited score
             (.mscz).
-        png (Optional[Union[str, Path]]): Where to render the edited score,
-            one file per page (MuseScore adds -1, -2, ... before the
-            extension).
+        png (Optional[Union[str, Path]]): Where to render the edited score, one
+            file per page (MuseScore adds -1, -2, ... before the extension).
         musescore (Optional[str]): The MuseScore executable. Defaults to
             find_musescore().
         timeout (float): The time limit per MuseScore run, in seconds.
         png_dpi (int): The resolution of the PNG files.
 
     Returns:
-        results (List[Dict[str, Any]]): The {"action", "result"} entry of
-            each command.
+        results (List[Dict[str, Any]]): The {"action", "result"} entry of each
+            command.
 
     Raises:
         RuntimeError: If MuseScore is not found, fails, leaves no results or

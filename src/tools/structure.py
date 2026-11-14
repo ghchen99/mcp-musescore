@@ -111,8 +111,8 @@ async def fetch_measures(
         start_measure (int): The first measure, 1-based.
         end_measure (Optional[int]): The last measure, 1-based and inclusive.
             Defaults to the end of the score.
-        staves (Optional[List[int]]): The staves to read, 0-based. Defaults
-            to all staves.
+        staves (Optional[List[int]]): The staves to read, 0-based. Defaults to
+            all staves.
 
     Returns:
         result (Tuple[List[Dict], List[Dict]]): The measures, and the staff
@@ -151,8 +151,8 @@ async def fetch_measures(
 def incomplete_measures(measures: List[Dict]) -> List[Dict]:
     """Find bars whose notes and rests don't add up to the bar's length.
 
-    Voice 1 must fill the bar exactly; other voices may not be longer than
-    it. Measures without a length are skipped.
+    Voice 1 must fill the bar exactly; other voices may not be longer than it.
+    Measures without a length are skipped.
 
     Args:
         measures (List[Dict]): The measures from the plugin's analysis.
@@ -198,8 +198,8 @@ def _road_map_line(section: Dict) -> str:
         section (Dict): A section from find_sections.
 
     Returns:
-        line (str): E.g. "Bars 6-13: groove bar 6, 5 exact copies, near 9,
-            fill 13", followed by its runs.
+        line (str): E.g. "Bars 6-13: groove bar 6, 5 exact copies, near 9, fill
+            13", followed by its runs.
     """
     parts = [f"groove bar {section['groove_bar']}"]
     if section["exact"]:
@@ -791,15 +791,16 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
         This is make_part_score(in_place=True).
 
-        Nothing is saved before the other parts are gone: saving the full
-        score would write again (and MuseScore would flag as corrupted) a damaged bar in another instrument, and
-        an imported score would first ask where to save. The full score is
-        backed up first, as MusicXML and, if its file is found, as a copy.
+        Nothing is saved before the other parts are gone: saving the full score
+        would write again (and MuseScore would flag as corrupted) a damaged bar
+        in another instrument, and an imported score would first ask where to
+        save. The full score is backed up first, as MusicXML and, if its file is
+        found, as a copy.
 
         Args:
             staves (List[int]): The staves to keep, 0-based.
-            score_path (Optional[str]): A score file given by the user, for
-                the backup. Defaults to the open score's own file.
+            score_path (Optional[str]): A score file given by the user, for the
+                backup. Defaults to the open score's own file.
 
         Returns:
             result (Dict): "kept_parts", "staves_now", "full_score_backups",

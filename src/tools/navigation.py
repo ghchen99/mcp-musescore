@@ -23,13 +23,13 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
         Args:
             action (str): The plugin action to run.
-            params (Optional[Dict[str, Any]]): The action's parameters.
-                Defaults to no parameters.
+            params (Optional[Dict[str, Any]]): The action's parameters. Defaults
+                to no parameters.
 
         Returns:
             result (Union[Dict[str, Any], str]): A header (measure, beat, staff,
-                title) and the selection as LilyPond, or the plugin's reply
-                as it is when it has no selection.
+                title) and the selection as LilyPond, or the plugin's reply as
+                it is when it has no selection.
         """
         res = await client.send_command(action, params)
         result = res.get("result")

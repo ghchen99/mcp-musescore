@@ -172,7 +172,8 @@ def groove_bar(
 ):
     """Make a groove bar of kick, snare and cymbal.
 
-    Kick and snare on the given beats, eighth notes on the cymbal (closed hi-hat by default).
+    Kick and snare on the given beats, eighth notes on the cymbal (closed hi-hat
+    by default).
     """
     start = (number - 1) * BAR
     hits = (
@@ -435,9 +436,10 @@ def crash_instead_of_hat(bar):
 def test_phrases_start_on_the_crash_bars():
     """Phrases start on the crash bars.
 
-    The intro of "Hold the Line": crash bar 1 (no hi-hat on the 2nd eighth), open hat at the end of bars 2
-    and 4, crash again on bar 5, bar 6 different. 1 + [2-3]x2 + 1 leaves as few bars as 4 + 2 but starts a
-    2-bar phrase on the bar after the crash; the chart should read 4 + 2.
+    The intro of "Hold the Line": crash bar 1 (no hi-hat on the 2nd eighth),
+    open hat at the end of bars 2 and 4, crash again on bar 5, bar 6 different.
+    1 + [2-3]x2 + 1 leaves as few bars as 4 + 2 but starts a 2-bar phrase on the
+    bar after the crash; the chart should read 4 + 2.
     """
     first = crash_instead_of_hat(groove_bar(1))
     first[1]["notes"] = [n for n in first[1]["notes"] if n["pitchMidi"] != 42]

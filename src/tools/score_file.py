@@ -1,8 +1,9 @@
 """Tools that edit the open score's file, for what the plugin API can't do.
 
-The flow is: the plugin saves the score, the file is backed up and edited here, and the plugin
-closes and reopens it. The tab shows the change, but MuseScore's undo history starts over, so
-every edit keeps a backup that restore_backup can bring back.
+The flow is: the plugin saves the score, the file is backed up and edited here,
+and the plugin closes and reopens it. The tab shows the change, but MuseScore's
+undo history starts over, so every edit keeps a backup that restore_backup can
+bring back.
 """
 
 import asyncio
@@ -65,10 +66,11 @@ async def open_score_path(
 ) -> Path:
     """Save the open score and return its file.
 
-    The file is identified by the score ID the plugin keeps in its metadata. A file is only returned if it
-    carries the open score's ID and has its number of staves and measures. If the open score is a part tab,
-    the part becomes a file of its own; with reopen_part=False it is not opened yet (the caller edits it and
-    reopens it once, see PART_SOURCES).
+    The file is identified by the score ID the plugin keeps in its metadata. A
+    file is only returned if it carries the open score's ID and has its number
+    of staves and measures. If the open score is a part tab, the part becomes a
+    file of its own; with reopen_part=False it is not opened yet (the caller
+    edits it and reopens it once, see PART_SOURCES).
 
     Args:
         client (MuseScoreClient): The client to the plugin.
@@ -80,8 +82,7 @@ async def open_score_path(
         path (Path): The score file.
 
     Raises:
-        ToolError: If the file cannot be found or does not match the open
-            score.
+        ToolError: If the file cannot be found or does not match the open score.
     """
     score_id = (await client.request("ensureScoreId"))["scoreId"]
     await client.request("saveScore")
@@ -112,9 +113,9 @@ async def open_score_path(
 def part_file_name(source: Path, name: str) -> Path:
     """Name the part's score file: <score> - <part>.mscz next to `source`.
 
-    Numbered if taken. Long part names ("Player | Kit | Drums")
-    are cut to their last segment; a score already named after the part (a Save As "... - Drums" of the
-    full score) gives "... - Drums only".
+    Numbered if taken. Long part names ("Player | Kit | Drums") are cut to their
+    last segment; a score already named after the part (a Save As "... - Drums"
+    of the full score) gives "... - Drums only".
 
     Args:
         source (Path): The score file that holds the part.
@@ -147,16 +148,18 @@ async def open_part_as_score(
 ) -> Path:
     """Open a part tab of `source` as a score file of its own.
 
-    The open score is a part tab of `source`: file edits can't touch a part alone (it is linked to the full
-    score), so the part becomes a score file of its own, opened in place of the full score (now, or by the
-    caller's own reopen after its edit when `reopen` is False). The full score is backed up first.
+    The open score is a part tab of `source`: file edits can't touch a part
+    alone (it is linked to the full score), so the part becomes a score file of
+    its own, opened in place of the full score (now, or by the caller's own
+    reopen after its edit when `reopen` is False). The full score is backed up
+    first.
 
     Args:
         client (MuseScoreClient): The client to the plugin.
         source (Path): The score file that holds the part.
         entry (str): The part's archive entry (Excerpts/...mscx).
-        shape (Tuple[int, int]): The open score's staves and measures, to
-            check the new file against.
+        shape (Tuple[int, int]): The open score's staves and measures, to check
+            the new file against.
         reopen (bool): Whether to open the new file right away.
 
     Returns:
@@ -196,10 +199,12 @@ async def reopen_in_place(
 ) -> Dict:
     """Close the open score and open a file in the same window.
 
-    MuseScore 4 opens a second score in a new window, out of the plugin's reach, so the current score is
-    closed first. Afterwards the score ID now open is compared with the one stored in the file, to check
-    that the plugin is attached to it. If `path` cannot be opened, the plugin reopens `fallback` (default:
-    `path` itself, i.e. the score just closed). Reopens are spaced by REOPEN_GAP seconds.
+    MuseScore 4 opens a second score in a new window, out of the plugin's reach,
+    so the current score is closed first. Afterwards the score ID now open is
+    compared with the one stored in the file, to check that the plugin is
+    attached to it. If `path` cannot be opened, the plugin reopens `fallback`
+    (default: `path` itself, i.e. the score just closed). Reopens are spaced by
+    REOPEN_GAP seconds.
 
     Args:
         client (MuseScoreClient): The client to the plugin.
@@ -208,8 +213,8 @@ async def reopen_in_place(
             opened.
 
     Returns:
-        result (Dict): "reopened" (bool), and if False a "next_step" telling
-            the user what to do.
+        result (Dict): "reopened" (bool), and if False a "next_step" telling the
+            user what to do.
     """
     global _last_reopen
     expected = read_score_id(path)
@@ -302,8 +307,8 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         file is backed up and the new one written and reopened in MuseScore.
 
         Args:
-            score_path (Optional[str]): A score file given by the user.
-                Defaults to the open score's own file.
+            score_path (Optional[str]): A score file given by the user. Defaults
+                to the open score's own file.
             edit (Callable[[ScoreFile], Tuple[bool, Dict]]): The edit; it
                 returns whether it changed the score, and its report.
 
@@ -446,8 +451,8 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                     measure (int): The measure, 1-based.
 
                 Returns:
-                    ticks (float): The ticks of one beat (the time
-                        signature's denominator).
+                    ticks (float): The ticks of one beat (the time signature's
+                        denominator).
                 """
                 return 1920 / int(signatures[measure - 1].split("/")[1])
 

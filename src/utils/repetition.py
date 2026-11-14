@@ -1,14 +1,16 @@
 """Find repeated material in a getScore analysis.
 
-Measures are compared by a fingerprint of their notes and rests (position within the
-measure, voice, duration, pitches, tuplet and tie flags; lyrics are ignored). Two kinds
-of suggestions come out of it:
+Measures are compared by a fingerprint of their notes and rests (position within
+the measure, voice, duration, pitches, tuplet and tie flags; lyrics are
+ignored). Two kinds of suggestions come out of it:
 
-- per staff: bars that repeat the previous 1, 2 or 4 bars (measure-repeat signs);
-- all staves: passages played again right after themselves (repeat barlines), and
-  passages whose repeat differs only in its last bars (1st/2nd endings).
+- per staff: bars that repeat the previous 1, 2 or 4 bars (measure-repeat
+  signs);
+- all staves: passages played again right after themselves (repeat barlines),
+  and passages whose repeat differs only in its last bars (1st/2nd endings).
 
-Bars that already hold a measure-repeat sign count as copies of the bars they repeat.
+Bars that already hold a measure-repeat sign count as copies of the bars they
+repeat.
 """
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -30,8 +32,8 @@ def measure_fingerprint(
 ) -> Fingerprint:
     """Summarize one staff's content in one measure, for comparing bars.
 
-    Each chord or rest counts with its position in the measure, voice,
-    duration, pitches, tuplet and tie flags, articulations and ghost notes.
+    Each chord or rest counts with its position in the measure, voice, duration,
+    pitches, tuplet and tie flags, articulations and ghost notes.
 
     Args:
         elements (Sequence[Dict[str, Any]]): The staff's elements in the
@@ -39,8 +41,8 @@ def measure_fingerprint(
         measure_start_tick (int): The tick at which the measure starts.
 
     Returns:
-        fingerprint (Fingerprint): A hashable summary; equal for bars with
-            the same content.
+        fingerprint (Fingerprint): A hashable summary; equal for bars with the
+            same content.
     """
     items = []
     for e in elements:
@@ -69,9 +71,9 @@ def core_fingerprint(
     """Summarize a bar like measure_fingerprint, but more loosely.
 
     Ghost notes are ignored, and a crash and a closed hi-hat on beat 1 both
-    count as "a cymbal on 1". Bars with the same core can be collapsed into
-    one: their only differences are things a chart shows with a mark (crash
-    pattern) or leaves out (ghost notes).
+    count as "a cymbal on 1". Bars with the same core can be collapsed into one:
+    their only differences are things a chart shows with a mark (crash pattern)
+    or leaves out (ghost notes).
 
     Args:
         elements (Sequence[Dict[str, Any]]): The staff's elements in the
@@ -119,21 +121,20 @@ def staff_fingerprints(
 ) -> Tuple[List[Fingerprint], set]:
     """Fingerprint each measure of one staff.
 
-    A bar covered by an existing measure-repeat sign gets the fingerprint of
-    the bar it repeats.
+    A bar covered by an existing measure-repeat sign gets the fingerprint of the
+    bar it repeats.
 
     Args:
         measures (Sequence[Dict[str, Any]]): The measures from the plugin's
             analysis.
         staff (str): The staff name, e.g. "staff0".
         fingerprint (Callable[[Sequence[Dict[str, Any]], int], Fingerprint]):
-            The function that summarizes a bar. Defaults to
-            measure_fingerprint.
+            The function that summarizes a bar. Defaults to measure_fingerprint.
 
     Returns:
-        result (Tuple[List[Fingerprint], set]): The fingerprint of each
-            measure, and the 0-based indices of the bars covered by an
-            existing measure-repeat group.
+        result (Tuple[List[Fingerprint], set]): The fingerprint of each measure,
+            and the 0-based indices of the bars covered by an existing measure-
+            repeat group.
     """
     fps = []
     groups = []
@@ -196,12 +197,11 @@ def _measure_repeats_for_staff(
 
     Args:
         fps (List[Fingerprint]): The fingerprint of each measure.
-        existing (Optional[set]): Indices of bars already shown as repeat
-            signs.
+        existing (Optional[set]): Indices of bars already shown as repeat signs.
 
     Returns:
-        placements (List[Tuple[int, int]]): The (index, size) of each sign,
-            with 0-based indices.
+        placements (List[Tuple[int, int]]): The (index, size) of each sign, with
+            0-based indices.
     """
     existing = existing or set()
     placements = []
@@ -232,8 +232,8 @@ def _merge_runs(
         placements (List[Tuple[int, int]]): The (index, size) of each sign.
 
     Returns:
-        runs (List[Tuple[int, int, int]]): The (first index, last index,
-            size) of each run of signs.
+        runs (List[Tuple[int, int, int]]): The (first index, last index, size)
+            of each run of signs.
     """
     runs: List[List[int]] = []
     for index, size in placements:
@@ -253,12 +253,12 @@ def _best_passage(
 ) -> Optional[Tuple[int, Dict[str, Any]]]:
     """Find the best repeat structure that starts at a bar.
 
-    A plain repeat (A A ...) saves the bars of every repeat after the first;
-    a repeat with endings (A B A C) saves the length of A.
+    A plain repeat (A A ...) saves the bars of every repeat after the first; a
+    repeat with endings (A B A C) saves the length of A.
 
     Args:
-        ids (List[int]): An id per bar; bars with the same content on all
-            staves have the same id.
+        ids (List[int]): An id per bar; bars with the same content on all staves
+            have the same id.
         content (List[bool]): Whether each bar holds anything but rests.
         i (int): The index of the bar to start at.
         max_passage (int): The longest passage to consider, in bars.
@@ -266,8 +266,8 @@ def _best_passage(
 
     Returns:
         best (Optional[Tuple[int, Dict[str, Any]]]): The bars saved and the
-            structure ("kind", "length", and "times" or "ending"), or None if
-            no repeat starts there.
+            structure ("kind", "length", and "times" or "ending"), or None if no
+            repeat starts there.
     """
     n = len(ids)
     best = None
@@ -333,9 +333,9 @@ def find_repeats(
 
     Returns:
         repeats (Dict[str, Any]): "measure_repeats" (runs of bars that repeat
-            the bars before them, per staff) and "passages" (repeats and
-            repeats with endings), with 1-based measure numbers and 0-based
-            staff indices.
+            the bars before them, per staff) and "passages" (repeats and repeats
+            with endings), with 1-based measure numbers and 0-based staff
+            indices.
     """
     if staff_names is None:
         names = {name for m in measures for name in (m.get("elements") or {})}

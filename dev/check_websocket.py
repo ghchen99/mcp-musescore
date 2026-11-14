@@ -27,8 +27,8 @@ logging.basicConfig(level=logging.INFO)
 async def test_websocket() -> None:
     """Send getScore to MuseScore, and print the result and its LilyPond form.
 
-    Prints the elements of the first measure and the whole score as LilyPond.
-    A refused connection or another error is printed, not raised.
+    Prints the elements of the first measure and the whole score as LilyPond. A
+    refused connection or another error is printed, not raised.
     """
     uri = "ws://localhost:8765"
     try:

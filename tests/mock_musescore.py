@@ -1,11 +1,11 @@
 """In-memory stand-in for the MuseScore QML plugin's WebSocket API.
 
-Speaks the same envelope as musescore-mcp-websocket.qml
-({"status": "success", "result": ...} / {"status": "error", "message": ...})
-over a simple 4/4-style score, so the MCP server can be run and tested without
-MuseScore. Only a subset of actions is implemented; others return "Unknown command".
+Speaks the same envelope as musescore-mcp-websocket.qml ({"status": "success",
+"result": ...} / {"status": "error", "message": ...}) over a simple 4/4-style
+score, so the MCP server can be run and tested without MuseScore. Only a subset
+of actions is implemented; others return "Unknown command".
 
-Run standalone on the plugin's port:  python tests/mock_musescore.py [--demo]
+Run standalone on the plugin's port: python tests/mock_musescore.py [--demo]
 """
 
 import asyncio
@@ -149,7 +149,8 @@ class MockScore:
     def displayed_numbers(self) -> List[int]:
         """Number the measures as MuseScore displays them.
 
-        MuseScore's rule: add each measure's offset, then count it unless it is excluded.
+        MuseScore's rule: add each measure's offset, then count it unless it is
+        excluded.
         """
         numbers, count = [], 0
         for number in range(1, self.num_measures + 1):
@@ -164,7 +165,8 @@ class MockScore:
     ) -> Dict[str, Any]:
         """Build the getScore analysis, as the plugin does.
 
-        params mirror the plugin (startMeasure, endMeasure, staves, includeElements).
+        params mirror the plugin (startMeasure, endMeasure, staves,
+        includeElements).
         """
         params = params or {}
         first = max(1, params.get("startMeasure") or 1)
@@ -353,7 +355,8 @@ class MockMuseScore:
     def _range(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Validate the measure and staff range, as the plugin does.
 
-        Mirror of the plugin's measureRange(): validated measure and staff range, or an error.
+        Mirror of the plugin's measureRange(): validated measure and staff
+        range, or an error.
         """
         if err := self._missing(params, ["startMeasure"]):
             return err
@@ -389,7 +392,8 @@ class MockMuseScore:
     ) -> Dict[str, Any]:
         """Narrow the range to the requested beats, as the plugin does.
 
-        Mirror of the plugin's applyBeats(): narrow the range to startBeat / endBeat (inclusive).
+        Mirror of the plugin's applyBeats(): narrow the range to startBeat /
+        endBeat (inclusive).
         """
         beat = WHOLE_NOTE_TICKS // self.score.time_signature[1]
         measure = self.score.measure_ticks
@@ -506,7 +510,8 @@ class MockMuseScore:
     def _do_addTie(self, params):
         """Tie the chord at the cursor to the next chord.
 
-        Tie notes of the chord at the cursor to the same pitches in the next chord, with the plugin's rules.
+        Tie notes of the chord at the cursor to the same pitches in the next
+        chord, with the plugin's rules.
         """
         score = self.score
         staff_elements = score.elements[score.cursor_staff]
@@ -574,7 +579,8 @@ class MockMuseScore:
     def _do_addTiedNote(self, params):
         """Write a chord at the cursor, tied to the chord before it.
 
-        Follows the plugin's rules, except that it does not split a note at the barline.
+        Follows the plugin's rules, except that it does not split a note at the
+        barline.
         """
         if err := self._missing(
             params, ["duration", "advanceCursorAfterAction"]
@@ -1163,8 +1169,9 @@ class MockMuseScore:
     def _do_addSectionCounts(self, params):
         """Add section counts to the mock score.
 
-        Mode "label": "(count)" at the end of the rehearsal mark's text; "beside": texts {measure, text,
-        sectionCount: True}. Earlier counts at those measures, in either form, are replaced.
+        Mode "label": "(count)" at the end of the rehearsal mark's text;
+        "beside": texts {measure, text, sectionCount: True}. Earlier counts at
+        those measures, in either form, are replaced.
         """
         if err := self._missing(params, ["counts"]):
             return err
@@ -1218,7 +1225,8 @@ class MockMuseScore:
     def _do_beamOverRests(self, params):
         """Beam over the rests inside a beat.
 
-        Mark rests with beamable chords before and after them in the same beat (4/4 model) as beamed over.
+        Mark rests with beamable chords before and after them in the same beat
+        (4/4 model) as beamed over.
         """
         rng = self._range(params)
         if "error" in rng:
@@ -1585,7 +1593,8 @@ async def running_mock(
 ):
     """Start the mock plugin and yield it.
 
-    Start the mock on a free port (or the given one) and yield the MockMuseScore.
+    Start the mock on a free port (or the given one) and yield the
+    MockMuseScore.
     """
     mock = MockMuseScore(score)
     async with serve(mock.handler, host, port) as ws_server:

@@ -1,13 +1,15 @@
 """Keep only some instruments of a score, editing the file.
 
-MuseScore can remove instruments itself (Score.removeParts, 4.7+), but only in an open score, and a
-score with a damaged bar in another instrument (e.g. a Guitar Pro import with an incomplete measure)
-cannot be opened by a plugin at all. Removing the other parts in the file first avoids both problems.
+MuseScore can remove instruments itself (Score.removeParts, 4.7+), but only in
+an open score, and a score with a damaged bar in another instrument (e.g. a
+Guitar Pro import with an incomplete measure) cannot be opened by a plugin at
+all. Removing the other parts in the file first avoids both problems.
 
-Things that belong to the whole system are stored on the first staff only: frames (title frame),
-measure-level settings (repeat barlines, layout breaks, jumps, markers, bar numbering) and system
-texts (tempo, rehearsal marks, system text, voltas). When the first staff is removed, they move to
-the first staff that is kept.
+Things that belong to the whole system are stored on the first staff only:
+frames (title frame), measure-level settings (repeat barlines, layout breaks,
+jumps, markers, bar numbering) and system texts (tempo, rehearsal marks, system
+text, voltas). When the first staff is removed, they move to the first staff
+that is kept.
 """
 
 import copy
@@ -60,8 +62,8 @@ def _part_staves(score: ScoreFile) -> List[Tuple[ET.Element, List[int]]]:
         score (ScoreFile): The score.
 
     Returns:
-        parts (List[Tuple[ET.Element, List[int]]]): Each <Part> with the
-            0-based indices of its body staves.
+        parts (List[Tuple[ET.Element, List[int]]]): Each <Part> with the 0-based
+            indices of its body staves.
     """
     out, index = [], 0
     for part in score.score.findall("Part"):
@@ -78,8 +80,8 @@ def _is_system(element: ET.Element) -> bool:
         element (ET.Element): A child of a voice.
 
     Returns:
-        is_system (bool): True for system texts (tempo, rehearsal marks...)
-            and system spanners (voltas, tempo changes).
+        is_system (bool): True for system texts (tempo, rehearsal marks...) and
+            system spanners (voltas, tempo changes).
     """
     if element.tag == "Spanner":
         return element.get("type") in SYSTEM_SPANNERS
@@ -163,10 +165,10 @@ def _merge_measure(
 ) -> ET.Element:
     """Merge the system-level content of the old first staff into a measure.
 
-    The kept staff's measure gets the old first staff's measure attributes,
-    its measure-level tags, and its system texts and spanners at the same
-    ticks. A system element at a tick where no note starts on the kept staff
-    goes on the nearest earlier note, and is reported.
+    The kept staff's measure gets the old first staff's measure attributes, its
+    measure-level tags, and its system texts and spanners at the same ticks. A
+    system element at a tick where no note starts on the kept staff goes on the
+    nearest earlier note, and is reported.
 
     Args:
         system_measure (ET.Element): The measure of the old first staff.
@@ -177,8 +179,7 @@ def _merge_measure(
             "moved_earlier").
 
     Returns:
-        merged (ET.Element): A new measure; the input measures are not
-            changed.
+        merged (ET.Element): A new measure; the input measures are not changed.
     """
     merged = copy.deepcopy(kept_measure)
     for key, value in system_measure.attrib.items():
@@ -231,13 +232,13 @@ def keep_parts(score: ScoreFile, keep_staves: Sequence[int]) -> Dict:
             whole parts are kept.
 
     Returns:
-        report (Dict): "kept_parts" (their names), "removed_parts",
-            "staves", "system_texts" (the number moved), "moved_earlier" and
-            "dropped" (settings and part scores removed).
+        report (Dict): "kept_parts" (their names), "removed_parts", "staves",
+            "system_texts" (the number moved), "moved_earlier" and "dropped"
+            (settings and part scores removed).
 
     Raises:
-        ScoreFileError: If a staff does not exist, or the kept staff has
-            fewer measures than the first staff.
+        ScoreFileError: If a staff does not exist, or the kept staff has fewer
+            measures than the first staff.
     """
     parts = _part_staves(score)
     staves = score.staves()
@@ -339,8 +340,9 @@ def part_name(path: Path, entry: str) -> str:
 def detach_part(path: Path, entry: str, target: Path) -> Path:
     """Write a part of a score file as a score file of its own.
 
-    A part is stored as a complete score whose elements point at the full score's (<linkedTo>); without
-    those links MuseScore opens it as an ordinary score with just the part's staves.
+    A part is stored as a complete score whose elements point at the full
+    score's (<linkedTo>); without those links MuseScore opens it as an ordinary
+    score with just the part's staves.
 
     Args:
         path (Path): The score file that holds the part.

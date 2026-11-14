@@ -9,13 +9,13 @@ logger = logging.getLogger("LilyPondConverter")
 def midi_to_lilypond_pitch(midi_pitch: int, tpc: Optional[int] = None) -> str:
     """Convert a MIDI pitch to LilyPond pitch syntax.
 
-    If TPC (Tonal Pitch Class) is provided, uses it to determine enharmonic spelling (flats vs sharps).
-    Errors are logged, not raised.
+    If TPC (Tonal Pitch Class) is provided, uses it to determine enharmonic
+    spelling (flats vs sharps). Errors are logged, not raised.
 
     Args:
         midi_pitch (int): The MIDI pitch; 60 is middle C.
-        tpc (Optional[int]): MuseScore's tonal pitch class, which tells e.g.
-            C sharp from D flat. Defaults to sharps.
+        tpc (Optional[int]): MuseScore's tonal pitch class, which tells e.g. C
+            sharp from D flat. Defaults to sharps.
 
     Returns:
         pitch (str): The LilyPond pitch, e.g. "c'" for middle C; "c'" if the
@@ -202,12 +202,12 @@ def process_element(element: Dict[str, Any]) -> str:
     logged, not raised.
 
     Args:
-        element (Dict[str, Any]): The element: "name", "durationTicks", and
-            for chords "notes" and "lyrics".
+        element (Dict[str, Any]): The element: "name", "durationTicks", and for
+            chords "notes" and "lyrics".
 
     Returns:
-        lilypond (str): The note, chord or rest, e.g. "<c' e'>4~"; "" for
-            other elements or on an error.
+        lilypond (str): The note, chord or rest, e.g. "<c' e'>4~"; "" for other
+            elements or on an error.
     """
     try:
         elem_name = element.get("name", "")
@@ -269,14 +269,13 @@ def process_element(element: Dict[str, Any]) -> str:
 def json_to_lilypond(score_data: Dict[str, Any]) -> str:
     """Convert a selection or a measure of the plugin's analysis to LilyPond.
 
-    Accepts the plugin's currentSelection (its elements as a list, or by
-    staff) or a getScore analysis, of which only the first measure is used.
-    Each staff becomes a staff block with one voice per MuseScore voice.
-    Errors are logged, not raised.
+    Accepts the plugin's currentSelection (its elements as a list, or by staff)
+    or a getScore analysis, of which only the first measure is used. Each staff
+    becomes a staff block with one voice per MuseScore voice. Errors are logged,
+    not raised.
 
     Args:
-        score_data (Dict[str, Any]): The selection or analysis from the
-            plugin.
+        score_data (Dict[str, Any]): The selection or analysis from the plugin.
 
     Returns:
         lilypond (str): The LilyPond text; "<< >>" if the conversion fails.

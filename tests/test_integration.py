@@ -46,7 +46,8 @@ def patterned_score(*patterns):
 def run_with_mock(scenario, score=None):
     """Run a test scenario against the mock plugin.
 
-    Runs `scenario(mcp_client, mock)` with server.client pointed at a mock plugin.
+    Runs `scenario(mcp_client, mock)` with server.client pointed at a mock
+    plugin.
     """
 
     async def runner():
@@ -1207,7 +1208,8 @@ def test_beats_outside_the_bar_are_errors():
 def crash_and_kick_score():
     """Make a drum staff with a kick and crash on beat 1.
 
-    Bar 1 has kick+crash on beat 1, then kick+snare, plus an f and an mf dynamic.
+    Bar 1 has kick+crash on beat 1, then kick+snare, plus an f and an mf
+    dynamic.
     """
     mock = MockMuseScore(MockScore(staves=1, measures=2))
     for pitches in ((36, 57), (36, 38), (36,), (38,)):
@@ -1530,7 +1532,8 @@ def test_remove_annotations_and_reset_numbering():
 def test_file_edits_after_make_part_score_go_to_the_copy(tmp_path, monkeypatch):
     """File edits after make_part_score go to the copy.
 
-    The original incident: after make_part_score, MuseScore's session list still named the original.
+    The original incident: after make_part_score, MuseScore's session list still
+    named the original.
     """
     source = jazz_copy(tmp_path, monkeypatch)
     data_dir = tmp_path / "musescore"
@@ -1698,7 +1701,8 @@ def test_beam_over_rests_only_inside_a_beat():
 def test_file_edits_in_a_part_tab_detach_the_part_first(tmp_path, monkeypatch):
     """File edits in a part tab detach the part first.
 
-    The agent worked in the drum part's tab: the score ID was saved into the part, not the full score.
+    The agent worked in the drum part's tab: the score ID was saved into the
+    part, not the full score.
     """
     from src.mscz.locate import read_score_id
     from tests.test_parts import score_with_part
@@ -1779,7 +1783,8 @@ def test_bars_without_a_length_are_skipped():
 def test_reopens_are_spaced(monkeypatch):
     """Reopens of a score are spaced in time.
 
-    MuseScore crashed when a score was closed ~0.3 s after it was opened: the server waits in between.
+    MuseScore crashed when a score was closed ~0.3 s after it was opened: the
+    server waits in between.
     """
     import asyncio
 
@@ -1807,7 +1812,8 @@ def test_reopens_are_spaced(monkeypatch):
 def test_section_counts_from_the_song_structure():
     """Section counts come from the song structure.
 
-    Bar 1 is a count-in (excluded from the bar count), bars 2-3 a lead-in before the intro groove.
+    Bar 1 is a count-in (excluded from the bar count), bars 2-3 a lead-in before
+    the intro groove.
     """
     score = drum_score("DEFAAAABBBBBBC")
     score.irregular = {1}

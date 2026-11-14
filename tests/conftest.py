@@ -14,7 +14,8 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     """Apply --no-musescore by setting MUSESCORE_BIN=none.
 
-    Runs before the tests are collected, where the MuseScore tests decide whether to skip themselves.
+    Runs before the tests are collected, where the MuseScore tests decide
+    whether to skip themselves.
     """
     if config.getoption("--no-musescore"):
         os.environ["MUSESCORE_BIN"] = "none"
@@ -24,7 +25,8 @@ def pytest_configure(config):
 def no_reopen_gap(monkeypatch):
     """Turn off the wait between score reopens.
 
-    The server spaces score reopens by a few seconds so MuseScore can settle; tests don't need to wait.
+    The server spaces score reopens by a few seconds so MuseScore can settle;
+    tests don't need to wait.
     """
     from src.tools import score_file
 

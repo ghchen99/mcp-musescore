@@ -45,8 +45,9 @@ def text_element(tag, text):
 def add_system_items(score):
     """Add the system items to the first staff.
 
-    Tempo and a rehearsal mark on beat 1 of bar 2, a mark on beat 2 of bar 3, a repeat and a line break, all
-    on the first staff (where MuseScore stores them).
+    Tempo and a rehearsal mark on beat 1 of bar 2, a mark on beat 2 of bar 3, a
+    repeat and a line break, all on the first staff (where MuseScore stores
+    them).
     """
     first = score.staves()[0].findall("Measure")
     voice = first[1].find("voice")
@@ -153,8 +154,8 @@ def test_musescore_opens_the_copy(tmp_path, quartet):
 def score_with_part(tmp_path, score_id="mcp-part-1"):
     """The quartet with a cello part whose metadata holds `score_id`.
 
-    The part is stored as MuseScore stores parts (Excerpts/, links to the full score), as after the plugin
-    ran in the part's tab and saved.
+    The part is stored as MuseScore stores parts (Excerpts/, links to the full
+    score), as after the plugin ran in the part's tab and saved.
     """
     full = tmp_path / "Quartet.mscz"
     shutil.copy(QUARTET, full)
@@ -198,8 +199,9 @@ def test_a_part_tab_is_found_and_detached(tmp_path):
 def test_multi_measure_rests_are_not_counted_as_bars(tmp_path):
     """Multi-measure rests are not counted as bars.
 
-    With multi-measure rests on, MuseScore saves each one as an extra <Measure> holding <multiMeasureRest>
-    (seen in a saved drum part: 72 <Measure>s for 71 bars).
+    With multi-measure rests on, MuseScore saves each one as an extra <Measure>
+    holding <multiMeasureRest> (seen in a saved drum part: 72 <Measure>s for 71
+    bars).
     """
     full = tmp_path / "Quartet.mscz"
     shutil.copy(QUARTET, full)

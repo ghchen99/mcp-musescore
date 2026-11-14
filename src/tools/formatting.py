@@ -54,8 +54,8 @@ def beat_params(
             measure.
 
     Returns:
-        params (dict): The same parameters, with "startBeat" and "endBeat"
-            when given.
+        params (dict): The same parameters, with "startBeat" and "endBeat" when
+            given.
     """
     if start_beat is not None:
         params["startBeat"] = start_beat
@@ -144,8 +144,7 @@ def translucent(color: str, opacity: float) -> str:
         argb (str): The color with its alpha first, e.g. "#802ca02c".
 
     Raises:
-        ToolError: If the color is not "#rrggbb" or the opacity is out of
-            range.
+        ToolError: If the color is not "#rrggbb" or the opacity is out of range.
     """
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
         raise ToolError(f'Color must look like "#rrggbb", got {color!r}')

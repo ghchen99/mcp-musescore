@@ -1,11 +1,12 @@
 """Edit the texts of a score's frames.
 
-The title frame at the top, a notes frame at the end and a song structure page after it (a text frame that
-starts a new page: the frame or bar before it carries a page break).
+The title frame at the top, a notes frame at the end and a song structure page
+after it (a text frame that starts a new page: the frame or bar before it
+carries a page break).
 
-Frames (VBox, TBox) live only in the first staff's body, between its measures. The plugin API
-cannot reach them (measure navigation skips frames, Score.addText only adds), so they are edited
-in the file.
+Frames (VBox, TBox) live only in the first staff's body, between its measures.
+The plugin API cannot reach them (measure navigation skips frames, Score.addText
+only adds), so they are edited in the file.
 """
 
 import textwrap
@@ -241,8 +242,8 @@ def _place_structure_break(staff: ET.Element) -> None:
     """Keep the page break only right before the structure page.
 
     Removes the page breaks from the last measure up to the structure page,
-    except on the bar or frame right before it. Does nothing without a
-    structure page.
+    except on the bar or frame right before it. Does nothing without a structure
+    page.
 
     Args:
         staff (ET.Element): The first staff.
@@ -304,8 +305,7 @@ def end_notes(score: ScoreFile) -> List[str]:
         score (ScoreFile): The score.
 
     Returns:
-        lines (List[str]): The non-empty lines as plain text, headings
-            included.
+        lines (List[str]): The non-empty lines as plain text, headings included.
     """
     lines = []
     for frame in _trailing_notes_frames(_first_staff(score)):
@@ -322,9 +322,11 @@ def set_end_notes(
 ) -> Dict[str, Any]:
     """Put a notes frame after the last measure: a bold heading and lines.
 
-    Text frames already after the last measure are replaced (the structure page stays after them), so
-    running it again updates the notes; `previous` in the report lists what they said. With `append`, their
-    lines (except the old heading) are kept before the new ones. An empty heading and no lines removes them.
+    Text frames already after the last measure are replaced (the structure page
+    stays after them), so running it again updates the notes; `previous` in the
+    report lists what they said. With `append`, their lines (except the old
+    heading) are kept before the new ones. An empty heading and no lines removes
+    them.
 
     Args:
         score (ScoreFile): The score.
@@ -335,8 +337,8 @@ def set_end_notes(
 
     Returns:
         report (Dict[str, Any]): "replaced" (the number of frames replaced),
-            "lines" (the number of lines written) and "previous" (the lines
-            the old frames held).
+            "lines" (the number of lines written) and "previous" (the lines the
+            old frames held).
     """
     staff = _first_staff(score)
     old = _trailing_notes_frames(staff)
@@ -440,9 +442,10 @@ def structure_table(
 ) -> List[List[str]]:
     """Lay out the song structure as a table, in lines of cells.
 
-    A header line, then each row (wrapped cells give extra lines; the last line of a row has an extra empty
-    cell). Columns that no row fills are left out; the widest columns are narrowed
-    (their text wrapped) until a line fits in `width` characters.
+    A header line, then each row (wrapped cells give extra lines; the last line
+    of a row has an extra empty cell). Columns that no row fills are left out;
+    the widest columns are narrowed (their text wrapped) until a line fits in
+    `width` characters.
 
     Args:
         rows (Sequence[Dict[str, Any]]): The structure rows: section, bars,
@@ -450,8 +453,7 @@ def structure_table(
         width (int): The number of characters a line may take.
 
     Returns:
-        lines (List[List[str]]): The table's lines, each a list of padded
-            cells.
+        lines (List[List[str]]): The table's lines, each a list of padded cells.
     """
     rows = [{**r, "bars": _bars_cell(r)} for r in rows]
     columns = [
@@ -502,9 +504,11 @@ def set_structure_page(
 ) -> Dict[str, Any]:
     """Write the song structure as a table on a new page at the end.
 
-    The page replaces an earlier one, and the table comes under the heading and a "song - artist" line (by default the title of the title frame, and its composer or,
-    if there is none, its subtitle). The Bars column shows `count`
-    (or `bars` in fours) and the total adds up the bars. No rows removes the page.
+    The page replaces an earlier one, and the table comes under the heading and
+    a "song - artist" line (by default the title of the title frame, and its
+    composer or, if there is none, its subtitle). The Bars column shows `count`
+    (or `bars` in fours) and the total adds up the bars. No rows removes the
+    page.
 
     Args:
         score (ScoreFile): The score.
@@ -518,9 +522,8 @@ def set_structure_page(
         font (str): The monospaced font of the table, so its columns line up.
 
     Returns:
-        report (Dict[str, Any]): "replaced" (1 if an earlier page was
-            replaced, else 0) and "rows"; with rows, also "song" and
-            "artist".
+        report (Dict[str, Any]): "replaced" (1 if an earlier page was replaced,
+            else 0) and "rows"; with rows, also "song" and "artist".
     """
     staff = _first_staff(score)
     children, last_measure, structure = _end(staff)

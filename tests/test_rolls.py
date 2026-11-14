@@ -185,7 +185,8 @@ def test_roll_can_start_mid_bar_and_end_on_an_odd_length(tmp_path):
 def test_roll_before_a_measure_without_voice(tmp_path):
     """A roll before a measure without a voice is rewritten.
 
-    A measure without <voice> after the roll has no notes, so there is no tie into it to drop.
+    A measure without <voice> after the roll has no notes, so there is no tie
+    into it to drop.
     """
     path = write_score(tmp_path, [chord("whole", 49), chord("whole", 38)])
     score = ScoreFile(path)
@@ -246,8 +247,9 @@ def tied_chord(duration, *pitches, back=None, ahead=None, tremolo=False):
 def test_roll_starts_where_the_tied_cymbals_start(tmp_path):
     """The roll starts where the tied cymbals start.
 
-    As Guitar Pro imports write it: crash + crash 2 hit with the kick on beat 1, left ringing (tied) into a
-    tremolo from beat 3. The roll covers it all, from beat 1.
+    As Guitar Pro imports write it: crash + crash 2 hit with the kick on beat 1,
+    left ringing (tied) into a tremolo from beat 3. The roll covers it all, from
+    beat 1.
     """
     path = write_score(
         tmp_path,

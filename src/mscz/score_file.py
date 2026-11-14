@@ -18,15 +18,16 @@ class ScoreFileError(Exception):
 class ScoreFile:
     """A score file whose main .mscx is parsed into an ElementTree.
 
-    For .mscz archives every other entry (style, thumbnail, settings...) is kept byte for byte.
-    Multi-measure rests are dropped on load: MuseScore saves each one as an extra <Measure> holding
-    <multiMeasureRest> (not a bar) and rebuilds them on layout, so measure positions count real bars only.
+    For .mscz archives every other entry (style, thumbnail, settings...) is kept
+    byte for byte. Multi-measure rests are dropped on load: MuseScore saves each
+    one as an extra <Measure> holding <multiMeasureRest> (not a bar) and
+    rebuilds them on layout, so measure positions count real bars only.
 
     Attributes:
         path (Path): The score file that was read.
         root (ET.Element): The <museScore> root element of the main .mscx.
-        multi_measure_rests (int): The number of multi-measure rest
-            <Measure>s dropped on load.
+        multi_measure_rests (int): The number of multi-measure rest <Measure>s
+            dropped on load.
 
     Example:
         >>> score = ScoreFile("examples/jazz piano/Jazz Piano.mscz")
@@ -187,8 +188,8 @@ class ScoreFile:
         """Write the score, via a temporary file and an atomic rename.
 
         An existing file keeps its permissions; a new file gets the usual ones
-        for the current umask. For a .mscz, every other archive entry is
-        written back unchanged.
+        for the current umask. For a .mscz, every other archive entry is written
+        back unchanged.
 
         Args:
             path (Optional[Union[str, Path]]): Where to write the score.
