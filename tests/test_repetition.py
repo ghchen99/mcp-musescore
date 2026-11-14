@@ -1,4 +1,7 @@
-"""Unit tests for the repeated-material analysis (no MuseScore or mock needed)."""
+"""Unit tests for the repeated-material analysis.
+
+They need neither MuseScore nor the mock plugin.
+"""
 
 from src.utils.repetition import (
     find_repeats,
@@ -36,7 +39,10 @@ def bar_elements(number, letter):
 
 
 def measures(*staff_patterns):
-    """getScore-style measures; each pattern string gives one staff, one letter per bar."""
+    """Make getScore-style measures from patterns.
+
+    Each pattern string gives one staff, one letter per bar.
+    """
     return [
         {
             "measure": i + 1,
@@ -164,7 +170,10 @@ def test_two_bar_sign_resolves_both_bars():
 def groove_bar(
     number, kick_beats=(1, 3), snare_beats=(2, 4), extra=(), cymbal=42
 ):
-    """Kick and snare on the given beats, eighth notes on the cymbal (closed hi-hat by default)."""
+    """Make a groove bar of kick, snare and cymbal.
+
+    Kick and snare on the given beats, eighth notes on the cymbal (closed hi-hat by default).
+    """
     start = (number - 1) * BAR
     hits = (
         [(b, 36) for b in kick_beats]

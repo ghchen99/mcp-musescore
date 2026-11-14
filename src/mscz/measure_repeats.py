@@ -1,4 +1,4 @@
-"""Write measure-repeat signs into a score's XML the way MuseScore's palette does.
+"""Write measure-repeat signs into a score's XML, as MuseScore's palette does.
 
 Layout of a group of N repeated measures on one staff (MuseScore 4.x, see
 Score::cmdAddMeasureRepeat and the vtest/engraving test scores):
@@ -70,6 +70,14 @@ SILENT_TAGS = {
 
 
 def _crosses_barline(spanner: ET.Element) -> bool:
+    """Check whether a spanner (tie, slur...) crosses a barline.
+
+    Args:
+        spanner (ET.Element): The <Spanner> element.
+
+    Returns:
+        crosses (bool): True if its start or end lies in another measure.
+    """
     for link in ("next", "prev"):
         measures = spanner.findtext(f"{link}/location/measures")
         if measures and measures.strip() not in ("", "0"):
@@ -78,12 +86,29 @@ def _crosses_barline(spanner: ET.Element) -> bool:
 
 
 def _repeat_count(measure: ET.Element) -> int:
+    """Return a measure's position in a measure-repeat group.
+
+    Args:
+        measure (ET.Element): The <Measure> element.
+
+    Returns:
+        count (int): Its <measureRepeatCount> (1 for the first measure of a
+            group), or 0 if it is not in a group.
+    """
     text = measure.findtext("measureRepeatCount")
     return int(text) if text and text.strip().isdigit() else 0
 
 
 def _existing_groups(measures: Sequence[ET.Element]) -> List[Tuple[int, int]]:
-    """(first index, size) of the measure-repeat groups already on a staff."""
+    """Find the measure-repeat groups already on a staff.
+
+    Args:
+        measures (Sequence[ET.Element]): The staff's measures.
+
+    Returns:
+        groups (List[Tuple[int, int]]): The (first index, size) of each group,
+            with 0-based indices.
+    """
     groups = []
     i = 0
     while i < len(measures):
@@ -99,7 +124,18 @@ def _existing_groups(measures: Sequence[ET.Element]) -> List[Tuple[int, int]]:
 
 
 def measure_lengths(staff: ET.Element, first_staff: ET.Element) -> List[str]:
-    """Actual length of each measure as "N/D": the irregular-measure len, else the time signature."""
+    """Return the actual length of each measure of a staff.
+
+    Args:
+        staff (ET.Element): The staff.
+        first_staff (ET.Element): The first staff, which holds the `len` of
+            irregular measures when the staff itself does not.
+
+    Returns:
+        lengths (List[str]): The length of each measure as "N/D": the
+            irregular-measure `len`, else the time signature in force (4/4
+            until the first one).
+    """
     lengths = []
     signature = "4/4"
     first_measures = first_staff.findall("Measure")
@@ -119,7 +155,18 @@ def measure_lengths(staff: ET.Element, first_staff: ET.Element) -> List[str]:
 def _split_voice(
     voice: ET.Element,
 ) -> Tuple[List[ET.Element], List[ET.Element], List[ET.Element]]:
-    """(leading, body, trailing) children of a voice; leading/trailing sit at the measure's edges."""
+    """Split a voice into the content at the measure's edges and its body.
+
+    The body runs from the first chord, rest or tuplet to the last one.
+
+    Args:
+        voice (ET.Element): The <voice> element.
+
+    Returns:
+        parts (Tuple[List[ET.Element], List[ET.Element], List[ET.Element]]):
+            The leading children, the body and the trailing children; all
+            children are leading if the voice has no body.
+    """
     children = list(voice)
     starts = [i for i, c in enumerate(children) if c.tag in BODY_START_TAGS]
     if not starts:
@@ -130,7 +177,16 @@ def _split_voice(
 
 
 def _check_measure(measure: ET.Element) -> Tuple[Optional[str], List[str]]:
-    """(reason it can't be replaced or None, list of content that replacing would drop)."""
+    """Check whether a measure can be replaced by a measure-repeat sign.
+
+    Args:
+        measure (ET.Element): The <Measure> element.
+
+    Returns:
+        check (Tuple[Optional[str], List[str]]): The reason it can't be
+            replaced (a spanner crossing its barline) or None, and the kinds
+            of content that replacing it would drop.
+    """
     dropped = []
     voices = measure.findall("voice")
     for v, voice in enumerate(voices):
@@ -157,6 +213,16 @@ def _check_measure(measure: ET.Element) -> Tuple[Optional[str], List[str]]:
 
 
 def _sign_or_rest(size: int, holds_sign: bool, length: str) -> ET.Element:
+    """Make the content of a measure in a group: the sign or a measure rest.
+
+    Args:
+        size (int): The group size: 1, 2 or 4 bars.
+        holds_sign (bool): True for the measure that shows the sign.
+        length (str): The measure's length as "N/D".
+
+    Returns:
+        element (ET.Element): A <MeasureRepeat> or a full-measure <Rest>.
+    """
     element = ET.Element("MeasureRepeat" if holds_sign else "Rest")
     if holds_sign:
         ET.SubElement(element, "subtype").text = str(size)
@@ -166,6 +232,15 @@ def _sign_or_rest(size: int, holds_sign: bool, length: str) -> ET.Element:
 
 
 def _set_repeat_count(measure: ET.Element, count: int) -> None:
+    """Set a measure's position in a measure-repeat group.
+
+    The <measureRepeatCount> goes after the measure-level tags, where
+    MuseScore writes it.
+
+    Args:
+        measure (ET.Element): The <Measure> element.
+        count (int): Its position in the group, starting at 1.
+    """
     for old in measure.findall("measureRepeatCount"):
         measure.remove(old)
     position = 0
@@ -180,7 +255,19 @@ def _set_repeat_count(measure: ET.Element, count: int) -> None:
 
 
 def _add_nobreak(first_staff_measure: ET.Element) -> bool:
-    """Add a nobreak layout break unless the measure already has a layout break; True if added."""
+    """Keep a measure on the same system as the next one.
+
+    Adds a "nobreak" layout break, unless the measure already has a layout
+    break.
+
+    Args:
+        first_staff_measure (ET.Element): The measure on the first staff,
+            where layout breaks are stored.
+
+    Returns:
+        added (bool): True if the break was added, False if the measure
+            already had one.
+    """
     if first_staff_measure.find("LayoutBreak") is not None:
         return False
     voices = [i for i, c in enumerate(first_staff_measure) if c.tag == "voice"]
@@ -199,6 +286,20 @@ def _rewrite_measure(
     length: str,
     keep_barline: bool,
 ) -> None:
+    """Replace a measure's content by its part of a measure-repeat group.
+
+    Voices 2-4 are removed; the first voice keeps what sits at the measure's
+    edges, except chord spanners (and the barline, unless `keep_barline`).
+
+    Args:
+        measure (ET.Element): The <Measure> element.
+        count (int): Its position in the group, starting at 1.
+        size (int): The group size: 1, 2 or 4 bars.
+        holds_sign (bool): True for the measure that shows the sign.
+        length (str): The measure's length as "N/D".
+        keep_barline (bool): Whether to keep its end barline (only the last
+            measure of a group does).
+    """
     voices = measure.findall("voice")
     if not voices:
         voices = [ET.SubElement(measure, "voice")]
@@ -230,8 +331,23 @@ def apply_measure_repeats(
 ) -> Dict:
     """Turn measures into measure-repeat signs on one staff.
 
-    groups: (first measure, size) pairs, 1-based measures and size 1, 2 or 4. A group repeats the
-    `size` measures before it. Groups that cannot be applied safely are skipped and reported.
+    A group repeats the `size` measures before it. Groups that cannot be applied safely are skipped
+    and reported.
+
+    Args:
+        score (ScoreFile): The score.
+        staff_index (int): The staff, 0-based.
+        groups (Sequence[Tuple[int, int]]): The (first measure, size) of each
+            group: 1-based measures, size 1, 2 or 4.
+
+    Returns:
+        report (Dict): "applied", "unchanged" (groups already there) and
+            "skipped" (with a reason) group entries, "dropped" (content
+            removed per measure) and "kept_layout_breaks" (measures whose
+            existing layout break was kept).
+
+    Raises:
+        ScoreFileError: If the staff does not exist.
     """
     staves = score.staves()
     if not 0 <= staff_index < len(staves):

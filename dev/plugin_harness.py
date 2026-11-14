@@ -1,12 +1,16 @@
-r"""Run the QML plugin's commands headless in MuseScore, without the GUI or the WebSocket bridge.
+r"""Run the QML plugin's commands headless in MuseScore.
+
+This needs neither the GUI nor the WebSocket bridge.
 
 Builds a copy of musescore-mcp-websocket.qml whose onRun executes a fixed list of commands,
 runs it on a score with MuseScore's converter (`--extension`), and prints each command's result.
 MuseScore runs from a throwaway profile in a temporary folder, so your own settings and
 plugins are not touched.
 
-    python dev/plugin_harness.py '[{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}]' \
-        "examples/jazz piano/Jazz Piano.mscz" --out /tmp/edited.mscz --png /tmp/edited.png
+```
+python dev/plugin_harness.py '[{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}]' \
+    "examples/jazz piano/Jazz Piano.mscz" --out /tmp/edited.mscz --png /tmp/edited.png
+```
 
 Commands are a JSON list (inline or a path to a .json file) of {"action": ..., "params": {...}},
 exactly what the Python server sends over the WebSocket. Results are passed back through a
@@ -33,9 +37,15 @@ EXTENSION_URI = f"musescore://extensions/v1/{HARNESS_NAME}"
 
 
 def find_musescore() -> Optional[str]:
-    """MuseScore executable: $MUSESCORE_BIN, an AppImage in ~/.local/bin, or mscore on PATH.
+    """Find the MuseScore executable.
 
-    MUSESCORE_BIN=none means no MuseScore, even when one is installed, so the tests that need it skip themselves.
+    Looks at $MUSESCORE_BIN, then an AppImage in ~/.local/bin, then mscore (and
+    similar names) on the PATH. MUSESCORE_BIN=none means no MuseScore, even when one is installed, so the
+    tests that need it skip themselves.
+
+    Returns:
+        binary (Optional[str]): The path of the first executable found, or
+            None.
     """
     if os.environ.get("MUSESCORE_BIN") == "none":
         return None
@@ -53,7 +63,18 @@ def find_musescore() -> Optional[str]:
 def build_harness(
     commands: List[Dict[str, Any]], plugin_source: Union[str, Path] = PLUGIN
 ) -> str:
-    """Plugin source whose onRun runs `commands` and stores the results in a meta tag."""
+    """Make a copy of the plugin whose onRun runs a fixed list of commands.
+
+    The results are stored in a "harness" meta tag of the score.
+
+    Args:
+        commands (List[Dict[str, Any]]): The commands, as the server sends
+            them: {"action": ..., "params": {...}}.
+        plugin_source (Union[str, Path]): The plugin's QML file.
+
+    Returns:
+        source (str): The QML source of the harness plugin.
+    """
     code = Path(plugin_source).read_text(encoding="utf-8")
     on_run = code.index("    onRun: {")
     runner = f"""    onRun: {{
@@ -84,7 +105,15 @@ def build_harness(
 def read_results(
     score_path: Union[str, Path],
 ) -> Optional[List[Dict[str, Any]]]:
-    """Results stored by the harness in the output score, or None."""
+    """Read the results the harness stored in the output score.
+
+    Args:
+        score_path (Union[str, Path]): The output score (.mscz).
+
+    Returns:
+        results (Optional[List[Dict[str, Any]]]): The {"action", "result"}
+            entries, or None if the score holds no results.
+    """
     with zipfile.ZipFile(score_path) as z:
         name = next(
             n for n in z.namelist() if n.endswith(".mscx") and "/" not in n
@@ -99,6 +128,18 @@ def read_results(
 def _musescore(
     binary: str, args: List[str], home: Path, timeout: float
 ) -> subprocess.CompletedProcess[str]:
+    """Run MuseScore offscreen, with a throwaway home folder.
+
+    Args:
+        binary (str): The MuseScore executable.
+        args (List[str]): Its command-line arguments.
+        home (Path): The home folder to use, for MuseScore's settings.
+        timeout (float): The time limit in seconds.
+
+    Returns:
+        proc (subprocess.CompletedProcess[str]): The finished process, with
+            its output.
+    """
     env = {
         **os.environ,
         "HOME": str(home),
@@ -124,10 +165,30 @@ def run(
     timeout: float = 300,
     png_dpi: int = 130,
 ) -> List[Dict[str, Any]]:
-    """Run commands on a copy of `score`. Returns the list of {"action", "result"} entries.
+    """Run plugin commands on a copy of a score, in MuseScore.
 
-    out: where to save the edited score (.mscz); png: where to render it (one file per page,
-    MuseScore adds -1, -2, ... before the extension).
+    Args:
+        commands (List[Dict[str, Any]]): The commands, as the server sends
+            them: {"action": ..., "params": {...}}.
+        score (Union[str, Path]): The score to run them on; it is not
+            changed.
+        out (Optional[Union[str, Path]]): Where to save the edited score
+            (.mscz).
+        png (Optional[Union[str, Path]]): Where to render the edited score,
+            one file per page (MuseScore adds -1, -2, ... before the
+            extension).
+        musescore (Optional[str]): The MuseScore executable. Defaults to
+            find_musescore().
+        timeout (float): The time limit per MuseScore run, in seconds.
+        png_dpi (int): The resolution of the PNG files.
+
+    Returns:
+        results (List[Dict[str, Any]]): The {"action", "result"} entry of
+            each command.
+
+    Raises:
+        RuntimeError: If MuseScore is not found, fails, leaves no results or
+            does not render the pages.
     """
     binary = musescore or find_musescore()
     if not binary:
@@ -219,7 +280,11 @@ def run(
 
 
 def main() -> int:
-    """Run the harness from the command line; returns 1 if a command returned an error."""
+    """Run the harness from the command line, and print each result.
+
+    Returns:
+        exit_code (int): 1 if a command returned an error, else 0.
+    """
     parser = argparse.ArgumentParser(
         description=(__doc__ or "").split("\n\n")[0]
     )

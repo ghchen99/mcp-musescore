@@ -40,13 +40,32 @@ CHORD_REST = {"Chord", "Rest"}
 
 
 def fraction_ticks(text: str) -> int:
-    """Ticks in a fraction of a whole note, e.g. "3/4" -> 1440."""
+    """Convert a fraction of a whole note to ticks.
+
+    Args:
+        text (str): The fraction as "N/D", e.g. "3/4".
+
+    Returns:
+        ticks (int): The length in ticks, e.g. 1440 for "3/4".
+    """
     num, den = text.split("/")
     return WHOLE * int(num) // int(den)
 
 
 def element_ticks(element: ET.Element, measure_len: int) -> int:
-    """Ticks a chord or rest lasts; a measure rest without a duration lasts `measure_len`."""
+    """Return how many ticks a chord or rest lasts.
+
+    Args:
+        element (ET.Element): The <Chord> or <Rest> element.
+        measure_len (int): The measure's length in ticks, for a measure rest
+            without a duration.
+
+    Returns:
+        ticks (int): The length in ticks, dots included.
+
+    Raises:
+        ScoreFileError: If its duration type is unknown.
+    """
     kind = element.findtext("durationType")
     if kind == "measure":
         duration = element.findtext("duration")
@@ -58,7 +77,19 @@ def element_ticks(element: ET.Element, measure_len: int) -> int:
 
 
 def note_value(ticks: int) -> Tuple[str, int]:
-    """(durationType, dots) for a length in ticks, or ScoreFileError if no single note value fits."""
+    """Find the single note value for a length in ticks.
+
+    Args:
+        ticks (int): The length in ticks.
+
+    Returns:
+        value (Tuple[str, int]): The durationType (e.g. "quarter") and the
+            number of dots.
+
+    Raises:
+        ScoreFileError: If no single note value, with up to two dots, has
+            that length.
+    """
     for name, base in DURATION_TICKS.items():
         for dots, factor in DOT_FACTORS.items():
             if base * factor == ticks:
@@ -69,7 +100,18 @@ def note_value(ticks: int) -> Tuple[str, int]:
 
 
 def rest_values(ticks: int) -> List[Tuple[str, int]]:
-    """Note values (durationType, dots) adding up to `ticks`, longest first."""
+    """Split a length in ticks into note values, longest first.
+
+    Args:
+        ticks (int): The length in ticks.
+
+    Returns:
+        values (List[Tuple[str, int]]): The (durationType, dots) of each
+            value; together they add up to `ticks`.
+
+    Raises:
+        ScoreFileError: If the length cannot be filled with note values.
+    """
     values = sorted(
         (
             (base * factor, name, dots)
@@ -89,6 +131,16 @@ def rest_values(ticks: int) -> List[Tuple[str, int]]:
 
 
 def _duration(element: ET.Element, name: str, dots: int) -> ET.Element:
+    """Give a chord or rest its note value.
+
+    Args:
+        element (ET.Element): The <Chord> or <Rest> element.
+        name (str): The durationType, e.g. "quarter".
+        dots (int): The number of dots.
+
+    Returns:
+        element (ET.Element): The same element, for chaining.
+    """
     if dots:
         ET.SubElement(element, "dots").text = str(dots)
     ET.SubElement(element, "durationType").text = name
@@ -96,12 +148,32 @@ def _duration(element: ET.Element, name: str, dots: int) -> ET.Element:
 
 
 def _fraction(ticks: int) -> str:
+    """Convert ticks to a fraction of a whole note.
+
+    Args:
+        ticks (int): The length in ticks.
+
+    Returns:
+        fraction (str): The fraction as "N/D", in lowest terms.
+    """
     whole = Fraction(ticks, WHOLE)
     return f"{whole.numerator}/{whole.denominator}"
 
 
 def _tie(direction: str, measures: int, ticks: int = 0) -> ET.Element:
-    """A tie half; the location of the other note is relative: whole measures, then a fraction within them."""
+    """Make one half of a tie: the link from a note to the next or previous one.
+
+    The location of the other note is relative: whole measures, then a
+    fraction within them.
+
+    Args:
+        direction (str): "next" or "prev".
+        measures (int): The number of measures to the other note.
+        ticks (int): The distance to the other note within the measure.
+
+    Returns:
+        spanner (ET.Element): The tie's <Spanner> element.
+    """
     spanner = ET.Element("Spanner", {"type": "Tie"})
     if direction == "next":
         ET.SubElement(spanner, "Tie")
@@ -114,7 +186,14 @@ def _tie(direction: str, measures: int, ticks: int = 0) -> ET.Element:
 
 
 def _clean_note(note: ET.Element) -> ET.Element:
-    """Copy of a note without its id and ties."""
+    """Copy a note without its id and ties.
+
+    Args:
+        note (ET.Element): The <Note> element.
+
+    Returns:
+        clean (ET.Element): A copy without its <eid> and <Spanner> children.
+    """
     clean = copy.deepcopy(note)
     for child in list(clean):
         if child.tag in ("eid", "Spanner"):
@@ -123,7 +202,16 @@ def _clean_note(note: ET.Element) -> ET.Element:
 
 
 def _drop_ties(chord: ET.Element, direction: str, pitches: Set[str]) -> int:
-    """Remove the ties of the roll pitches of `chord` that go in `direction` ("next"/"prev")."""
+    """Remove the ties of a chord's roll notes that go one way.
+
+    Args:
+        chord (ET.Element): The <Chord> element.
+        direction (str): "next" or "prev".
+        pitches (Set[str]): The roll pitches, as text.
+
+    Returns:
+        dropped (int): The number of ties removed.
+    """
     dropped = 0
     for note in chord.findall("Note"):
         if note.findtext("pitch") not in pitches:
@@ -139,6 +227,16 @@ def _drop_ties(chord: ET.Element, direction: str, pitches: Set[str]) -> int:
 
 
 def _has_tie(chord: ET.Element, direction: str, pitches: Set[str]) -> bool:
+    """Check whether one of a chord's roll notes is tied one way.
+
+    Args:
+        chord (ET.Element): The <Chord> element.
+        direction (str): "next" or "prev".
+        pitches (Set[str]): The roll pitches, as text.
+
+    Returns:
+        tied (bool): True if a roll note has a tie in that direction.
+    """
     return any(
         spanner.get("type") == "Tie" and spanner.find(direction) is not None
         for note in chord.findall("Note")
@@ -150,7 +248,17 @@ def _has_tie(chord: ET.Element, direction: str, pitches: Set[str]) -> bool:
 def _voice_one(
     measure: ET.Element, length: int
 ) -> Optional[List[Tuple[int, ET.Element]]]:
-    """(tick, element) of the chords and rests of voice 1, or None if it has tuplets or moved elements."""
+    """List the chords and rests of a measure's first voice, with their ticks.
+
+    Args:
+        measure (ET.Element): The <Measure> element.
+        length (int): The measure's length in ticks, for measure rests.
+
+    Returns:
+        elements (Optional[List[Tuple[int, ET.Element]]]): The (tick, element)
+            of each chord and rest, or None if the voice is missing or has
+            tuplets or moved elements.
+    """
     voice = measure.find("voice")
     if voice is None:
         return None
@@ -174,6 +282,17 @@ def tie_chain_start(
     """Find where the roll really starts, as (measure, ticks).
 
     Walks back while the roll cymbals are tied from the chord before, which must hold the roll cymbals too.
+
+    Args:
+        measures (List[ET.Element]): The staff's measures.
+        lengths (List[int]): The length of each measure in ticks.
+        start_measure (int): The requested start measure, 1-based.
+        start_ticks (int): The requested start within that measure.
+        pitches (Set[str]): The roll pitches, as text.
+
+    Returns:
+        start (Tuple[int, int]): The measure (1-based) and tick where the tie
+            chain starts; the requested start if nothing is tied into it.
     """
     number, ticks = start_measure, start_ticks
     while True:
@@ -224,10 +343,32 @@ def simplify_roll(
     slashes: int = 3,
     start_ticks: int = 0,
 ) -> Dict:
-    """Rewrite the roll, and return a report.
+    """Rewrite a cymbal roll as one long tremolo note per bar.
 
-    start_ticks / end_ticks: where the roll starts inside start_measure (default: its beginning) and ends inside
-    end_measure (default: its end).
+    See the module docstring for what is rewritten and what is refused.
+
+    Args:
+        score (ScoreFile): The score, changed in place.
+        staff_index (int): The staff, 0-based.
+        start_measure (int): The measure the roll starts in, 1-based.
+        end_measure (int): The measure the roll ends in, 1-based.
+        end_ticks (Optional[int]): Where the roll ends inside end_measure.
+            Defaults to its end.
+        pitches (Sequence[int]): The roll's MIDI pitches. Defaults to the two
+            crash cymbals (49, 57).
+        slashes (int): The tremolo strokes, 1-4 (eighths to 64ths).
+        start_ticks (int): Where the roll starts inside start_measure.
+            Defaults to its beginning.
+
+    Returns:
+        report (Dict): "measures", "replaced_chords",
+            "ties_removed_at_the_edges", "new_notes", "starts_at_tick",
+            "moved_to_voice_2" and "tremolo"; "start_moved_back" when the
+            start moved back along a tie chain.
+
+    Raises:
+        ScoreFileError: If the staff, range or slashes are invalid, or the span
+            cannot be rewritten safely.
     """
     staves = score.staves()
     if not 0 <= staff_index < len(staves):
@@ -372,6 +513,14 @@ def simplify_roll(
             tick += int(DURATION_TICKS[name] * DOT_FACTORS[dots])
 
     def piece_chord(i: int) -> ET.Element:
+        """Make the chord of one new note, tied to its neighbours.
+
+        Args:
+            i (int): The index of the note in `pieces`.
+
+        Returns:
+            chord (ET.Element): The <Chord>, with the roll notes and a tremolo.
+        """
         k, tick, name, dots = pieces[i]
         chord = _duration(ET.Element("Chord"), name, dots)
         for note in roll_notes:

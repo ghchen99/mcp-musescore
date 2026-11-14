@@ -1,4 +1,7 @@
-"""Read and write MuseScore score files (.mscz zip archives or plain .mscx XML)."""
+"""Read and write MuseScore score files.
+
+A score file is a .mscz zip archive or a plain .mscx XML file.
+"""
 
 import os
 import tempfile
@@ -18,10 +21,31 @@ class ScoreFile:
     For .mscz archives every other entry (style, thumbnail, settings...) is kept byte for byte.
     Multi-measure rests are dropped on load: MuseScore saves each one as an extra <Measure> holding
     <multiMeasureRest> (not a bar) and rebuilds them on layout, so measure positions count real bars only.
+
+    Attributes:
+        path (Path): The score file that was read.
+        root (ET.Element): The <museScore> root element of the main .mscx.
+        multi_measure_rests (int): The number of multi-measure rest
+            <Measure>s dropped on load.
+
+    Example:
+        >>> score = ScoreFile("examples/jazz piano/Jazz Piano.mscz")
+        >>> score.version
+        '4.70'
+        >>> len(score.staves())
+        2
     """
 
     def __init__(self, path: Union[str, Path]) -> None:
-        """Read the score file at `path` (.mscz or .mscx)."""
+        """Read a score file and parse its main .mscx.
+
+        Args:
+            path (Union[str, Path]): The score file to read, .mscz or .mscx.
+
+        Raises:
+            ScoreFileError: If the file is not a valid .mscz archive, holds no
+                .mscx score, or is not a MuseScore score.
+        """
         self.path = Path(path)
         self._entries: List[Tuple[zipfile.ZipInfo, bytes]] = []
         self._mscx_name: Optional[str] = None
@@ -59,6 +83,17 @@ class ScoreFile:
                 self.multi_measure_rests += 1
 
     def _find_main_mscx(self) -> str:
+        """Find the main .mscx in the archive.
+
+        Uses the rootfile listed in META-INF/container.xml, or else the first
+        .mscx at the top level of the archive.
+
+        Returns:
+            name (str): The archive entry name of the main .mscx.
+
+        Raises:
+            ScoreFileError: If the archive holds no .mscx score.
+        """
         names = [info.filename for info, _ in self._entries]
         if "META-INF/container.xml" in names:
             container = ET.fromstring(
@@ -77,7 +112,11 @@ class ScoreFile:
 
     @property
     def score(self) -> ET.Element:
-        """The <Score> element."""
+        """The <Score> element of the main .mscx.
+
+        Raises:
+            ScoreFileError: If the file has no <Score> element.
+        """
         score = self.root.find("Score")
         if score is None:
             raise ScoreFileError(
@@ -91,11 +130,24 @@ class ScoreFile:
         return self.root.get("version", "")
 
     def staves(self) -> List[ET.Element]:
-        """Body <Staff id="N"> elements (staff index N-1), in order."""
+        """Return the staves of the score body, in order.
+
+        Returns:
+            staves (List[ET.Element]): The body <Staff id="N"> elements; staff
+                index N-1 is the staff with id N.
+        """
         return self.score.findall("Staff")
 
     def drop_entries(self, prefix: str) -> int:
-        """Remove archive entries under `prefix` (e.g. "Excerpts/") and their container.xml lines."""
+        """Remove archive entries under a prefix, and their container.xml lines.
+
+        Args:
+            prefix (str): The start of the entry names to remove, e.g.
+                "Excerpts/".
+
+        Returns:
+            removed (int): The number of entries removed.
+        """
         before = len(self._entries)
         self._entries = [
             (info, data)
@@ -124,11 +176,27 @@ class ScoreFile:
         return removed
 
     def to_bytes(self) -> bytes:
-        """The score as .mscx XML."""
+        """Return the score as .mscx XML.
+
+        Returns:
+            xml (bytes): The main .mscx, with its XML declaration, in UTF-8.
+        """
         return ET.tostring(self.root, encoding="UTF-8", xml_declaration=True)
 
     def save(self, path: Optional[Union[str, Path]] = None) -> Path:
-        """Write the score (to its own path by default) via a temporary file and an atomic rename."""
+        """Write the score, via a temporary file and an atomic rename.
+
+        An existing file keeps its permissions; a new file gets the usual ones
+        for the current umask. For a .mscz, every other archive entry is
+        written back unchanged.
+
+        Args:
+            path (Optional[Union[str, Path]]): Where to write the score.
+                Defaults to the file it was read from.
+
+        Returns:
+            target (Path): The file that was written.
+        """
         target = Path(path) if path else self.path
         fd, tmp = tempfile.mkstemp(
             dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"

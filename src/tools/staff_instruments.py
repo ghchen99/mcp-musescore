@@ -10,7 +10,13 @@ from ..client import MuseScoreClient
 def setup_staff_instruments_tools(
     mcp: FastMCP, client: MuseScoreClient
 ) -> None:
-    """Setup staff and instrument tools."""
+    """Register the staff and instrument tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     @mcp.tool(
         description="Add a new staff/instrument to the score.",

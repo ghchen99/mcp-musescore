@@ -8,7 +8,13 @@ from ..client import MuseScoreClient
 
 
 def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
-    """Setup notes and measures tools."""
+    """Register the tools that edit notes, rests, ties, lyrics and measures.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     @mcp.tool(
         description=(

@@ -10,7 +10,22 @@ def midi_to_lilypond_pitch(midi_pitch: int, tpc: Optional[int] = None) -> str:
     """Convert a MIDI pitch to LilyPond pitch syntax.
 
     If TPC (Tonal Pitch Class) is provided, uses it to determine enharmonic spelling (flats vs sharps).
-    Example: 60 -> c', 67 -> g', 74 -> d''
+    Errors are logged, not raised.
+
+    Args:
+        midi_pitch (int): The MIDI pitch; 60 is middle C.
+        tpc (Optional[int]): MuseScore's tonal pitch class, which tells e.g.
+            C sharp from D flat. Defaults to sharps.
+
+    Returns:
+        pitch (str): The LilyPond pitch, e.g. "c'" for middle C; "c'" if the
+            conversion fails.
+
+    Example:
+        >>> midi_to_lilypond_pitch(60)
+        "c'"
+        >>> midi_to_lilypond_pitch(74)
+        "d''"
     """
     try:
         # Fallback names if no TPC provided
@@ -101,9 +116,16 @@ def midi_to_lilypond_pitch(midi_pitch: int, tpc: Optional[int] = None) -> str:
 
 
 def ticks_to_lilypond_duration(ticks: int) -> str:
-    """Convert MuseScore ticks to LilyPond rhythmic duration.
+    """Convert MuseScore ticks to a LilyPond duration.
 
     MuseScore defines a quarter note as 480 ticks.
+
+    Args:
+        ticks (int): The length in ticks.
+
+    Returns:
+        duration (str): The LilyPond duration, e.g. "4" for a quarter note or
+            "8." for a dotted eighth; "4" for a length it does not know.
     """
     try:
         mapping = {
@@ -129,7 +151,17 @@ def ticks_to_lilypond_duration(ticks: int) -> str:
 
 
 def ticks_to_spacers(ticks: int) -> List[str]:
-    """Greedily consume temporal gap into valid Lilypond spacer rests."""
+    """Fill a gap with LilyPond spacer rests, longest first.
+
+    A remainder no spacer can fill is logged and left out.
+
+    Args:
+        ticks (int): The length of the gap in ticks.
+
+    Returns:
+        spacers (List[str]): The spacer rests, e.g. ["s2", "s8"]; empty for a
+            gap of 0 or less.
+    """
     if ticks <= 0:
         return []
 
@@ -164,9 +196,18 @@ def ticks_to_spacers(ticks: int) -> List[str]:
 
 
 def process_element(element: Dict[str, Any]) -> str:
-    """Process a single JSON element dictionary into LilyPond syntax.
+    """Convert one chord or rest of the plugin's analysis to LilyPond.
 
-    Handles 'Chord' (with notes) and 'Rest'.
+    Ties are written as "~", and lyrics as a text above the note. Errors are
+    logged, not raised.
+
+    Args:
+        element (Dict[str, Any]): The element: "name", "durationTicks", and
+            for chords "notes" and "lyrics".
+
+    Returns:
+        lilypond (str): The note, chord or rest, e.g. "<c' e'>4~"; "" for
+            other elements or on an error.
     """
     try:
         elem_name = element.get("name", "")
@@ -226,9 +267,19 @@ def process_element(element: Dict[str, Any]) -> str:
 
 
 def json_to_lilypond(score_data: Dict[str, Any]) -> str:
-    """Convert a JSON response representing a MuseScore measure/score into an absolute LilyPond tree.
+    """Convert a selection or a measure of the plugin's analysis to LilyPond.
 
-    Assembles code into structured staffs and voices using concurrent compilation.
+    Accepts the plugin's currentSelection (its elements as a list, or by
+    staff) or a getScore analysis, of which only the first measure is used.
+    Each staff becomes a staff block with one voice per MuseScore voice.
+    Errors are logged, not raised.
+
+    Args:
+        score_data (Dict[str, Any]): The selection or analysis from the
+            plugin.
+
+    Returns:
+        lilypond (str): The LilyPond text; "<< >>" if the conversion fails.
     """
     try:
         # Handle 'currentSelection' raw input format
@@ -366,6 +417,14 @@ def json_to_lilypond(score_data: Dict[str, Any]) -> str:
 
 
 def _staff_sort_key(name: str) -> int:
+    """Sort key for staff names such as "staff2": their number.
+
+    Args:
+        name (str): The staff name.
+
+    Returns:
+        key (int): The staff number, or 0 if the name has none.
+    """
     try:
         return int(name.replace("staff", ""))
     except ValueError:
@@ -373,7 +432,15 @@ def _staff_sort_key(name: str) -> int:
 
 
 def _bar_comment(measure: Dict[str, Any]) -> str:
-    """Comment "% m.N" plus the displayed number when it differs, and repeat barlines, e.g. "% m.4 (bar 6) |: :|x7"."""
+    """Make the comment that ends a measure in the LilyPond text.
+
+    Args:
+        measure (Dict[str, Any]): The measure from the plugin's analysis.
+
+    Returns:
+        comment (str): "% m.N", plus the displayed number when it differs and
+            the repeat barlines, e.g. "% m.4 (bar 6) |: :|x7".
+    """
     comment = f"% m.{measure.get('measure')}"
     if measure.get("number") is not None and measure.get(
         "number"
@@ -387,10 +454,19 @@ def _bar_comment(measure: Dict[str, Any]) -> str:
 
 
 def score_to_lilypond(score_data: Dict[str, Any]) -> str:
-    """Convert a getScore analysis (one or more measures) into LilyPond, one staff per block.
+    """Convert a getScore analysis into LilyPond, one staff per block.
+
+    The analysis can hold one or more measures.
 
     Every voice is padded with spacers so that each measure ends on a bar check
     followed by a "% m.N" comment, which keeps measures easy to compare by eye.
+    Errors are logged, not raised.
+
+    Args:
+        score_data (Dict[str, Any]): The getScore analysis from the plugin.
+
+    Returns:
+        lilypond (str): The LilyPond text; "<< >>" if the conversion fails.
     """
     try:
         measures = score_data.get("measures", [])

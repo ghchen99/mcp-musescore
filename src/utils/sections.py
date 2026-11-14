@@ -1,4 +1,4 @@
-"""Split a staff (typically drums) into groove sections for a chart-style layout.
+"""Split a staff (typically drums) into groove sections for a chart layout.
 
 A section starts with a groove bar. The bars after it are exact copies of the groove,
 near copies (similar enough, e.g. one extra kick), or fills (bars that break the pattern).
@@ -61,7 +61,14 @@ CRASH_PITCHES = {49, 57}  # crash cymbal 1 and 2
 
 
 def bar_events(fingerprint: Fingerprint) -> Set[Event]:
-    """(tick within the bar, pitch) for every note in a bar."""
+    """List the hits of a bar: each note with its position.
+
+    Args:
+        fingerprint (Fingerprint): The bar's fingerprint.
+
+    Returns:
+        events (Set[Event]): The (tick within the bar, pitch) of every note.
+    """
     return {
         (item[0], pitch)
         for item in fingerprint
@@ -71,14 +78,30 @@ def bar_events(fingerprint: Fingerprint) -> Set[Event]:
 
 
 def similarity(a: Set[Event], b: Set[Event]) -> float:
-    """How alike two sets of hits are, from 0 to 1 (shared hits out of all hits)."""
+    """Measure how alike two bars are, from their hits.
+
+    Args:
+        a (Set[Event]): The hits of one bar.
+        b (Set[Event]): The hits of the other bar.
+
+    Returns:
+        similarity (float): The shared hits out of all hits, from 0 to 1;
+            1.0 for two empty bars.
+    """
     if not a and not b:
         return 1.0
     return len(a & b) / len(a | b)
 
 
 def describe(events: Set[Event]) -> List[str]:
-    """Readable hits, e.g. "kick on beat 2.5"."""
+    """Describe hits in words, in order.
+
+    Args:
+        events (Set[Event]): The hits, as (tick, pitch).
+
+    Returns:
+        descriptions (List[str]): One per hit, e.g. "kick on beat 2.5".
+    """
     out = []
     for tick, pitch in sorted(events):
         beat = tick / TICKS_PER_BEAT + 1
@@ -90,6 +113,15 @@ def describe(events: Set[Event]) -> List[str]:
 
 
 def _runs(numbers: List[int]) -> List[Tuple[int, int]]:
+    """Group consecutive numbers into runs.
+
+    Args:
+        numbers (List[int]): The numbers, in increasing order.
+
+    Returns:
+        runs (List[Tuple[int, int]]): The (first, last) of each run of
+            consecutive numbers.
+    """
     runs: List[List[int]] = []
     for n in numbers:
         if runs and runs[-1][1] + 1 == n:
@@ -100,10 +132,17 @@ def _runs(numbers: List[int]) -> List[Tuple[int, int]]:
 
 
 def crash_pattern(has_crash: List[bool]) -> Dict[str, Any]:
-    """Classify crashes on beat 1 over a groove run (index 0 = the groove bar).
+    """Classify the crashes on beat 1 over a groove run.
 
-    pattern: "none", "every_bar", "first_only", "every_n" (equispaced: every `every` bars, from
-    run bar `from_bar`, 1-based) or "irregular" (with the run bars that have one).
+    Args:
+        has_crash (List[bool]): For each time through the run (index 0 is the
+            groove bar), whether it has a crash on beat 1.
+
+    Returns:
+        pattern (Dict[str, Any]): "pattern" is "none", "every_bar",
+            "first_only", "every_n" (equally spaced: every `every` bars, from
+            run bar `from_bar`, 1-based) or "irregular" (with the `run_bars`
+            that have one and a `description`).
     """
     hits = [i for i, crash in enumerate(has_crash) if crash]
     if not hits:
@@ -136,9 +175,16 @@ def crash_pattern(has_crash: List[bool]) -> Dict[str, Any]:
 def crash_legend(
     pattern: Dict[str, Any], unit: str = "bar"
 ) -> Optional[Tuple[str, str]]:
-    """(mark, legend text) for a crash pattern in a collapsed groove, or None if no mark is needed.
+    """Give the mark and legend text for a crash pattern in a collapsed groove.
 
-    unit: "bar" for a 1-bar groove, "time" for a longer phrase (crash every other time through it).
+    Args:
+        pattern (Dict[str, Any]): The crash pattern, from crash_pattern.
+        unit (str): "bar" for a 1-bar groove, "time" for a longer phrase
+            (crash every other time through it).
+
+    Returns:
+        legend (Optional[Tuple[str, str]]): The mark ("*" or "**") and its
+            legend text, or None if the pattern needs no mark.
     """
     if pattern["pattern"] == "first_only":
         return "*", "crash on 1st time only"
@@ -156,10 +202,26 @@ def crash_legend(
 
 
 def _ordinal(n: int) -> str:
+    """Write a number as an ordinal.
+
+    Args:
+        n (int): The number.
+
+    Returns:
+        ordinal (str): E.g. "1st", "2nd", "11th".
+    """
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
 def _crash_on_one(events: Set[Event]) -> bool:
+    """Check whether a bar has a crash on beat 1.
+
+    Args:
+        events (Set[Event]): The bar's hits.
+
+    Returns:
+        has_crash (bool): True if a crash cymbal is hit on beat 1.
+    """
     return any(tick == 0 and pitch in CRASH_PITCHES for tick, pitch in events)
 
 
@@ -169,17 +231,37 @@ def plan_runs(
     end: int,
     phrase_starts: Iterable[int] = (),
 ) -> List[Tuple[int, int, int]]:
-    """(first bar index, phrase length, times) of the runs that leave the fewest bars on the page.
+    """Plan the runs that leave the fewest bars on the page.
 
     A run is a phrase of 1, 2 or 4 bars repeated back to back (same core fingerprint); it takes the
     space of one phrase. A 2- or 4-bar run must start on the phrase grid: a whole number of phrases after
     the latest of `phrase_starts` (and `start`), so a chart reads 4 + 2 bars rather than 1 + 2x2 + 1.
     Among plans with as few bars, the one with fewer runs (repeat signs) wins, then the one whose runs start
     earlier (a section's first bar rather than the bar after it).
+
+    Args:
+        core (List[Fingerprint]): The core fingerprint of each bar.
+        start (int): The index of the first bar to plan.
+        end (int): The index of the last bar to plan.
+        phrase_starts (Iterable[int]): Indices where a new phrase starts.
+
+    Returns:
+        plan (List[Tuple[int, int, int]]): The (first bar index, phrase
+            length, times) of each run.
     """
     grid = sorted({start, *(b for b in phrase_starts if start <= b <= end)})
 
     def aligned(i: int, length: int) -> bool:
+        """Check whether a run of a phrase length may start at a bar.
+
+        Args:
+            i (int): The bar index.
+            length (int): The phrase length in bars.
+
+        Returns:
+            aligned (bool): True if the bar lies a whole number of phrases
+                after the latest phrase start.
+        """
         origin = max(g for g in grid if g <= i)
         return (i - origin) % length == 0
 
@@ -221,7 +303,22 @@ def phrase_runs(
     end: int,
     phrase_starts: Iterable[int] = (),
 ) -> List[Dict[str, Any]]:
-    """The runs of `plan_runs` between bar indices start..end, with crash marks and dropped hits."""
+    """Describe the runs of plan_runs, with crash marks and dropped hits.
+
+    Args:
+        core (List[Fingerprint]): The core fingerprint of each bar.
+        events (List[Set[Event]]): The hits of each bar.
+        numbers (List[int]): The measure number of each bar.
+        start (int): The index of the first bar to plan.
+        end (int): The index of the last bar to plan.
+        phrase_starts (Iterable[int]): Indices where a new phrase starts.
+
+    Returns:
+        runs (List[Dict[str, Any]]): Per run: "start", "end", "phrase_bars",
+            "play_count", "keep" (the bars written out), "crash_on_1" (the
+            crash pattern, with its mark and legend) and "dropped" (the hits
+            a collapsed copy would lose).
+    """
     runs = []
     for i, length, times in plan_runs(core, start, end, phrase_starts):
         crashes = crash_pattern(
@@ -268,7 +365,23 @@ def phrase_runs(
 def find_sections(
     measures: Sequence[Dict[str, Any]], staff: str, tolerance: float = 0.85
 ) -> List[Dict[str, Any]]:
-    """Groove sections of one staff, with 1-based measure numbers."""
+    """Split one staff into groove sections.
+
+    See the module docstring for how sections, copies, near copies, fills and
+    runs are found.
+
+    Args:
+        measures (Sequence[Dict[str, Any]]): The measures from the plugin's
+            analysis.
+        staff (str): The staff name, e.g. "staff0".
+        tolerance (float): How alike a bar must be to the groove (0-1) to
+            count as a near copy.
+
+    Returns:
+        sections (List[Dict[str, Any]]): Per section, with 1-based measure
+            numbers: "start", "end", "groove_bar", "exact", "near", "fills",
+            "already_repeat_signs", "proposed_repeat_signs" and "runs".
+    """
     fps, existing = staff_fingerprints(measures, staff)
     core, _ = staff_fingerprints(measures, staff, core_fingerprint)
     numbers = [m.get("measure", i + 1) for i, m in enumerate(measures)]
@@ -276,6 +389,16 @@ def find_sections(
     n = len(fps)
 
     def kind(j: int, groove: int) -> str:
+        """Classify a bar against a groove bar.
+
+        Args:
+            j (int): The index of the bar.
+            groove (int): The index of the groove bar.
+
+        Returns:
+            kind (str): "exact", "near" (similar within `tolerance`) or
+                "other".
+        """
         if fps[j] == fps[groove]:
             return "exact"
         if events[j] and similarity(events[j], events[groove]) >= tolerance:
@@ -369,7 +492,17 @@ def find_sections(
 
 
 def played_times(measures: Sequence[Dict[str, Any]]) -> List[int]:
-    """How many times each bar is played: repeat barlines with their play counts (voltas are not read)."""
+    """Count how many times each bar is played.
+
+    Repeat barlines are followed with their play counts; voltas are not read.
+
+    Args:
+        measures (Sequence[Dict[str, Any]]): The measures from the plugin's
+            analysis.
+
+    Returns:
+        times (List[int]): The number of times each bar is played.
+    """
     times = [1] * len(measures)
     start = 0
     for j, m in enumerate(measures):
@@ -386,6 +519,14 @@ LEAD_IN_MIN = 2  # a single bar before the groove is part of the count ("2x4+2",
 
 
 def _fours(n: int) -> str:
+    """Write a number of bars in fours.
+
+    Args:
+        n (int): The number of bars.
+
+    Returns:
+        label (str): E.g. "4", "2x4", "2x4+2"; "0" for no bars.
+    """
     k, r = divmod(n, 4)
     parts = ([f"{k}x4" if k > 1 else "4"] if k else []) + (
         [str(r)] if r else []
@@ -394,12 +535,29 @@ def _fours(n: int) -> str:
 
 
 def count_label(bars: int, lead_in: int = 0, groups: Sequence[int] = ()) -> str:
-    """A section's length the way drummers count it, in fours: 6 -> "4+2", 12 -> "3x4", 10 -> "2x4+2".
+    """Write a section's length the way drummers count it, in fours.
 
     A lead-in of LEAD_IN_MIN bars or more before the first groove bar (e.g. a rest bar and a pickup fill) is
     counted on its own: 8 with a 2-bar lead-in -> "2+4+2". `groups` are the sizes of the runs of equally long
     bars after the lead-in: a run in another time signature is counted on its own, e.g. 4 bars of 4/4, 2 of 3/4
     and 2 of 4/4 -> "4+2+2".
+
+    Args:
+        bars (int): The section's length in bars, as played.
+        lead_in (int): The bars before the first groove bar.
+        groups (Sequence[int]): The sizes of the runs of equally long bars
+            after the lead-in; used only if they add up to the bars.
+
+    Returns:
+        label (str): The count label, e.g. "2x4+2".
+
+    Example:
+        >>> count_label(6)
+        '4+2'
+        >>> count_label(12)
+        '3x4'
+        >>> count_label(10)
+        '2x4+2'
     """
     parts = []
     rest = bars
@@ -417,18 +575,41 @@ COUNT_IN_LABEL = re.compile(r"\s*\((\d[\dx+ ]*)\)\s*$")
 
 
 def without_count(label: str) -> str:
-    """A section label without a bar count in parentheses at its end: "Chorus 1 (2x4)" -> "Chorus 1"."""
+    """Remove the bar count in parentheses from the end of a section label.
+
+    Args:
+        label (str): The section label, e.g. "Chorus 1 (2x4)".
+
+    Returns:
+        label (str): The label without its count, e.g. "Chorus 1".
+    """
     return COUNT_IN_LABEL.sub("", label).strip()
 
 
 def count_in_label(label: str) -> Optional[str]:
-    """The bar count written in a section label: "Chorus 1 (2x4)" -> "2x4"."""
+    """Read the bar count written in parentheses at the end of a label.
+
+    Args:
+        label (str): The section label, e.g. "Chorus 1 (2x4)".
+
+    Returns:
+        count (Optional[str]): The count without spaces, e.g. "2x4", or None
+            if the label has none.
+    """
     found = COUNT_IN_LABEL.search(label)
     return found.group(1).replace(" ", "") if found else None
 
 
 def count_bars(label: object) -> Optional[int]:
-    """Bars in a count label ("2x4+2" -> 10) or a plain number; None if it is neither."""
+    """Add up the bars of a count label or a plain number.
+
+    Args:
+        label (object): A count label such as "2x4+2", or a number of bars.
+
+    Returns:
+        bars (Optional[int]): The number of bars, e.g. 10 for "2x4+2", or
+            None if the label is neither.
+    """
     if isinstance(label, int):
         return label
     total = 0
@@ -444,6 +625,14 @@ def count_bars(label: object) -> Optional[int]:
 
 
 def _drums(events: Set[Event]) -> List[str]:
+    """Name the drums hit in a bar.
+
+    Args:
+        events (Set[Event]): The bar's hits.
+
+    Returns:
+        names (List[str]): The drum names, by pitch and without duplicates.
+    """
     names = []
     for pitch in sorted({p for _, p in events if p >= 0}):
         name = DRUM_NAMES.get(pitch, f"pitch {pitch}")
@@ -461,14 +650,26 @@ GROOVE_MIN_HITS = 4  # onsets: a pickup or a single hit is never a groove
 def song_structure(
     measures: Sequence[Dict[str, Any]], staff: str, tolerance: float = 0.8
 ) -> Dict[str, Any]:
-    """Sections (from rehearsal marks) with the bars they last as played, their grooves and their fills.
+    """Describe the song structure of one staff, section by section.
 
-    Grooves are bars with at least GROOVE_MIN_HITS onsets whose hits, within `tolerance`, are played at least
+    Sections come from the rehearsal marks. Grooves are bars with at least GROOVE_MIN_HITS onsets whose hits, within `tolerance`, are played at least
     twice in a row (ghost notes, the cymbal on beat 1 and hi-hat openings aside); they are named Groove A, B...
     in order of appearance. Other bars with notes are fills (or one-off hits); empty bars are counted as rests.
     Bars excluded from the bar count (`irregular`, e.g. a count-in bar) are left out of the lengths. `count`
     is the section's length in fours: the count already written in its label ("Chorus 1 (4+2+2)", the user's
     phrasing) when it adds up to the bars played, else count_label's (lead-in, runs of other bar lengths).
+
+    Args:
+        measures (Sequence[Dict[str, Any]]): The measures from the plugin's
+            analysis.
+        staff (str): The staff name, e.g. "staff0".
+        tolerance (float): How alike bars must be (0-1) to count as the same
+            groove.
+
+    Returns:
+        structure (Dict[str, Any]): "sections" (per section: its bars played,
+            count, grooves, fills and rest bars), "grooves" (the legend of
+            Groove A, B...) and "total_bars_played".
     """
     core, _ = staff_fingerprints(measures, staff, core_fingerprint)
     events = [bar_events(fp) for fp in core]

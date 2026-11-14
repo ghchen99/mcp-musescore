@@ -1,4 +1,7 @@
-"""Integration tests: real MCP tools and WebSocket client against the in-memory mock plugin."""
+"""Integration tests: the real MCP tools and client against the mock plugin.
+
+The mock plugin runs in memory.
+"""
 
 import asyncio
 import json
@@ -15,7 +18,10 @@ QUARTER = {"numerator": 1, "denominator": 4}
 
 
 def patterned_score(*patterns):
-    """Mock score with one staff per pattern; each letter is a bar of four quarter notes of one pitch."""
+    """Make a mock score with one staff per pattern.
+
+    Each letter is a bar of four quarter notes of one pitch.
+    """
     mock = MockMuseScore(
         MockScore(staves=len(patterns), measures=len(patterns[0]))
     )
@@ -38,7 +44,10 @@ def patterned_score(*patterns):
 
 
 def run_with_mock(scenario, score=None):
-    """Run `scenario(mcp_client, mock)` with server.client pointed at a mock plugin."""
+    """Run a test scenario against the mock plugin.
+
+    Runs `scenario(mcp_client, mock)` with server.client pointed at a mock plugin.
+    """
 
     async def runner():
         original_uri = server.client.uri
@@ -247,7 +256,10 @@ def test_get_score_shows_ties():
 
 
 def chord_score(*chords):
-    """Mock score with one quarter-note chord per entry (a tuple of pitches); the cursor on the first chord."""
+    """Make a mock score with one quarter-note chord per entry.
+
+    Each entry is a tuple of pitches; the cursor is on the first chord.
+    """
     mock = MockMuseScore(MockScore(measures=1))
     for pitches in chords:
         for i, pitch in enumerate(pitches):
@@ -716,7 +728,10 @@ def jazz_copy(tmp_path, monkeypatch):
 
 
 def open_in_mock(path, staves=2, measures=8, score=None):
-    """A mock score shaped like the file (the example has 2 staves and 8 measures) and saved in it."""
+    """Make a mock score shaped like the file, and saved in it.
+
+    The example has 2 staves and 8 measures.
+    """
     score = score or MockScore(staves=staves, measures=measures)
     score.file_path = str(path)
     return score
@@ -917,7 +932,10 @@ QUARTET = (
 
 
 def quartet_copy(tmp_path, monkeypatch):
-    """A copy of the 4-part example (4 staves, 4 measures) in an isolated MuseScore data dir."""
+    """Copy the 4-part example into an isolated MuseScore data dir.
+
+    The example has 4 staves and 4 measures.
+    """
     monkeypatch.setenv("MCP_MUSESCORE_BACKUP_DIR", str(tmp_path / "backups"))
     monkeypatch.setenv(
         "MUSESCORE_DATA_DIR", str(tmp_path / "no-musescore-data")
@@ -1187,7 +1205,10 @@ def test_beats_outside_the_bar_are_errors():
 
 
 def crash_and_kick_score():
-    """Drum staff: bar 1 has kick+crash on beat 1, then kick+snare, plus an f and an mf dynamic."""
+    """Make a drum staff with a kick and crash on beat 1.
+
+    Bar 1 has kick+crash on beat 1, then kick+snare, plus an f and an mf dynamic.
+    """
     mock = MockMuseScore(MockScore(staves=1, measures=2))
     for pitches in ((36, 57), (36, 38), (36,), (38,)):
         mock.process_command(
@@ -1507,7 +1528,10 @@ def test_remove_annotations_and_reset_numbering():
 
 
 def test_file_edits_after_make_part_score_go_to_the_copy(tmp_path, monkeypatch):
-    """The original incident: after make_part_score, MuseScore's session list still named the original."""
+    """File edits after make_part_score go to the copy.
+
+    The original incident: after make_part_score, MuseScore's session list still named the original.
+    """
     source = jazz_copy(tmp_path, monkeypatch)
     data_dir = tmp_path / "musescore"
     (data_dir / "session").mkdir(parents=True)
@@ -1672,7 +1696,10 @@ def test_beam_over_rests_only_inside_a_beat():
 
 
 def test_file_edits_in_a_part_tab_detach_the_part_first(tmp_path, monkeypatch):
-    """The agent worked in the drum part's tab: the score ID was saved into the part, not the full score."""
+    """File edits in a part tab detach the part first.
+
+    The agent worked in the drum part's tab: the score ID was saved into the part, not the full score.
+    """
     from src.mscz.locate import read_score_id
     from tests.test_parts import score_with_part
 
@@ -1750,7 +1777,10 @@ def test_bars_without_a_length_are_skipped():
 
 
 def test_reopens_are_spaced(monkeypatch):
-    """MuseScore crashed when a score was closed ~0.3 s after it was opened: the server waits in between."""
+    """Reopens of a score are spaced in time.
+
+    MuseScore crashed when a score was closed ~0.3 s after it was opened: the server waits in between.
+    """
     import asyncio
 
     from src.client import MuseScoreClient
@@ -1775,7 +1805,10 @@ def test_reopens_are_spaced(monkeypatch):
 
 
 def test_section_counts_from_the_song_structure():
-    """Bar 1 is a count-in (excluded from the bar count), bars 2-3 a lead-in before the intro groove."""
+    """Section counts come from the song structure.
+
+    Bar 1 is a count-in (excluded from the bar count), bars 2-3 a lead-in before the intro groove.
+    """
     score = drum_score("DEFAAAABBBBBBC")
     score.irregular = {1}
     score.markings += [

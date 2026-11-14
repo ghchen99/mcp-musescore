@@ -1,4 +1,7 @@
-"""The real QML plugin, run headless in MuseScore (dev/plugin_harness.py). Skipped without MuseScore."""
+"""Tests of the real QML plugin, run headless in MuseScore.
+
+They use dev/plugin_harness.py, and are skipped without MuseScore.
+"""
 
 import shutil
 import zipfile
@@ -360,7 +363,10 @@ def test_articulations_and_ghost_notes(tmp_path):
 
 
 def test_remove_parts_keeps_system_texts_of_the_removed_top_staff(tmp_path):
-    """make_part_score(in_place=True) relies on MuseScore moving tempo/rehearsal marks/repeats to the kept staff."""
+    """Removing the top staff keeps its system texts.
+
+    make_part_score(in_place=True) relies on MuseScore moving tempo/rehearsal marks/repeats to the kept staff.
+    """
     from src.mscz import ScoreFile
     from tests.test_parts import QUARTET, add_system_items
 
@@ -395,7 +401,10 @@ def test_remove_parts_keeps_system_texts_of_the_removed_top_staff(tmp_path):
 
 
 def test_export_makes_a_musicxml_copy_without_saving(tmp_path):
-    """make_part_score(in_place=True) backs up the full score this way (writeScore can't write .mscz in 4.7)."""
+    """Exporting makes a MusicXML copy without saving.
+
+    make_part_score(in_place=True) backs up the full score this way (writeScore can't write .mscz in 4.7).
+    """
     export = tmp_path / "full.mxl"
     results = results_by_action(
         run(
@@ -420,7 +429,10 @@ def test_export_makes_a_musicxml_copy_without_saving(tmp_path):
 
 
 def test_coloring_includes_flams(tmp_path):
-    """A flam is a grace note (acciaccatura) attached to the main chord: it takes the chord's colour."""
+    """Coloring includes flams.
+
+    A flam is a grace note (acciaccatura) attached to the main chord: it takes the chord's colour.
+    """
     from src.mscz import ScoreFile
     from tests.test_rolls import chord, write_score
 
@@ -621,7 +633,10 @@ def test_section_counts_in_the_label_replace_counts_beside_it(tmp_path):
 
 
 def test_delete_measures_inside_a_multi_measure_rest(tmp_path):
-    """With multi-measure rests on, deleting empty bars used to report success and delete nothing (seen live)."""
+    """Measures inside a multi-measure rest can be deleted.
+
+    With multi-measure rests on, deleting empty bars used to report success and delete nothing (seen live).
+    """
     from tests.test_rolls import chord, write_score
 
     rest = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
@@ -662,7 +677,10 @@ TPC_BY_PITCH_CLASS = [14, 21, 16, 23, 18, 13, 20, 15, 22, 17, 24, 19]
 
 
 def xml_note(pitch, ahead=None, back=None):
-    """A note, optionally tied to the note `ahead` or from the note `back` (fractions of a whole, e.g. "1/4")."""
+    """Make a note, optionally tied ahead or back.
+
+    It is tied to the note `ahead` or from the note `back` (fractions of a whole, e.g. "1/4").
+    """
     ties = ""
     if ahead:
         ties += f'<Spanner type="Tie"><Tie/><next><location><fractions>{ahead}</fractions></location></next></Spanner>'
@@ -701,7 +719,10 @@ def ties(element):
 
 
 def test_get_score_reports_ties_per_note(tmp_path):
-    """Ties belong to notes. getScore used to read them from the chord, so isTie was always false."""
+    """The getScore action reports ties per note.
+
+    Ties belong to notes. getScore used to read them from the chord, so isTie was always false.
+    """
     # Bar 1: C-E-G with only C and E tied into C-E-A, then a D tied across the barline into bar 2
     source = tie_score(
         tmp_path,
@@ -850,7 +871,10 @@ def test_add_tie_chain(tmp_path):
 
 
 def test_add_tie_errors_leave_the_music_unchanged(tmp_path):
-    """MuseScore's tie command would insert a new tied note here and overwrite the next one."""
+    """add_tie errors leave the music unchanged.
+
+    MuseScore's tie command would insert a new tied note here and overwrite the next one.
+    """
     rest = "<Rest><durationType>quarter</durationType></Rest>"
     source = tie_score(
         tmp_path,
@@ -953,7 +977,10 @@ def test_add_tied_note_chain_after_add_note(tmp_path):
 
 
 def test_add_tied_note_partial_chord_with_an_extra_pitch(tmp_path):
-    """C-E-G into C-E-A: the A is written with the chord, before the tie (see the next test for why)."""
+    """A tied chord with an extra pitch writes that pitch first.
+
+    C-E-G into C-E-A: the A is written with the chord, before the tie (see the next test for why).
+    """
     results = run(
         chord_c_e_g()
         + [
@@ -984,7 +1011,9 @@ def test_add_tied_note_partial_chord_with_an_extra_pitch(tmp_path):
 
 
 def test_add_to_chord_after_a_tie_extends_the_tied_chord(tmp_path):
-    """MuseScore treats tied chords as one: a pitch added to the second chord is added, tied, to the first too.
+    """A pitch added to the second of two tied chords is added to the first too.
+
+    MuseScore treats tied chords as one: a pitch added to the second chord is added, tied, to the first too.
 
     This is why add_tied_note takes extraPitches, and why add_tie should be used once both chords are complete.
     """
@@ -1015,7 +1044,10 @@ def test_add_to_chord_after_a_tie_extends_the_tied_chord(tmp_path):
 
 
 def test_add_tied_note_longer_than_the_rest_of_the_bar(tmp_path):
-    """MuseScore splits the note at the barline into tied notes; the cursor skips both parts."""
+    """A tied note longer than the rest of the bar is split.
+
+    MuseScore splits the note at the barline into tied notes; the cursor skips both parts.
+    """
     results = run(
         [
             add_note(62),

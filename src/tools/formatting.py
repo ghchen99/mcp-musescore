@@ -15,7 +15,22 @@ def range_params(
     first_staff: int,
     last_staff: Optional[int],
 ) -> dict:
-    """Plugin range parameters; the plugin's endStaff is exclusive, the tools' last_staff inclusive."""
+    """Build the plugin's range parameters from a tool's measures and staves.
+
+    The plugin's endStaff is exclusive, the tools' last_staff inclusive.
+
+    Args:
+        start_measure (int): The first measure, 1-based.
+        end_measure (Optional[int]): The last measure, 1-based and inclusive.
+            Defaults to start_measure.
+        first_staff (int): The first staff, 0-based.
+        last_staff (Optional[int]): The last staff, 0-based and inclusive.
+            Defaults to the last staff of the score.
+
+    Returns:
+        params (dict): "startMeasure", "endMeasure", "startStaff" and, with a
+            last staff, "endStaff".
+    """
     params = {
         "startMeasure": start_measure,
         "endMeasure": end_measure if end_measure is not None else start_measure,
@@ -29,7 +44,19 @@ def range_params(
 def beat_params(
     params: dict, start_beat: Optional[float], end_beat: Optional[float]
 ) -> dict:
-    """Add the optional beat range (start_beat in the first measure, end_beat inclusive in the last)."""
+    """Add the optional beat range to the plugin's range parameters.
+
+    Args:
+        params (dict): The range parameters, changed in place.
+        start_beat (Optional[float]): The beat in the first measure where the
+            range starts, 1-based.
+        end_beat (Optional[float]): The last beat to include in the last
+            measure.
+
+    Returns:
+        params (dict): The same parameters, with "startBeat" and "endBeat"
+            when given.
+    """
     if start_beat is not None:
         params["startBeat"] = start_beat
     if end_beat is not None:
@@ -69,7 +96,19 @@ DRUM_PITCHES = {
 
 
 def drum_pitches(names: List[str]) -> List[int]:
-    """MIDI pitches of drum names such as "crash" or "hi-hats"; raises ToolError for unknown names."""
+    """Look up the MIDI pitches of drum names.
+
+    Plurals and spellings such as "hi-hats" or "hihat" are accepted.
+
+    Args:
+        names (List[str]): The drum names, e.g. ["crash", "hi-hats"].
+
+    Returns:
+        pitches (List[int]): Their General MIDI percussion pitches.
+
+    Raises:
+        ToolError: If a name is not a known drum.
+    """
     pitches = []
     for name in names:
         key = (
@@ -95,7 +134,19 @@ def drum_pitches(names: List[str]) -> List[int]:
 
 
 def translucent(color: str, opacity: float) -> str:
-    """Color "#rrggbb" plus an opacity (0-1) as Qt's "#aarrggbb"."""
+    """Combine a "#rrggbb" color and an opacity into Qt's "#aarrggbb".
+
+    Args:
+        color (str): The color, e.g. "#2ca02c".
+        opacity (float): The opacity, above 0 and up to 1.
+
+    Returns:
+        argb (str): The color with its alpha first, e.g. "#802ca02c".
+
+    Raises:
+        ToolError: If the color is not "#rrggbb" or the opacity is out of
+            range.
+    """
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
         raise ToolError(f'Color must look like "#rrggbb", got {color!r}')
     if not 0 < opacity <= 1:
@@ -104,7 +155,13 @@ def translucent(color: str, opacity: float) -> str:
 
 
 def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
-    """Setup score coloring tools."""
+    """Register the coloring, highlighting and annotation tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     @mcp.tool(
         description=(

@@ -1,4 +1,4 @@
-"""Unit tests for the score JSON to LilyPond conversion (src/utils/lilypond_converter.py)."""
+"""Unit tests for the LilyPond conversion (src/utils/lilypond_converter.py)."""
 
 from src.utils.lilypond_converter import process_element, score_to_lilypond
 
@@ -6,7 +6,10 @@ C, E, G = 60, 64, 67
 
 
 def chord(*notes, ticks=480):
-    """A Chord element; each note is a pitch or a (pitch, {"tieForward": True, ...}) pair."""
+    """Make a Chord element from pitches.
+
+    Each note is a pitch or a (pitch, {"tieForward": True, ...}) pair.
+    """
     note_data = []
     for note in notes:
         pitch, extra = note if isinstance(note, tuple) else (note, {})

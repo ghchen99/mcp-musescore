@@ -1,4 +1,4 @@
-"""Repeat structure tools for MuseScore MCP: find repeated material and mark it."""
+"""Repeat and song structure tools: find repeated material and mark it."""
 
 import re
 import xml.etree.ElementTree as ET
@@ -47,7 +47,14 @@ MEASURE_REPEAT_COLOR = "#ff7f0e"
 
 
 def _contiguous(indices: List[int]) -> List[List[int]]:
-    """Split sorted staff indices into [first, last] runs of consecutive staves."""
+    """Group staff indices into runs of consecutive staves.
+
+    Args:
+        indices (List[int]): The staff indices, in any order.
+
+    Returns:
+        runs (List[List[int]]): The [first, last] of each run.
+    """
     runs: List[List[int]] = []
     for idx in sorted(indices):
         if runs and runs[-1][1] + 1 == idx:
@@ -58,7 +65,18 @@ def _contiguous(indices: List[int]) -> List[List[int]]:
 
 
 def _apply_steps(passage: Dict) -> List[str]:
-    """Tool calls that compress one passage, ordered so earlier measure numbers stay valid."""
+    """List the tool calls that compress one repeated passage.
+
+    The calls are ordered so that the measure numbers in the later calls are
+    still valid when they run.
+
+    Args:
+        passage (Dict): A passage from find_repeats: a "repeat" or a
+            "repeat_with_endings".
+
+    Returns:
+        steps (List[str]): The tool calls, e.g. "delete_measures(9, 16)".
+    """
     dup_first, dup_last = passage["duplicate_measures"]
     if passage["type"] == "repeat":
         return [
@@ -83,7 +101,26 @@ async def fetch_measures(
     end_measure: Optional[int],
     staves: Optional[List[int]],
 ) -> Tuple[List[Dict], List[Dict]]:
-    """Read measures start..end (default: to the end) in chunks; returns (measures, staff info)."""
+    """Read a range of measures from the plugin, in chunks.
+
+    Reading FETCH_CHUNK measures at a time keeps each reply small, so large
+    scores work too.
+
+    Args:
+        client (MuseScoreClient): The client to the plugin.
+        start_measure (int): The first measure, 1-based.
+        end_measure (Optional[int]): The last measure, 1-based and inclusive.
+            Defaults to the end of the score.
+        staves (Optional[List[int]]): The staves to read, 0-based. Defaults
+            to all staves.
+
+    Returns:
+        result (Tuple[List[Dict], List[Dict]]): The measures, and the staff
+            info.
+
+    Raises:
+        ToolError: If the plugin reports an error.
+    """
     params: Dict[str, Any] = {
         "startMeasure": start_measure,
         "endMeasure": start_measure + FETCH_CHUNK - 1,
@@ -112,7 +149,18 @@ async def fetch_measures(
 
 
 def incomplete_measures(measures: List[Dict]) -> List[Dict]:
-    """Bars where a voice's notes and rests don't add up to the bar's length (voice 1 must fill it)."""
+    """Find bars whose notes and rests don't add up to the bar's length.
+
+    Voice 1 must fill the bar exactly; other voices may not be longer than
+    it. Measures without a length are skipped.
+
+    Args:
+        measures (List[Dict]): The measures from the plugin's analysis.
+
+    Returns:
+        incomplete (List[Dict]): Per bad bar and staff: "measure", "staff",
+            "found_ticks" (per voice) and "expected_ticks".
+    """
     out = []
     for measure in measures:
         length = measure.get("durationTicks")
@@ -144,7 +192,15 @@ def incomplete_measures(measures: List[Dict]) -> List[Dict]:
 
 
 def _road_map_line(section: Dict) -> str:
-    """One line of the section map, e.g. "Bars 6-13: groove bar 6, 5 exact copies, near 9, fill 13"."""
+    """Write one line of the section map.
+
+    Args:
+        section (Dict): A section from find_sections.
+
+    Returns:
+        line (str): E.g. "Bars 6-13: groove bar 6, 5 exact copies, near 9,
+            fill 13", followed by its runs.
+    """
     parts = [f"groove bar {section['groove_bar']}"]
     if section["exact"]:
         parts.append(
@@ -175,9 +231,20 @@ def _road_map_line(section: Dict) -> str:
 
 
 def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
-    """Setup repeat structure tools."""
+    """Register the repeat, section and song structure tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     async def staff_header() -> List[Dict]:
+        """Read the staff info of the open score, without the notes.
+
+        Returns:
+            staves (List[Dict]): The info of each staff.
+        """
         analysis = (
             await client.request(
                 "getScore",
@@ -720,11 +787,26 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     async def remove_other_parts(
         staves: List[int], score_path: Optional[str]
     ) -> Dict:
-        """Remove the other parts from the open score: make_part_score(in_place=True).
+        """Remove the other parts from the open score itself.
+
+        This is make_part_score(in_place=True).
 
         Nothing is saved before the other parts are gone: saving the full
         score would write again (and MuseScore would flag as corrupted) a damaged bar in another instrument, and
-        an imported score would first ask where to save.
+        an imported score would first ask where to save. The full score is
+        backed up first, as MusicXML and, if its file is found, as a copy.
+
+        Args:
+            staves (List[int]): The staves to keep, 0-based.
+            score_path (Optional[str]): A score file given by the user, for
+                the backup. Defaults to the open score's own file.
+
+        Returns:
+            result (Dict): "kept_parts", "staves_now", "full_score_backups",
+                "incomplete_bars", "warnings" and a "message".
+
+        Raises:
+            ToolError: If the plugin reports an error.
         """
         score_id = (await client.request("ensureScoreId"))["scoreId"]
         info = await client.request("scoreFileInfo")

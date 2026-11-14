@@ -28,7 +28,7 @@ def chord(duration, *pitches, tremolo=False):
 
 
 def write_score(tmp_path, bars):
-    """bars: list of voice-1 contents (strings); 4/4."""
+    """Write a one-staff 4/4 drum score, one bar per voice-1 string."""
     measures = "".join(
         f"<Measure><voice>{'<TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>' if i == 0 else ''}{b}<BarLine/></voice></Measure>"
         for i, b in enumerate(bars)
@@ -183,7 +183,10 @@ def test_roll_can_start_mid_bar_and_end_on_an_odd_length(tmp_path):
 
 
 def test_roll_before_a_measure_without_voice(tmp_path):
-    """A measure without <voice> after the roll has no notes, so there is no tie into it to drop."""
+    """A roll before a measure without a voice is rewritten.
+
+    A measure without <voice> after the roll has no notes, so there is no tie into it to drop.
+    """
     path = write_score(tmp_path, [chord("whole", 49), chord("whole", 38)])
     score = ScoreFile(path)
     second = score.staves()[0].findall("Measure")[1]
@@ -217,7 +220,10 @@ def musescore_roundtrip(tmp_path, path):
 
 
 def tied_chord(duration, *pitches, back=None, ahead=None, tremolo=False):
-    """A chord whose notes are tied from `back` and to `ahead` (fractions of a whole, e.g. "1/4")."""
+    """Make a chord whose notes are tied back and ahead.
+
+    Tied from `back` and to `ahead` (fractions of a whole, e.g. "1/4").
+    """
     ties = ""
     if ahead:
         ties += f'<Spanner type="Tie"><Tie/><next><location><fractions>{ahead}</fractions></location></next></Spanner>'

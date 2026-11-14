@@ -1,8 +1,16 @@
-"""Manual check of the WebSocket connection: sends getScore to a running MuseScore and prints the result.
+"""Check the WebSocket connection to a running MuseScore by hand.
 
-Needs MuseScore open with the plugin running. Run from the repository root:
+Sends getScore to the plugin and prints the result. Needs MuseScore open with
+the plugin running. From the repository root, the check also runs as:
 
-    uv run python -m dev.check_websocket
+```
+uv run python -m dev.check_websocket
+```
+
+Example:
+    >>> import asyncio
+    >>> from dev.check_websocket import test_websocket
+    >>> asyncio.run(test_websocket())
 """
 
 import asyncio
@@ -17,7 +25,11 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def test_websocket() -> None:
-    """Send getScore to MuseScore and print the raw result and its LilyPond form."""
+    """Send getScore to MuseScore, and print the result and its LilyPond form.
+
+    Prints the elements of the first measure and the whole score as LilyPond.
+    A refused connection or another error is printed, not raised.
+    """
     uri = "ws://localhost:8765"
     try:
         async with websockets.connect(uri) as websocket:

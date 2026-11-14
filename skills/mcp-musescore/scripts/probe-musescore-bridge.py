@@ -10,7 +10,14 @@ import websockets
 
 
 async def main() -> None:
-    """Ping the plugin and check that it answers "pong"."""
+    """Ping the plugin and check that it answers "pong".
+
+    The plugin's address comes from MCP_MUSESCORE_HOST and MCP_MUSESCORE_PORT
+    (default localhost:8765).
+
+    Raises:
+        RuntimeError: If the plugin's reply is not a successful "pong".
+    """
     host = os.environ.get("MCP_MUSESCORE_HOST", "localhost")
     port = int(os.environ.get("MCP_MUSESCORE_PORT", "8765"))
     uri = f"ws://{host}:{port}"

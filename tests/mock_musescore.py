@@ -147,7 +147,10 @@ class MockScore:
         return WHOLE_NOTE_TICKS * num // den
 
     def displayed_numbers(self) -> List[int]:
-        """MuseScore's rule: add each measure's offset, then count it unless it is excluded."""
+        """Number the measures as MuseScore displays them.
+
+        MuseScore's rule: add each measure's offset, then count it unless it is excluded.
+        """
         numbers, count = [], 0
         for number in range(1, self.num_measures + 1):
             count += self.no_offsets.get(number, 0)
@@ -159,7 +162,10 @@ class MockScore:
     def summary(
         self, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """GetScore analysis; params mirror the plugin (startMeasure, endMeasure, staves, includeElements)."""
+        """Build the getScore analysis, as the plugin does.
+
+        params mirror the plugin (startMeasure, endMeasure, staves, includeElements).
+        """
         params = params or {}
         first = max(1, params.get("startMeasure") or 1)
         last = min(
@@ -345,7 +351,10 @@ class MockMuseScore:
         )
 
     def _range(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Mirror of the plugin's measureRange(): validated measure and staff range, or an error."""
+        """Validate the measure and staff range, as the plugin does.
+
+        Mirror of the plugin's measureRange(): validated measure and staff range, or an error.
+        """
         if err := self._missing(params, ["startMeasure"]):
             return err
         first = params["startMeasure"]
@@ -378,7 +387,10 @@ class MockMuseScore:
     def _apply_beats(
         self, rng: Dict[str, Any], params: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Mirror of the plugin's applyBeats(): narrow the range to startBeat / endBeat (inclusive)."""
+        """Narrow the range to the requested beats, as the plugin does.
+
+        Mirror of the plugin's applyBeats(): narrow the range to startBeat / endBeat (inclusive).
+        """
         beat = WHOLE_NOTE_TICKS // self.score.time_signature[1]
         measure = self.score.measure_ticks
         if params.get("startBeat") is not None:
@@ -492,7 +504,10 @@ class MockMuseScore:
         }
 
     def _do_addTie(self, params):
-        """Tie notes of the chord at the cursor to the same pitches in the next chord, with the plugin's rules."""
+        """Tie the chord at the cursor to the next chord.
+
+        Tie notes of the chord at the cursor to the same pitches in the next chord, with the plugin's rules.
+        """
         score = self.score
         staff_elements = score.elements[score.cursor_staff]
         first = next(
@@ -557,7 +572,10 @@ class MockMuseScore:
         }
 
     def _do_addTiedNote(self, params):
-        """Write a chord at the cursor tied to the chord before it, with the plugin's rules (no barline split)."""
+        """Write a chord at the cursor, tied to the chord before it.
+
+        Follows the plugin's rules, except that it does not split a note at the barline.
+        """
         if err := self._missing(
             params, ["duration", "advanceCursorAfterAction"]
         ):
@@ -1198,7 +1216,10 @@ class MockMuseScore:
         }
 
     def _do_beamOverRests(self, params):
-        """Mark rests with beamable chords before and after them in the same beat (4/4 model) as beamed over."""
+        """Beam over the rests inside a beat.
+
+        Mark rests with beamable chords before and after them in the same beat (4/4 model) as beamed over.
+        """
         rng = self._range(params)
         if "error" in rng:
             return rng
@@ -1432,7 +1453,10 @@ class MockMuseScore:
         }
 
     def _do_saveScore(self, params):
-        """Like MuseScore saving: the score's ID is written to its file (the notes are not)."""
+        """Save the score, as MuseScore does.
+
+        The score's ID is written to its file (the notes are not).
+        """
         if (
             self.score.part_entry
         ):  # a part tab: the test file already carries the ID in that part
@@ -1471,7 +1495,10 @@ class MockMuseScore:
         }
 
     def _do_reopenScore(self, params):
-        """Close and open a file in place: the score takes the file's staves and ID, like MuseScore loading it."""
+        """Close the score and open a file in its place.
+
+        The score takes the file's staves and ID, like MuseScore loading it.
+        """
         if err := self._missing(params, ["path"]):
             return err
         if self.opens_in_new_window:
@@ -1556,7 +1583,10 @@ class MockMuseScore:
 async def running_mock(
     score: Optional[MockScore] = None, host: str = "127.0.0.1", port: int = 0
 ):
-    """Start the mock on a free port (or the given one) and yield the MockMuseScore."""
+    """Start the mock plugin and yield it.
+
+    Start the mock on a free port (or the given one) and yield the MockMuseScore.
+    """
     mock = MockMuseScore(score)
     async with serve(mock.handler, host, port) as ws_server:
         mock.port = next(iter(ws_server.sockets)).getsockname()[1]

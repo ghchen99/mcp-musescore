@@ -1,4 +1,7 @@
-"""Tests for editing the title frame and the end-notes frame in score files (src/mscz/frames.py)."""
+"""Tests for editing the frames of score files (src/mscz/frames.py).
+
+The title frame and the end-notes frame.
+"""
 
 import os
 import shutil

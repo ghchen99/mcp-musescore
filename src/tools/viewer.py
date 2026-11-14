@@ -1,4 +1,4 @@
-"""Score viewer tool: renders the current score as sheet music inside MCP Apps hosts."""
+"""Score viewer tool: shows the score as sheet music in MCP Apps hosts."""
 
 import json
 from pathlib import Path
@@ -19,7 +19,13 @@ DEFAULT_MEASURE_TICKS = 1920
 
 
 def setup_viewer_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
-    """Setup the score viewer (an MCP App: tool plus ui:// resource)."""
+    """Register the score viewer: an MCP App, a tool plus a ui:// resource.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     @mcp.resource(
         VIEWER_URI,

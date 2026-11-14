@@ -10,7 +10,13 @@ GET_SCORE_WINDOW = 16
 
 
 def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
-    """Setup connection and utility tools."""
+    """Register the connection and score-reading tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     @mcp.tool(
         description="Connect to the MuseScore WebSocket API.",

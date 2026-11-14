@@ -8,11 +8,29 @@ from ..client import MuseScoreClient
 
 
 def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
-    """Setup cursor and navigation tools."""
+    """Register the cursor and navigation tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     async def _run_and_convert(
         action: str, params: Optional[Dict[str, Any]] = None
     ):
+        """Run a cursor command and describe the new selection in LilyPond.
+
+        Args:
+            action (str): The plugin action to run.
+            params (Optional[Dict[str, Any]]): The action's parameters.
+                Defaults to no parameters.
+
+        Returns:
+            result (Union[Dict[str, Any], str]): A header (measure, beat, staff,
+                title) and the selection as LilyPond, or the plugin's reply
+                as it is when it has no selection.
+        """
         res = await client.send_command(action, params)
         result = res.get("result")
         if (

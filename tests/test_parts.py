@@ -1,4 +1,4 @@
-"""Tests for keeping only some instruments of a score file (src/mscz/parts.py)."""
+"""Tests for keeping only some instruments of a score (src/mscz/parts.py)."""
 
 import os
 import shutil

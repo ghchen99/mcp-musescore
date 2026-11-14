@@ -9,7 +9,13 @@ from ..types import ActionSequence
 
 
 def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
-    """Setup sequence processing tools."""
+    """Register the tool that runs a sequence of plugin actions.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
 
     @mcp.tool(
         description=(
