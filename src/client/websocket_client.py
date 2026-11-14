@@ -1,10 +1,10 @@
 """WebSocket client for communicating with MuseScore."""
 
-import websockets
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
+import websockets
 from fastmcp.exceptions import ToolError
 
 logger = logging.getLogger("MuseScoreMCP.Client")

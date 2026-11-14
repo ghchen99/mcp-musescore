@@ -1,6 +1,6 @@
 """TypedDict definitions for MuseScore MCP action sequences."""
 
-from typing import Dict, Any, List, Literal, NotRequired, TypedDict
+from typing import Any, Dict, List, Literal, NotRequired, TypedDict
 
 
 class getScoreAction(TypedDict):

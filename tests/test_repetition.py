@@ -1,6 +1,10 @@
 """Unit tests for the repeated-material analysis (no MuseScore or mock needed)."""
 
-from src.utils.repetition import find_repeats, measure_fingerprint, staff_fingerprints
+from src.utils.repetition import (
+    find_repeats,
+    measure_fingerprint,
+    staff_fingerprints,
+)
 from src.utils.sections import find_sections
 
 BAR = 1920
@@ -270,7 +274,8 @@ def crash_instead_of_hat(bar):
 def test_phrases_start_on_the_crash_bars():
     """The intro of "Hold the Line": crash bar 1 (no hi-hat on the 2nd eighth), open hat at the end of bars 2
     and 4, crash again on bar 5, bar 6 different. 1 + [2-3]x2 + 1 leaves as few bars as 4 + 2 but starts a
-    2-bar phrase on the bar after the crash; the chart should read 4 + 2."""
+    2-bar phrase on the bar after the crash; the chart should read 4 + 2.
+    """
     first = crash_instead_of_hat(groove_bar(1))
     first[1]["notes"] = [n for n in first[1]["notes"] if n["pitchMidi"] != 42]
     bars = [first, open_hat_bar(2), groove_bar(3), open_hat_bar(4), crash_instead_of_hat(groove_bar(5)),

@@ -9,7 +9,6 @@ from dev.plugin_harness import find_musescore
 from src.mscz import ScoreFile, ScoreFileError
 from src.mscz.rolls import note_value, rest_values, simplify_roll
 
-
 TPC_BY_PITCH_CLASS = [14, 21, 16, 23, 18, 13, 20, 15, 22, 17, 24, 19]
 
 
@@ -156,7 +155,8 @@ def tied_chord(duration, *pitches, back=None, ahead=None, tremolo=False):
 
 def test_roll_starts_where_the_tied_cymbals_start(tmp_path):
     """As Guitar Pro imports write it: crash + crash 2 hit with the kick on beat 1, left ringing (tied) into a
-    tremolo from beat 3. The roll covers it all, from beat 1."""
+    tremolo from beat 3. The roll covers it all, from beat 1.
+    """
     path = write_score(tmp_path, [
         tied_chord("quarter", 35, 49, 57, ahead="1/4") + tied_chord("quarter", 49, 57, back="1/4", ahead="1/4")
         + tied_chord("half", 49, 57, back="1/4", tremolo=True),

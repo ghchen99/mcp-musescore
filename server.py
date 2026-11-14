@@ -1,20 +1,21 @@
-from fastmcp import FastMCP
-import sys
 import logging
+import sys
+
+from fastmcp import FastMCP
 
 # Import modular components
 from src.client import MuseScoreClient
 from src.tools import (
     setup_connection_tools,
+    setup_formatting_tools,
     setup_navigation_tools,
     setup_notes_measures_tools,
-    setup_staff_instruments_tools,
-    setup_time_tempo_tools,
-    setup_sequence_tools,
-    setup_viewer_tools,
-    setup_structure_tools,
-    setup_formatting_tools,
     setup_score_file_tools,
+    setup_sequence_tools,
+    setup_staff_instruments_tools,
+    setup_structure_tools,
+    setup_time_tempo_tools,
+    setup_viewer_tools,
 )
 
 # Set up logging

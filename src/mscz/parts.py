@@ -17,10 +17,10 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
-from .rolls import element_ticks, fraction_ticks
 from .measure_repeats import measure_lengths
+from .rolls import element_ticks, fraction_ticks
 from .score_file import ScoreFile, ScoreFileError
 
 FRAMES = {"VBox", "TBox", "HBox", "FBox"}

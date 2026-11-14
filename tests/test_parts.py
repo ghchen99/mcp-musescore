@@ -5,15 +5,20 @@ import shutil
 import stat
 import subprocess
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from dev.plugin_harness import find_musescore
 from src.mscz import ScoreFile, ScoreFileError
-import zipfile
-
-from src.mscz.locate import OpenPartError, locate_open_score, part_with_score_id, read_score_id, score_shape
+from src.mscz.locate import (
+    OpenPartError,
+    locate_open_score,
+    part_with_score_id,
+    read_score_id,
+    score_shape,
+)
 from src.mscz.parts import detach_part, keep_parts, part_name
 
 QUARTET = Path(__file__).resolve().parent.parent / "examples" / "string quartet" / "String Quartet.mscz"
@@ -34,7 +39,8 @@ def text_element(tag, text):
 
 def add_system_items(score):
     """Tempo and a rehearsal mark on beat 1 of bar 2, a mark on beat 2 of bar 3, a repeat and a line break, all
-    on the first staff (where MuseScore stores them)."""
+    on the first staff (where MuseScore stores them).
+    """
     first = score.staves()[0].findall("Measure")
     voice = first[1].find("voice")
     position = next(i for i, c in enumerate(voice) if c.tag in ("Chord", "Rest"))
@@ -117,7 +123,8 @@ def test_musescore_opens_the_copy(tmp_path, quartet):
 
 def score_with_part(tmp_path, score_id="mcp-part-1"):
     """The quartet with a cello part (as MuseScore stores parts: Excerpts/, links to the full score) whose
-    metadata holds `score_id`, as after the plugin ran in the part's tab and saved."""
+    metadata holds `score_id`, as after the plugin ran in the part's tab and saved.
+    """
     full = tmp_path / "Quartet.mscz"
     shutil.copy(QUARTET, full)
     part = ScoreFile(full)
@@ -152,7 +159,8 @@ def test_a_part_tab_is_found_and_detached(tmp_path):
 
 def test_multi_measure_rests_are_not_counted_as_bars(tmp_path):
     """With multi-measure rests on, MuseScore saves each one as an extra <Measure> holding <multiMeasureRest>
-    (seen in a saved drum part: 72 <Measure>s for 71 bars)."""
+    (seen in a saved drum part: 72 <Measure>s for 71 bars).
+    """
     full = tmp_path / "Quartet.mscz"
     shutil.copy(QUARTET, full)
     score = ScoreFile(full)

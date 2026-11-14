@@ -3,9 +3,9 @@
 import asyncio
 
 from fastmcp import Client
+from mock_musescore import MockMuseScore, MockScore, demo_score, running_mock
 
 import server
-from mock_musescore import MockMuseScore, MockScore, demo_score, running_mock
 
 QUARTER = {"numerator": 1, "denominator": 4}
 
@@ -1040,6 +1040,7 @@ def test_bars_without_a_length_are_skipped():
 def test_reopens_are_spaced(monkeypatch):
     """MuseScore crashed when a score was closed ~0.3 s after it was opened: the server waits in between."""
     import asyncio
+
     from src.client import MuseScoreClient
     from src.tools import score_file
     monkeypatch.setattr(score_file, "REOPEN_GAP", 0.5)

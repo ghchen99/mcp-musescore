@@ -139,7 +139,8 @@ def _voice_one(measure: ET.Element, length: int) -> Optional[List[Tuple[int, ET.
 def tie_chain_start(measures: List[ET.Element], lengths: List[int], start_measure: int, start_ticks: int,
                     pitches: Set[str]) -> Tuple[int, int]:
     """(measure, ticks) where the roll really starts: walk back while the roll cymbals are tied from the chord
-    before, which must hold the roll cymbals too."""
+    before, which must hold the roll cymbals too.
+    """
     number, ticks = start_measure, start_ticks
     while True:
         elements = _voice_one(measures[number - 1], lengths[number - 1])
@@ -167,7 +168,8 @@ def simplify_roll(score: ScoreFile, staff_index: int, start_measure: int, end_me
                   end_ticks: Optional[int] = None, pitches: Sequence[int] = (49, 57), slashes: int = 3,
                   start_ticks: int = 0) -> Dict:
     """Rewrite the roll; returns a report. start_ticks / end_ticks: where the roll starts inside start_measure
-    (default: its beginning) and ends inside end_measure (default: its end)."""
+    (default: its beginning) and ends inside end_measure (default: its end).
+    """
     staves = score.staves()
     if not 0 <= staff_index < len(staves):
         raise ScoreFileError(f"Staff {staff_index} does not exist")

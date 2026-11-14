@@ -16,14 +16,24 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
 from ..client import MuseScoreClient
-from ..mscz import ScoreFile, ScoreFileError, apply_measure_repeats as write_measure_repeats
-from ..mscz.frames import header_texts, set_end_notes as write_end_notes, set_header, set_structure_page
+from ..mscz import ScoreFile, ScoreFileError
+from ..mscz import apply_measure_repeats as write_measure_repeats
+from ..mscz.frames import header_texts, set_header, set_structure_page
+from ..mscz.frames import set_end_notes as write_end_notes
+from ..mscz.locate import (
+    OpenPartError,
+    backup_score,
+    list_backups,
+    locate_open_score,
+    new_score_id,
+    read_score_id,
+    score_shape,
+    write_score_id,
+)
 from ..mscz.measure_repeats import measure_lengths
+from ..mscz.parts import detach_part, part_name
 from ..mscz.rolls import simplify_roll as write_roll
 from .formatting import drum_pitches
-from ..mscz.locate import (OpenPartError, backup_score, list_backups, locate_open_score, new_score_id,
-                           read_score_id, score_shape, write_score_id)
-from ..mscz.parts import detach_part, part_name
 
 # Files found or created for each score ID during this server session
 KNOWN_PATHS: Dict[str, Path] = {}
@@ -65,7 +75,8 @@ async def open_score_path(client: MuseScoreClient, score_path: Optional[str] = N
 def part_file_name(source: Path, name: str) -> Path:
     """<score> - <part>.mscz next to `source`, numbered if taken. Long part names ("Player | Kit | Drums")
     are cut to their last segment; a score already named after the part (a Save As "... - Drums" of the
-    full score) gives "... - Drums only"."""
+    full score) gives "... - Drums only".
+    """
     label = re.sub(r'[\\/:*?"<>|]+', "-", name.split("|")[-1]).strip(" -.") or "part"
     stem = source.stem
     if stem.lower().endswith(f" - {label.lower()}"):
@@ -81,7 +92,8 @@ def part_file_name(source: Path, name: str) -> Path:
 async def open_part_as_score(client: MuseScoreClient, source: Path, entry: str, shape, reopen: bool = True) -> Path:
     """The open score is a part tab of `source`: file edits can't touch a part alone (it is linked to the full
     score), so the part becomes a score file of its own, opened in place of the full score (now, or by the
-    caller's own reopen after its edit when `reopen` is False)."""
+    caller's own reopen after its edit when `reopen` is False).
+    """
     target = part_file_name(source, part_name(source, entry))
     detach_part(source, entry, target)
     if score_shape(target) != tuple(shape):

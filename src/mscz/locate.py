@@ -70,7 +70,8 @@ def read_score_id(path: Path) -> Optional[str]:
 def part_with_score_id(path: Path, score_id: str) -> Optional[str]:
     """The archive entry of the part score (Excerpts/...mscx) that carries `score_id`, or None.
 
-    A score ID lands in a part when the plugin runs while a part's tab is open in MuseScore."""
+    A score ID lands in a part when the plugin runs while a part's tab is open in MuseScore.
+    """
     if path.suffix.lower() != ".mscz":
         return None
     try:

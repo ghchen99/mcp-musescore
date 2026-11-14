@@ -1,6 +1,7 @@
 """Notes and measures tools for MuseScore MCP."""
 
 from typing import Annotated, List, Optional
+
 from ..client import MuseScoreClient
 
 

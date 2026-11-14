@@ -9,7 +9,15 @@ import pytest
 
 from dev.plugin_harness import find_musescore
 from src.mscz import ScoreFile
-from src.mscz.frames import end_notes, header_texts, plain_text, set_end_notes, set_header, set_structure_page, structure_table
+from src.mscz.frames import (
+    end_notes,
+    header_texts,
+    plain_text,
+    set_end_notes,
+    set_header,
+    set_structure_page,
+    structure_table,
+)
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "jazz piano" / "Jazz Piano.mscz"
 

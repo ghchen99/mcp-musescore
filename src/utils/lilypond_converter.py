@@ -1,11 +1,10 @@
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("LilyPondConverter")
 
 def midi_to_lilypond_pitch(midi_pitch: int, tpc: Optional[int] = None) -> str:
-    """
-    Convert a MIDI pitch to LilyPond pitch syntax.
+    """Convert a MIDI pitch to LilyPond pitch syntax.
     If TPC (Tonal Pitch Class) is provided, uses it to determine enharmonic spelling (flats vs sharps).
     Example: 60 -> c', 67 -> g', 74 -> d''
     """
@@ -54,8 +53,7 @@ def midi_to_lilypond_pitch(midi_pitch: int, tpc: Optional[int] = None) -> str:
         return "c'"  # Safe fallback
 
 def ticks_to_lilypond_duration(ticks: int) -> str:
-    """
-    Convert MuseScore ticks to LilyPond rhythmic duration.
+    """Convert MuseScore ticks to LilyPond rhythmic duration.
     MuseScore defines a quarter note as 480 ticks.
     """
     try:
@@ -81,8 +79,7 @@ def ticks_to_lilypond_duration(ticks: int) -> str:
         return "4"
 
 def ticks_to_spacers(ticks: int) -> List[str]:
-    """
-    Greedily consume temporal gap into valid Lilypond spacer rests.
+    """Greedily consume temporal gap into valid Lilypond spacer rests.
     """
     if ticks <= 0:
         return []
@@ -107,8 +104,7 @@ def ticks_to_spacers(ticks: int) -> List[str]:
     return spacers
 
 def process_element(element: Dict[str, Any]) -> str:
-    """
-    Process a single JSON element dictionary into LilyPond syntax.
+    """Process a single JSON element dictionary into LilyPond syntax.
     Handles 'Chord' (with notes) and 'Rest'.
     """
     try:
@@ -162,8 +158,7 @@ def process_element(element: Dict[str, Any]) -> str:
         return ""
 
 def json_to_lilypond(score_data: Dict[str, Any]) -> str:
-    """
-    Convert a JSON response representing a MuseScore measure/score into an absolute LilyPond tree.
+    """Convert a JSON response representing a MuseScore measure/score into an absolute LilyPond tree.
     Assembles code into structured staffs and voices using concurrent compilation.
     """
     try:
@@ -300,8 +295,7 @@ def _bar_comment(measure: Dict[str, Any]) -> str:
 
 
 def score_to_lilypond(score_data: Dict[str, Any]) -> str:
-    """
-    Convert a getScore analysis (one or more measures) into LilyPond, one staff per block.
+    """Convert a getScore analysis (one or more measures) into LilyPond, one staff per block.
     Every voice is padded with spacers so that each measure ends on a bar check
     followed by a "% m.N" comment, which keeps measures easy to compare by eye.
     """

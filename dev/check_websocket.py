@@ -6,9 +6,11 @@ Needs MuseScore open with the plugin running. Run from the repository root:
 """
 
 import asyncio
-import websockets
 import json
 import logging
+
+import websockets
+
 from src.utils.lilypond_converter import json_to_lilypond
 
 logging.basicConfig(level=logging.INFO)

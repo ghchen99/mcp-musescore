@@ -246,7 +246,8 @@ def _row_bars(row: Dict[str, Any]) -> Optional[int]:
 def structure_table(rows: Sequence[Dict[str, Any]], width: int = TABLE_WIDTH) -> List[List[str]]:
     """The table as lines of cells: a header line, then each row (wrapped cells give extra lines; the last line
     of a row has an extra empty cell). Columns that no row fills are left out; the widest columns are narrowed
-    (their text wrapped) until a line fits in `width` characters."""
+    (their text wrapped) until a line fits in `width` characters.
+    """
     rows = [{**r, "bars": _bars_cell(r)} for r in rows]
     columns = [c for c in STRUCTURE_COLUMNS if c[0] in ("section", "bars") or any(str(r.get(c[0]) or "") for r in rows)]
     widths = {key: max([len(title)] + [len(str(r.get(key) or "")) for r in rows]) for key, title in columns}
@@ -271,7 +272,8 @@ def set_structure_page(score: ScoreFile, heading: str, rows: Sequence[Dict[str, 
     """Write the song structure as a table on a new page at the end of the score (replacing an earlier one),
     under the heading and a "song - artist" line (by default the title of the title frame, and its composer or,
     if there is none, its subtitle). rows: {section, bars, count, groove, fill}: the Bars column shows `count`
-    (or `bars` in fours) and the total adds up the bars. No rows removes the page."""
+    (or `bars` in fours) and the total adds up the bars. No rows removes the page.
+    """
     staff = _first_staff(score)
     children, last_measure, structure = _end(staff)
     if structure is not None:

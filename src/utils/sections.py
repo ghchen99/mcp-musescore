@@ -16,7 +16,12 @@ sign would delete their differences, so they are reported for the user to approv
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from .repetition import BEAT_ONE_CYMBALS, Fingerprint, core_fingerprint, staff_fingerprints
+from .repetition import (
+    BEAT_ONE_CYMBALS,
+    Fingerprint,
+    core_fingerprint,
+    staff_fingerprints,
+)
 
 PHRASE_LENGTHS = (1, 2, 4)
 
@@ -290,7 +295,8 @@ def count_label(bars: int, lead_in: int = 0, groups: Sequence[int] = ()) -> str:
     A lead-in of LEAD_IN_MIN bars or more before the first groove bar (e.g. a rest bar and a pickup fill) is
     counted on its own: 8 with a 2-bar lead-in -> "2+4+2". `groups` are the sizes of the runs of equally long
     bars after the lead-in: a run in another time signature is counted on its own, e.g. 4 bars of 4/4, 2 of 3/4
-    and 2 of 4/4 -> "4+2+2"."""
+    and 2 of 4/4 -> "4+2+2".
+    """
     parts = []
     rest = bars
     if LEAD_IN_MIN <= lead_in < bars:

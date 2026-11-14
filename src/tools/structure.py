@@ -1,21 +1,37 @@
 """Repeat structure tools for MuseScore MCP: find repeated material and mark it."""
 
 import re
-from datetime import datetime
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 
 from fastmcp.exceptions import ToolError
 
 from ..client import MuseScoreClient
-from ..utils.repetition import core_fingerprint, find_repeats, staff_fingerprints
-from ..utils.sections import find_sections, song_structure as analyse_structure
-from .formatting import range_params
 from ..mscz import ScoreFile, ScoreFileError
-from ..mscz.locate import SCORE_ID_TAG, backup_dir, backup_score, locate_open_score, new_score_id
+from ..mscz.locate import (
+    SCORE_ID_TAG,
+    backup_dir,
+    backup_score,
+    locate_open_score,
+    new_score_id,
+)
 from ..mscz.parts import keep_parts
-from .score_file import KNOWN_PATHS, PART_SOURCES, open_score_path, reopen_in_place
+from ..utils.repetition import (
+    core_fingerprint,
+    find_repeats,
+    staff_fingerprints,
+)
+from ..utils.sections import find_sections
+from ..utils.sections import song_structure as analyse_structure
+from .formatting import range_params
+from .score_file import (
+    KNOWN_PATHS,
+    PART_SOURCES,
+    open_score_path,
+    reopen_in_place,
+)
 
 FETCH_CHUNK = 16
 PASSAGE_COLORS = ["#1f77b4", "#2ca02c", "#9467bd", "#8c564b", "#e377c2", "#17becf"]
@@ -457,7 +473,8 @@ def setup_structure_tools(mcp, client: MuseScoreClient):
     async def remove_other_parts(staves: List[int], score_path: Optional[str]) -> Dict:
         """make_part_score(in_place=True). Nothing is saved before the other parts are gone: saving the full
         score would write again (and MuseScore would flag as corrupted) a damaged bar in another instrument, and
-        an imported score would first ask where to save."""
+        an imported score would first ask where to save.
+        """
         score_id = (await client.request("ensureScoreId"))["scoreId"]
         info = await client.request("scoreFileInfo")
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")

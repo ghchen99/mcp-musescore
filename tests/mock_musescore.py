@@ -15,8 +15,8 @@ import re
 import sys
 import uuid
 import xml.etree.ElementTree as ET
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from websockets.asyncio.server import serve
@@ -94,7 +94,7 @@ class MockScore:
         return numbers
 
     def summary(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """getScore analysis; params mirror the plugin (startMeasure, endMeasure, staves, includeElements)."""
+        """GetScore analysis; params mirror the plugin (startMeasure, endMeasure, staves, includeElements)."""
         params = params or {}
         first = max(1, params.get("startMeasure") or 1)
         last = min(self.num_measures, params.get("endMeasure") or self.num_measures)
@@ -789,8 +789,9 @@ class MockMuseScore:
         return {"success": True, "removed": removed}
 
     def _do_addSectionCounts(self, params):
-        """mode "label": "(count)" at the end of the rehearsal mark's text; "beside": texts {measure, text,
-        sectionCount: True}. Earlier counts at those measures, in either form, are replaced."""
+        """Mode "label": "(count)" at the end of the rehearsal mark's text; "beside": texts {measure, text,
+        sectionCount: True}. Earlier counts at those measures, in either form, are replaced.
+        """
         if (err := self._missing(params, ["counts"])):
             return err
         self._mutating()
