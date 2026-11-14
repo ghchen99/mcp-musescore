@@ -12,7 +12,9 @@ from fastmcp.tools import ToolResult
 from ..client import MuseScoreClient
 
 VIEWER_URI = "ui://musescore/score-viewer.html"
-VIEWER_HTML = Path(__file__).resolve().parent.parent / "ui" / "score_viewer.html"
+VIEWER_HTML = (
+    Path(__file__).resolve().parent.parent / "ui" / "score_viewer.html"
+)
 DEFAULT_MEASURE_TICKS = 1920
 
 
@@ -41,7 +43,8 @@ def setup_viewer_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     async def show_score(
         first_measure: Annotated[int, "First measure to show (1-based)"] = 1,
         last_measure: Annotated[
-            Optional[int], "Last measure to show (1-based). Defaults to the end of the score."
+            Optional[int],
+            "Last measure to show (1-based). Defaults to the end of the score.",
         ] = None,
     ) -> ToolResult:
         params = {"startMeasure": first_measure}
@@ -53,20 +56,26 @@ def setup_viewer_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
         # Older plugin versions ignore the range and return every measure, so filter here too.
         shown = [
-            m for m in analysis.get("measures", [])
-            if m["measure"] >= first_measure and (last_measure is None or m["measure"] <= last_measure)
+            m
+            for m in analysis.get("measures", [])
+            if m["measure"] >= first_measure
+            and (last_measure is None or m["measure"] <= last_measure)
         ]
         measure_ticks = DEFAULT_MEASURE_TICKS
         if shown and shown[0].get("durationTicks"):
             measure_ticks = shown[0]["durationTicks"]
         elif len(shown) > 1:
-            measure_ticks = shown[1]["startTick"] - shown[0]["startTick"] or measure_ticks
+            measure_ticks = (
+                shown[1]["startTick"] - shown[0]["startTick"] or measure_ticks
+            )
         payload = {**analysis, "measures": shown, "measureTicks": measure_ticks}
 
         title = analysis.get("title") or "Untitled"
         total = analysis.get("numMeasures", len(shown))
         summary = (
             f'Score "{title}": showing {len(shown)} of {total} measure(s), '
-            f'{len(analysis.get("staves", []))} staff/staves.'
+            f"{len(analysis.get('staves', []))} staff/staves."
         )
-        return ToolResult(content=summary, structured_content=json.loads(json.dumps(payload)))
+        return ToolResult(
+            content=summary, structured_content=json.loads(json.dumps(payload))
+        )

@@ -18,7 +18,9 @@ async def main() -> None:
         await websocket.send(json.dumps({"action": "ping", "params": {}}))
         response = json.loads(await websocket.recv())
     if response.get("status") != "success" or response.get("result") != "pong":
-        raise RuntimeError(f"Unexpected MuseScore bridge response: {response!r}")
+        raise RuntimeError(
+            f"Unexpected MuseScore bridge response: {response!r}"
+        )
     print(f"MuseScore bridge OK: {uri}")
 
 

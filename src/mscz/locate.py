@@ -31,7 +31,9 @@ def musescore_data_dirs() -> List[Path]:
         home / "Library" / "Application Support" / "MuseScore" / "MuseScore4",
     ]
     if os.environ.get("LOCALAPPDATA"):
-        dirs.append(Path(os.environ["LOCALAPPDATA"]) / "MuseScore" / "MuseScore4")
+        dirs.append(
+            Path(os.environ["LOCALAPPDATA"]) / "MuseScore" / "MuseScore4"
+        )
     return dirs
 
 
@@ -60,7 +62,11 @@ def read_score_id(path: Path) -> Optional[str]:
             data = path.read_bytes()
         else:
             with zipfile.ZipFile(path) as z:
-                names = [n for n in z.namelist() if n.endswith(".mscx") and "/" not in n]
+                names = [
+                    n
+                    for n in z.namelist()
+                    if n.endswith(".mscx") and "/" not in n
+                ]
                 data = z.read(names[0]) if names else b""
     except (OSError, zipfile.BadZipFile):
         return None
@@ -125,11 +131,20 @@ def candidate_files(known: Iterable[Path] = ()) -> List[Path]:
     for data_dir in musescore_data_dirs():
         paths += _listed_paths(data_dir / "session" / "session.json")
         paths += _listed_paths(data_dir / "recent_files.json")
-    return [p for p in dict.fromkeys(paths) if p.suffix.lower() in SCORE_SUFFIXES and p.is_file()]
+    return [
+        p
+        for p in dict.fromkeys(paths)
+        if p.suffix.lower() in SCORE_SUFFIXES and p.is_file()
+    ]
 
 
-def locate_open_score(score_id: str, staves: int, measures: int,
-                      explicit: Optional[str] = None, known: Iterable[Path] = ()) -> Path:
+def locate_open_score(
+    score_id: str,
+    staves: int,
+    measures: int,
+    explicit: Optional[str] = None,
+    known: Iterable[Path] = (),
+) -> Path:
     """The file of the score open in MuseScore, identified by its score ID.
 
     The score must have been saved just before, so that its file holds the ID. Among several files
@@ -149,7 +164,9 @@ def locate_open_score(score_id: str, staves: int, measures: int,
         parts = [(p, part_with_score_id(p, score_id)) for p in candidates]
         parts = [(p, entry) for p, entry in parts if entry]
         if parts:
-            raise OpenPartError(*max(parts, key=lambda pe: pe[0].stat().st_mtime))
+            raise OpenPartError(
+                *max(parts, key=lambda pe: pe[0].stat().st_mtime)
+            )
         if explicit:
             raise ScoreFileError(
                 f"{candidates[0]} is not the file of the score open in MuseScore. Open that file in MuseScore "
@@ -172,7 +189,10 @@ def locate_open_score(score_id: str, staves: int, measures: int,
 
 def backup_dir() -> Path:
     """Where backups go: MCP_MUSESCORE_BACKUP_DIR, or ~/.mcp-musescore/backups."""
-    return Path(os.environ.get("MCP_MUSESCORE_BACKUP_DIR") or Path.home() / ".mcp-musescore" / "backups")
+    return Path(
+        os.environ.get("MCP_MUSESCORE_BACKUP_DIR")
+        or Path.home() / ".mcp-musescore" / "backups"
+    )
 
 
 def backup_score(path: Path) -> Path:
@@ -192,7 +212,10 @@ def list_backups(path: Path) -> List[Path]:
         return []
     prefix = f"{path.stem}."
     found = [
-        p for p in directory.iterdir()
-        if p.name.startswith(prefix) and p.suffix == path.suffix and p.stem[len(prefix):][:8].isdigit()
+        p
+        for p in directory.iterdir()
+        if p.name.startswith(prefix)
+        and p.suffix == path.suffix
+        and p.stem[len(prefix) :][:8].isdigit()
     ]
     return sorted(found, key=lambda p: p.name, reverse=True)

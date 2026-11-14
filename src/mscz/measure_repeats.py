@@ -19,15 +19,54 @@ SIGN_POSITION = {1: 0, 2: 0, 4: 1}
 
 # Elements that start the musical content of a voice; anything from the first of them up to the
 # last of BODY_END_TAGS is replaced by the sign.
-BODY_START_TAGS = {"Chord", "Rest", "MeasureRepeat", "Tuplet", "Beam", "location"}
-BODY_END_TAGS = {"Chord", "Rest", "MeasureRepeat", "Tuplet", "endTuplet", "location"}
+BODY_START_TAGS = {
+    "Chord",
+    "Rest",
+    "MeasureRepeat",
+    "Tuplet",
+    "Beam",
+    "location",
+}
+BODY_END_TAGS = {
+    "Chord",
+    "Rest",
+    "MeasureRepeat",
+    "Tuplet",
+    "endTuplet",
+    "location",
+}
 # Spanners anchored to chords or notes cannot outlive the chords they start or end on.
-CHORD_SPANNERS = {"Tie", "Slur", "Glissando", "GuitarBend", "HammerOnPullOff", "PartialTie", "LaissezVib"}
+CHORD_SPANNERS = {
+    "Tie",
+    "Slur",
+    "Glissando",
+    "GuitarBend",
+    "HammerOnPullOff",
+    "PartialTie",
+    "LaissezVib",
+}
 # Measure-level tags that MuseScore writes before the per-staff ones.
-MEASURE_HEAD_TAGS = {"eid", "startRepeat", "endRepeat", "irregular", "breakMultiMeasureRest",
-                     "stretch", "noOffset", "measureNumberMode"}
+MEASURE_HEAD_TAGS = {
+    "eid",
+    "startRepeat",
+    "endRepeat",
+    "irregular",
+    "breakMultiMeasureRest",
+    "stretch",
+    "noOffset",
+    "measureNumberMode",
+}
 # Body tags that are just notation plumbing, not worth reporting when dropped.
-SILENT_TAGS = {"Chord", "Rest", "MeasureRepeat", "Tuplet", "endTuplet", "Beam", "location", "Spanner"}
+SILENT_TAGS = {
+    "Chord",
+    "Rest",
+    "MeasureRepeat",
+    "Tuplet",
+    "endTuplet",
+    "Beam",
+    "location",
+    "Spanner",
+}
 
 
 def _crosses_barline(spanner: ET.Element) -> bool:
@@ -77,7 +116,9 @@ def measure_lengths(staff: ET.Element, first_staff: ET.Element) -> List[str]:
     return lengths
 
 
-def _split_voice(voice: ET.Element) -> Tuple[List[ET.Element], List[ET.Element], List[ET.Element]]:
+def _split_voice(
+    voice: ET.Element,
+) -> Tuple[List[ET.Element], List[ET.Element], List[ET.Element]]:
     """(leading, body, trailing) children of a voice; leading/trailing sit at the measure's edges."""
     children = list(voice)
     starts = [i for i, c in enumerate(children) if c.tag in BODY_START_TAGS]
@@ -85,7 +126,7 @@ def _split_voice(voice: ET.Element) -> Tuple[List[ET.Element], List[ET.Element],
         return children, [], []
     first = starts[0]
     last = max(i for i, c in enumerate(children) if c.tag in BODY_END_TAGS)
-    return children[:first], children[first:last + 1], children[last + 1:]
+    return children[:first], children[first : last + 1], children[last + 1 :]
 
 
 def _check_measure(measure: ET.Element) -> Tuple[Optional[str], List[str]]:
@@ -93,14 +134,19 @@ def _check_measure(measure: ET.Element) -> Tuple[Optional[str], List[str]]:
     dropped = []
     voices = measure.findall("voice")
     for v, voice in enumerate(voices):
-        leading, body, trailing = _split_voice(voice) if v == 0 else ([], list(voice), [])
+        leading, body, trailing = (
+            _split_voice(voice) if v == 0 else ([], list(voice), [])
+        )
         for edge in leading + trailing:
             if edge.tag == "Spanner" and edge.get("type") in CHORD_SPANNERS:
                 body.append(edge)
         for element in body:
             for spanner in element.iter("Spanner"):
                 if _crosses_barline(spanner):
-                    return f"a {spanner.get('type', 'spanner').lower()} crosses its barline", []
+                    return (
+                        f"a {spanner.get('type', 'spanner').lower()} crosses its barline",
+                        [],
+                    )
             if element.tag not in SILENT_TAGS:
                 dropped.append(element.tag)
             if element.tag == "Chord" and element.find("Lyrics") is not None:
@@ -145,8 +191,14 @@ def _add_nobreak(first_staff_measure: ET.Element) -> bool:
     return True
 
 
-def _rewrite_measure(measure: ET.Element, count: int, size: int, holds_sign: bool,
-                     length: str, keep_barline: bool) -> None:
+def _rewrite_measure(
+    measure: ET.Element,
+    count: int,
+    size: int,
+    holds_sign: bool,
+    length: str,
+    keep_barline: bool,
+) -> None:
     voices = measure.findall("voice")
     if not voices:
         voices = [ET.SubElement(measure, "voice")]
@@ -155,9 +207,14 @@ def _rewrite_measure(measure: ET.Element, count: int, size: int, holds_sign: boo
 
     voice = voices[0]
     leading, _, trailing = _split_voice(voice)
-    leading = [e for e in leading if not (e.tag == "Spanner" and e.get("type") in CHORD_SPANNERS)]
+    leading = [
+        e
+        for e in leading
+        if not (e.tag == "Spanner" and e.get("type") in CHORD_SPANNERS)
+    ]
     trailing = [
-        e for e in trailing
+        e
+        for e in trailing
         if not (e.tag == "Spanner" and e.get("type") in CHORD_SPANNERS)
         and (keep_barline or e.tag != "BarLine")
     ]
@@ -168,7 +225,9 @@ def _rewrite_measure(measure: ET.Element, count: int, size: int, holds_sign: boo
     _set_repeat_count(measure, count)
 
 
-def apply_measure_repeats(score: ScoreFile, staff_index: int, groups: Sequence[Tuple[int, int]]) -> Dict:
+def apply_measure_repeats(
+    score: ScoreFile, staff_index: int, groups: Sequence[Tuple[int, int]]
+) -> Dict:
     """Turn measures into measure-repeat signs on one staff.
 
     groups: (first measure, size) pairs, 1-based measures and size 1, 2 or 4. A group repeats the
@@ -176,14 +235,22 @@ def apply_measure_repeats(score: ScoreFile, staff_index: int, groups: Sequence[T
     """
     staves = score.staves()
     if not 0 <= staff_index < len(staves):
-        raise ScoreFileError(f"Staff {staff_index} does not exist (score has {len(staves)} staves)")
+        raise ScoreFileError(
+            f"Staff {staff_index} does not exist (score has {len(staves)} staves)"
+        )
     staff = staves[staff_index]
     first_measures = staves[0].findall("Measure")
     measures = staff.findall("Measure")
     lengths = measure_lengths(staff, staves[0])
     existing = _existing_groups(measures)
 
-    report = {"applied": [], "unchanged": [], "skipped": [], "dropped": [], "kept_layout_breaks": []}
+    report = {
+        "applied": [],
+        "unchanged": [],
+        "skipped": [],
+        "dropped": [],
+        "kept_layout_breaks": [],
+    }
 
     # First pass: basic validity. Existing groups only count as replaced when the valid requests
     # together cover them completely.
@@ -209,11 +276,17 @@ def apply_measure_repeats(score: ScoreFile, staff_index: int, groups: Sequence[T
         valid.append((entry, first, size, indices))
 
     for entry, first, size, indices in valid:
-        overlapping = [g for g in existing if set(range(g[0], g[0] + g[1])) & set(indices)]
+        overlapping = [
+            g for g in existing if set(range(g[0], g[0] + g[1])) & set(indices)
+        ]
         if overlapping == [(first, size)]:
             report["unchanged"].append(entry)
             continue
-        partial = [g for g in overlapping if not set(range(g[0], g[0] + g[1])) <= claimed]
+        partial = [
+            g
+            for g in overlapping
+            if not set(range(g[0], g[0] + g[1])) <= claimed
+        ]
         if partial:
             g_first, g_size = partial[0]
             reason = f"overlaps an existing {g_size}-bar repeat at bars {g_first + 1}-{g_first + g_size}"
@@ -234,12 +307,22 @@ def apply_measure_repeats(score: ScoreFile, staff_index: int, groups: Sequence[T
 
         for k, i in enumerate(indices):
             _rewrite_measure(
-                measures[i], count=k + 1, size=size, holds_sign=(k == SIGN_POSITION[size]),
-                length=lengths[i], keep_barline=(k == size - 1),
+                measures[i],
+                count=k + 1,
+                size=size,
+                holds_sign=(k == SIGN_POSITION[size]),
+                length=lengths[i],
+                keep_barline=(k == size - 1),
             )
-            if k < size - 1 and i < len(first_measures) and not _add_nobreak(first_measures[i]):
+            if (
+                k < size - 1
+                and i < len(first_measures)
+                and not _add_nobreak(first_measures[i])
+            ):
                 report["kept_layout_breaks"].append(i + 1)
         report["applied"].append(entry)
-        report["dropped"].extend({"measure": m, "items": items} for m, items in dropped.items())
+        report["dropped"].extend(
+            {"measure": m, "items": items} for m, items in dropped.items()
+        )
 
     return report

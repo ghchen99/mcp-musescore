@@ -314,7 +314,9 @@ class clearHighlightsParams(TypedDict):
     endMeasure: NotRequired[int]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
-    kinds: NotRequired[List[Literal["highlights", "notes", "markings", "labels"]]]
+    kinds: NotRequired[
+        List[Literal["highlights", "notes", "markings", "labels"]]
+    ]
 
 
 class clearHighlightsAction(TypedDict):
@@ -358,7 +360,9 @@ class highlightSymbolsParams(TypedDict):
     endMeasure: NotRequired[int]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
-    kinds: NotRequired[List[Literal["time_signatures", "repeat_barlines", "measure_repeats"]]]
+    kinds: NotRequired[
+        List[Literal["time_signatures", "repeat_barlines", "measure_repeats"]]
+    ]
     mode: NotRequired[Literal["highlight", "color"]]
     color: NotRequired[str]
     clear: NotRequired[bool]
@@ -415,7 +419,9 @@ class addArticulationParams(TypedDict):
     startBeat: NotRequired[float]
     endBeat: NotRequired[float]
     pitches: NotRequired[List[int]]
-    symbol: Literal["half_open", "open", "closed", "accent", "marcato", "staccato", "tenuto"]
+    symbol: Literal[
+        "half_open", "open", "closed", "accent", "marcato", "staccato", "tenuto"
+    ]
 
 
 class addArticulationAction(TypedDict):
@@ -485,17 +491,51 @@ class beamOverRestsAction(TypedDict):
 
 
 ActionSequence = List[
-    getScoreAction | addNoteAction | addTieAction | addTiedNoteAction | addRestAction | addTupletAction |
-    addLyricsAction | addInstrumentAction | setStaffMuteAction | 
-    setInstrumentSoundAction | appendMeasureAction | deleteSelectionAction | 
-    getCursorInfoAction | goToMeasureAction | nextElementAction | 
-    prevElementAction | selectCurrentMeasureAction | insertMeasureAction | 
-    goToFinalMeasureAction | goToBeginningOfScoreAction | setTimeSignatureAction | 
-    undoAction | nextStaffAction | prevStaffAction | setTempoAction |
-    selectMeasuresAction | deleteMeasuresAction | setRepeatBarlinesAction |
-    addVoltaAction | colorRangeAction | setStyleAction | addRehearsalMarkAction |
-    removePartsAction | addHighlightAction | addLabelAction | clearHighlightsAction |
-    highlightNotesAction | highlightMarkingsAction | highlightSymbolsAction |
-    setMeasureNumberingAction | numberAsPlayedAction | addTextAction | addArticulationAction |
-    removeArticulationsAction | ghostNotesAction | beamOverRestsAction | addSectionCountsAction
+    getScoreAction
+    | addNoteAction
+    | addTieAction
+    | addTiedNoteAction
+    | addRestAction
+    | addTupletAction
+    | addLyricsAction
+    | addInstrumentAction
+    | setStaffMuteAction
+    | setInstrumentSoundAction
+    | appendMeasureAction
+    | deleteSelectionAction
+    | getCursorInfoAction
+    | goToMeasureAction
+    | nextElementAction
+    | prevElementAction
+    | selectCurrentMeasureAction
+    | insertMeasureAction
+    | goToFinalMeasureAction
+    | goToBeginningOfScoreAction
+    | setTimeSignatureAction
+    | undoAction
+    | nextStaffAction
+    | prevStaffAction
+    | setTempoAction
+    | selectMeasuresAction
+    | deleteMeasuresAction
+    | setRepeatBarlinesAction
+    | addVoltaAction
+    | colorRangeAction
+    | setStyleAction
+    | addRehearsalMarkAction
+    | removePartsAction
+    | addHighlightAction
+    | addLabelAction
+    | clearHighlightsAction
+    | highlightNotesAction
+    | highlightMarkingsAction
+    | highlightSymbolsAction
+    | setMeasureNumberingAction
+    | numberAsPlayedAction
+    | addTextAction
+    | addArticulationAction
+    | removeArticulationsAction
+    | ghostNotesAction
+    | beamOverRestsAction
+    | addSectionCountsAction
 ]

@@ -13,7 +13,7 @@ from .viewer import setup_viewer_tools
 
 __all__ = [
     "setup_connection_tools",
-    "setup_navigation_tools", 
+    "setup_navigation_tools",
     "setup_notes_measures_tools",
     "setup_staff_instruments_tools",
     "setup_time_tempo_tools",

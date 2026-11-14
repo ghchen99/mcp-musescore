@@ -31,25 +31,41 @@ class ScoreFile:
         else:
             try:
                 with zipfile.ZipFile(self.path) as z:
-                    self._entries = [(info, z.read(info.filename)) for info in z.infolist()]
+                    self._entries = [
+                        (info, z.read(info.filename)) for info in z.infolist()
+                    ]
             except zipfile.BadZipFile as e:
-                raise ScoreFileError(f"{self.path} is not a MuseScore .mscz file: {e}")
+                raise ScoreFileError(
+                    f"{self.path} is not a MuseScore .mscz file: {e}"
+                )
             self._mscx_name = self._find_main_mscx()
-            data = dict((info.filename, d) for info, d in self._entries)[self._mscx_name]
+            data = dict((info.filename, d) for info, d in self._entries)[
+                self._mscx_name
+            ]
 
         self.root = ET.fromstring(data)
         if self.root.tag != "museScore" or self.root.find("Score") is None:
-            raise ScoreFileError(f"{self.path} does not contain a MuseScore score")
+            raise ScoreFileError(
+                f"{self.path} does not contain a MuseScore score"
+            )
         self.multi_measure_rests = 0
         for staff in self.staves():
-            for measure in [m for m in staff if m.tag == "Measure" and m.find("multiMeasureRest") is not None]:
+            for measure in [
+                m
+                for m in staff
+                if m.tag == "Measure" and m.find("multiMeasureRest") is not None
+            ]:
                 staff.remove(measure)
                 self.multi_measure_rests += 1
 
     def _find_main_mscx(self) -> str:
         names = [info.filename for info, _ in self._entries]
         if "META-INF/container.xml" in names:
-            container = ET.fromstring(dict((i.filename, d) for i, d in self._entries)["META-INF/container.xml"])
+            container = ET.fromstring(
+                dict((i.filename, d) for i, d in self._entries)[
+                    "META-INF/container.xml"
+                ]
+            )
             for rootfile in container.iter("rootfile"):
                 full_path = rootfile.get("full-path", "")
                 if full_path.endswith(".mscx") and full_path in names:
@@ -64,7 +80,9 @@ class ScoreFile:
         """The <Score> element."""
         score = self.root.find("Score")
         if score is None:
-            raise ScoreFileError(f"{self.path} does not contain a MuseScore score")
+            raise ScoreFileError(
+                f"{self.path} does not contain a MuseScore score"
+            )
         return score
 
     @property
@@ -79,17 +97,30 @@ class ScoreFile:
     def drop_entries(self, prefix: str) -> int:
         """Remove archive entries under `prefix` (e.g. "Excerpts/") and their container.xml lines."""
         before = len(self._entries)
-        self._entries = [(info, data) for info, data in self._entries if not info.filename.startswith(prefix)]
+        self._entries = [
+            (info, data)
+            for info, data in self._entries
+            if not info.filename.startswith(prefix)
+        ]
         removed = before - len(self._entries)
         if removed:
             for i, (info, data) in enumerate(self._entries):
                 if info.filename == "META-INF/container.xml":
                     container = ET.fromstring(data)
                     for parent in container.iter():
-                        for rootfile in [r for r in parent if r.tag == "rootfile"
-                                         and r.get("full-path", "").startswith(prefix)]:
+                        for rootfile in [
+                            r
+                            for r in parent
+                            if r.tag == "rootfile"
+                            and r.get("full-path", "").startswith(prefix)
+                        ]:
                             parent.remove(rootfile)
-                    self._entries[i] = (info, ET.tostring(container, encoding="UTF-8", xml_declaration=True))
+                    self._entries[i] = (
+                        info,
+                        ET.tostring(
+                            container, encoding="UTF-8", xml_declaration=True
+                        ),
+                    )
         return removed
 
     def to_bytes(self) -> bytes:
@@ -99,7 +130,9 @@ class ScoreFile:
     def save(self, path: Optional[Union[str, Path]] = None) -> Path:
         """Write the score (to its own path by default) via a temporary file and an atomic rename."""
         target = Path(path) if path else self.path
-        fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+        fd, tmp = tempfile.mkstemp(
+            dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
+        )
         os.close(fd)
         # mkstemp creates owner-only files: keep the target's permissions, or the usual ones for a new file
         if target.exists():

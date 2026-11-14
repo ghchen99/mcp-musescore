@@ -17,22 +17,30 @@ def unwrap_result(response: dict) -> dict:
     either as {"status": "error", "message": ...} or as result.error.
     """
     if response.get("status") == "error" or "error" in response:
-        raise ToolError(response.get("message") or response.get("error") or "MuseScore error")
+        raise ToolError(
+            response.get("message")
+            or response.get("error")
+            or "MuseScore error"
+        )
     result = response.get("result")
     if not isinstance(result, dict) or "error" in result:
-        message = result.get("error") if isinstance(result, dict) else "Unexpected plugin response"
+        message = (
+            result.get("error")
+            if isinstance(result, dict)
+            else "Unexpected plugin response"
+        )
         raise ToolError(message)
     return result
 
 
 class MuseScoreClient:
     """Client to communicate with MuseScore WebSocket API."""
-    
+
     def __init__(self, host: str = "localhost", port: int = 8765) -> None:
         """Prepare a client for the plugin at `host`:`port`; it connects on first use."""
         self.uri = f"ws://{host}:{port}"
         self.websocket = None
-    
+
     async def connect(self) -> bool:
         """Connect to the MuseScore WebSocket API."""
         try:
@@ -43,7 +51,7 @@ class MuseScoreClient:
         except Exception as e:
             logger.error(f"Failed to connect to MuseScore API: {str(e)}")
             return False
-    
+
     async def _reset_socket(self) -> None:
         """Drop the current socket so the next call reconnects from scratch.
 
@@ -58,7 +66,9 @@ class MuseScoreClient:
                 pass
             self.websocket = None
 
-    async def send_command(self, action: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def send_command(
+        self, action: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Send a command to MuseScore and wait for response.
 
         Tries the existing socket first; if that fails (e.g. MuseScore was
@@ -94,7 +104,9 @@ class MuseScoreClient:
 
         return {"error": f"Not connected to MuseScore: {last_error}"}
 
-    async def request(self, action: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def request(
+        self, action: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Send a command and return the unwrapped result, raising ToolError on failure."""
         return unwrap_result(await self.send_command(action, params))
 

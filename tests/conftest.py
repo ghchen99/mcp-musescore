@@ -5,7 +5,8 @@ import pytest
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--no-musescore", action="store_true",
+        "--no-musescore",
+        action="store_true",
         help="Skip the tests that need MuseScore, even when it is installed (the commit hook uses this)",
     )
 
@@ -20,4 +21,5 @@ def pytest_configure(config):
 def no_reopen_gap(monkeypatch):
     """The server spaces score reopens by a few seconds so MuseScore can settle; tests don't need to wait."""
     from src.tools import score_file
+
     monkeypatch.setattr(score_file, "REOPEN_GAP", 0.0)

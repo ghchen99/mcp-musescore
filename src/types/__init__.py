@@ -52,7 +52,7 @@ from .action_types import (
 __all__ = [
     "ActionSequence",
     "getScoreAction",
-    "addNoteAction", 
+    "addNoteAction",
     "addRestAction",
     "addTupletAction",
     "addTieAction",

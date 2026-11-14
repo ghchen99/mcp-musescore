@@ -72,7 +72,9 @@ def set_header(score: ScoreFile, **fields: Optional[str]) -> Dict[str, str]:
         vbox = title_frame(score, create=bool(value))
         if vbox is None:
             continue
-        existing = [t for t in vbox.findall("Text") if t.findtext("style") == style]
+        existing = [
+            t for t in vbox.findall("Text") if t.findtext("style") == style
+        ]
         if value == "":
             for text in existing:
                 vbox.remove(text)
@@ -109,11 +111,17 @@ def plain_text(node: Optional[ET.Element]) -> str:
 
 
 def _is_page_break(element: ET.Element) -> bool:
-    return any(b.findtext("subtype") == "page" for b in element.findall("LayoutBreak"))
+    return any(
+        b.findtext("subtype") == "page" for b in element.findall("LayoutBreak")
+    )
 
 
 def _set_page_break(element: ET.Element, on: bool) -> None:
-    for brk in [b for b in element.findall("LayoutBreak") if b.findtext("subtype") == "page"]:
+    for brk in [
+        b
+        for b in element.findall("LayoutBreak")
+        if b.findtext("subtype") == "page"
+    ]:
         element.remove(brk)
     if on:
         brk = ET.Element("LayoutBreak")
@@ -124,12 +132,20 @@ def _set_page_break(element: ET.Element, on: bool) -> None:
             element.append(brk)
 
 
-def _end(staff: ET.Element) -> Tuple[List[ET.Element], int, Optional[ET.Element]]:
+def _end(
+    staff: ET.Element,
+) -> Tuple[List[ET.Element], int, Optional[ET.Element]]:
     """(children, index of the last measure, structure frame or None) of the first staff."""
     children = list(staff)
-    last_measure = max((i for i, c in enumerate(children) if c.tag == "Measure"), default=-1)
+    last_measure = max(
+        (i for i, c in enumerate(children) if c.tag == "Measure"), default=-1
+    )
     structure = None
-    if len(children) - 1 > last_measure >= 0 and children[-1].tag == "TBox" and _is_page_break(children[-2]):
+    if (
+        len(children) - 1 > last_measure >= 0
+        and children[-1].tag == "TBox"
+        and _is_page_break(children[-2])
+    ):
         structure = children[-1]
     return children, last_measure, structure
 
@@ -137,7 +153,11 @@ def _end(staff: ET.Element) -> Tuple[List[ET.Element], int, Optional[ET.Element]
 def _trailing_notes_frames(staff: ET.Element) -> List[ET.Element]:
     """Text frames after the last measure, except the structure page."""
     children, last_measure, structure = _end(staff)
-    return [c for c in children[last_measure + 1:] if c.tag == "TBox" and c is not structure]
+    return [
+        c
+        for c in children[last_measure + 1 :]
+        if c.tag == "TBox" and c is not structure
+    ]
 
 
 def _place_structure_break(staff: ET.Element) -> None:
@@ -173,11 +193,17 @@ def end_notes(score: ScoreFile) -> List[str]:
     """The lines of the notes frames after the last measure (headings included), as plain text."""
     lines = []
     for frame in _trailing_notes_frames(_first_staff(score)):
-        lines += [line for line in plain_text(frame.find("Text/text")).split("\n") if line.strip()]
+        lines += [
+            line
+            for line in plain_text(frame.find("Text/text")).split("\n")
+            if line.strip()
+        ]
     return lines
 
 
-def set_end_notes(score: ScoreFile, heading: str, lines: List[str], append: bool = False) -> Dict[str, Any]:
+def set_end_notes(
+    score: ScoreFile, heading: str, lines: List[str], append: bool = False
+) -> Dict[str, Any]:
     """Put a text frame after the last measure with a bold heading and one line per item.
 
     Text frames already after the last measure are replaced (the structure page stays after them), so
@@ -188,7 +214,11 @@ def set_end_notes(score: ScoreFile, heading: str, lines: List[str], append: bool
     old = _trailing_notes_frames(staff)
     printed = end_notes(score)
     if append:
-        old_lines = printed[1:] if printed and old and old[0].find("Text/text/b") is not None else printed
+        old_lines = (
+            printed[1:]
+            if printed and old and old[0].find("Text/text/b") is not None
+            else printed
+        )
         lines = old_lines + [line for line in lines if line not in old_lines]
     structure = _end(staff)[2]
     for frame in old:
@@ -223,7 +253,12 @@ def set_end_notes(score: ScoreFile, heading: str, lines: List[str], append: bool
     return {"replaced": len(old), "lines": len(lines), "previous": printed}
 
 
-STRUCTURE_COLUMNS = [("section", "Section"), ("bars", "Bars"), ("groove", "Groove"), ("fill", "Fills")]
+STRUCTURE_COLUMNS = [
+    ("section", "Section"),
+    ("bars", "Bars"),
+    ("groove", "Groove"),
+    ("fill", "Fills"),
+]
 MIN_COLUMN = 10  # a column is never wrapped narrower than this
 ROW_GAP = "5"  # font size of the spacer line between rows: half a line of space, so rows are easy to tell apart
 
@@ -234,18 +269,31 @@ def _bars_cell(row: Dict[str, Any]) -> str:
         return str(row["count"])
     bars = row.get("bars")
     n = count_bars(bars) if bars is not None else None
-    return count_label(n) if n is not None and (isinstance(bars, int) or str(bars).strip().isdigit()) else str(bars or "")
+    return (
+        count_label(n)
+        if n is not None
+        and (isinstance(bars, int) or str(bars).strip().isdigit())
+        else str(bars or "")
+    )
 
 
 def _row_bars(row: Dict[str, Any]) -> Optional[int]:
     """Bars a row lasts as played: `bars` if it is a number, else what its count label adds up to."""
     bars = row.get("bars")
-    if isinstance(bars, int) or (isinstance(bars, str) and bars.strip().isdigit()):
+    if isinstance(bars, int) or (
+        isinstance(bars, str) and bars.strip().isdigit()
+    ):
         return int(bars)
-    return count_bars(row.get("count") or bars) if (row.get("count") or bars) else None
+    return (
+        count_bars(row.get("count") or bars)
+        if (row.get("count") or bars)
+        else None
+    )
 
 
-def structure_table(rows: Sequence[Dict[str, Any]], width: int = TABLE_WIDTH) -> List[List[str]]:
+def structure_table(
+    rows: Sequence[Dict[str, Any]], width: int = TABLE_WIDTH
+) -> List[List[str]]:
     """The song structure table as lines of cells.
 
     A header line, then each row (wrapped cells give extra lines; the last line of a row has an extra empty
@@ -253,26 +301,52 @@ def structure_table(rows: Sequence[Dict[str, Any]], width: int = TABLE_WIDTH) ->
     (their text wrapped) until a line fits in `width` characters.
     """
     rows = [{**r, "bars": _bars_cell(r)} for r in rows]
-    columns = [c for c in STRUCTURE_COLUMNS if c[0] in ("section", "bars") or any(str(r.get(c[0]) or "") for r in rows)]
-    widths = {key: max([len(title)] + [len(str(r.get(key) or "")) for r in rows]) for key, title in columns}
+    columns = [
+        c
+        for c in STRUCTURE_COLUMNS
+        if c[0] in ("section", "bars")
+        or any(str(r.get(c[0]) or "") for r in rows)
+    ]
+    widths = {
+        key: max([len(title)] + [len(str(r.get(key) or "")) for r in rows])
+        for key, title in columns
+    }
     available = width - 2 * (len(columns) - 1)
     while sum(widths.values()) > available:
-        key = max((k for k, _ in columns if k != "bars"), key=lambda k: widths[k])
+        key = max(
+            (k for k, _ in columns if k != "bars"), key=lambda k: widths[k]
+        )
         if widths[key] <= MIN_COLUMN:
             break
         widths[key] -= 1
     lines = [[title.ljust(widths[key]) for key, title in columns]]
     for row in rows:
-        cells = [textwrap.wrap(str(row.get(key) or ""), widths[key], break_on_hyphens=False) or [""] for key, _ in columns]
+        cells = [
+            textwrap.wrap(
+                str(row.get(key) or ""), widths[key], break_on_hyphens=False
+            )
+            or [""]
+            for key, _ in columns
+        ]
         for parts in zip_longest(*cells, fillvalue=""):
-            lines.append([part.ljust(widths[key]) for part, (key, _) in zip(parts, columns)])
+            lines.append(
+                [
+                    part.ljust(widths[key])
+                    for part, (key, _) in zip(parts, columns)
+                ]
+            )
         lines[-1].append("")
     return lines
 
 
-def set_structure_page(score: ScoreFile, heading: str, rows: Sequence[Dict[str, Any]],
-                       song: Optional[str] = None, artist: Optional[str] = None,
-                       font: str = TABLE_FONT) -> Dict[str, Any]:
+def set_structure_page(
+    score: ScoreFile,
+    heading: str,
+    rows: Sequence[Dict[str, Any]],
+    song: Optional[str] = None,
+    artist: Optional[str] = None,
+    font: str = TABLE_FONT,
+) -> Dict[str, Any]:
     """Write the song structure as a table on a new page at the end.
 
     The page replaces an earlier one, and the table comes under the heading and a "song - artist" line (by default the title of the title frame, and its composer or,
@@ -294,7 +368,11 @@ def set_structure_page(score: ScoreFile, heading: str, rows: Sequence[Dict[str, 
     rich = _Rich(ET.SubElement(text, "text"))
     header = header_texts(score)
     song = header.get("title", "") if song is None else song
-    artist = (header.get("composer") or header.get("subtitle") or "") if artist is None else artist
+    artist = (
+        (header.get("composer") or header.get("subtitle") or "")
+        if artist is None
+        else artist
+    )
     rich.tag("font", size="16")
     rich.tag("b", heading)
     if song or artist:
@@ -322,13 +400,15 @@ def set_structure_page(score: ScoreFile, heading: str, rows: Sequence[Dict[str, 
             rich.tag("font", size="10")
         rich.tag("br")
         ends_row = len(cells) > len(header)
-        cells = cells[:len(header)]
+        cells = cells[: len(header)]
         first = cells[0].replace(" ", NBSP)
         if starts_row and first.strip(NBSP):
             rich.tag("b", first)
         else:
             rich.text(first)
-        rich.text((NBSP * 2 + (NBSP * 2).join(cells[1:])).rstrip().replace(" ", NBSP))
+        rich.text(
+            (NBSP * 2 + (NBSP * 2).join(cells[1:])).rstrip().replace(" ", NBSP)
+        )
         starts_row = ends_row
     bars = [_row_bars(r) for r in rows]
     counted_bars = [b for b in bars if b is not None]
@@ -336,4 +416,9 @@ def set_structure_page(score: ScoreFile, heading: str, rows: Sequence[Dict[str, 
         rich.tag("br")
         rich.tag("br")
         rich.text(f"Total: {sum(counted_bars)} bars")
-    return {"replaced": int(structure is not None), "rows": len(rows), "song": song, "artist": artist}
+    return {
+        "replaced": int(structure is not None),
+        "rows": len(rows),
+        "song": song,
+        "artist": artist,
+    }

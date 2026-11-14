@@ -8,9 +8,16 @@ import pytest
 
 from dev.plugin_harness import find_musescore, run
 
-JAZZ = Path(__file__).resolve().parent.parent / "examples" / "jazz piano" / "Jazz Piano.mscz"
+JAZZ = (
+    Path(__file__).resolve().parent.parent
+    / "examples"
+    / "jazz piano"
+    / "Jazz Piano.mscz"
+)
 
-pytestmark = pytest.mark.skipif(find_musescore() is None, reason="MuseScore not installed")
+pytestmark = pytest.mark.skipif(
+    find_musescore() is None, reason="MuseScore not installed"
+)
 
 
 def results_by_action(results):
@@ -19,53 +26,133 @@ def results_by_action(results):
 
 def text_lines(path):
     with zipfile.ZipFile(path) as z:
-        name = next(n for n in z.namelist() if n.endswith(".mscx") and "/" not in n)
+        name = next(
+            n for n in z.namelist() if n.endswith(".mscx") and "/" not in n
+        )
         return z.read(name).decode("utf-8").count('<Spanner type="TextLine">')
 
 
 def test_score_reading_reports_parts_and_ranges():
-    results = results_by_action(run([
-        {"action": "getScore", "params": {"startMeasure": 2, "endMeasure": 3, "staves": [1]}},
-    ], JAZZ))
+    results = results_by_action(
+        run(
+            [
+                {
+                    "action": "getScore",
+                    "params": {
+                        "startMeasure": 2,
+                        "endMeasure": 3,
+                        "staves": [1],
+                    },
+                },
+            ],
+            JAZZ,
+        )
+    )
     analysis = results["getScore"]["analysis"]
     assert [m["measure"] for m in analysis["measures"]] == [2, 3]
     assert analysis["measures"][0]["durationTicks"] == 1440  # 3/4
     assert analysis["staves"] == [
-        {**analysis["staves"][0], "index": 1, "partName": "Piano", "isDrums": False}
+        {
+            **analysis["staves"][0],
+            "index": 1,
+            "partName": "Piano",
+            "isDrums": False,
+        }
     ]
     assert analysis["measures"][0]["elements"]["staff1"]
 
 
 def test_highlights_are_added_to_the_score(tmp_path):
     out = tmp_path / "out.mscz"
-    results = results_by_action(run([
-        {"action": "highlightNotes", "params": {"startMeasure": 1, "endMeasure": 1, "startStaff": 0, "endStaff": 1}},
-        {"action": "highlightSymbols", "params": {"startMeasure": 1, "endMeasure": 1}},
-        {"action": "addHighlight", "params": {"startMeasure": 2, "endMeasure": 2, "startStaff": 1, "endStaff": 2}},
-    ], JAZZ, out=out))
+    results = results_by_action(
+        run(
+            [
+                {
+                    "action": "highlightNotes",
+                    "params": {
+                        "startMeasure": 1,
+                        "endMeasure": 1,
+                        "startStaff": 0,
+                        "endStaff": 1,
+                    },
+                },
+                {
+                    "action": "highlightSymbols",
+                    "params": {"startMeasure": 1, "endMeasure": 1},
+                },
+                {
+                    "action": "addHighlight",
+                    "params": {
+                        "startMeasure": 2,
+                        "endMeasure": 2,
+                        "startStaff": 1,
+                        "endStaff": 2,
+                    },
+                },
+            ],
+            JAZZ,
+            out=out,
+        )
+    )
     assert results["highlightNotes"]["boxes"] >= 1
     assert results["highlightSymbols"]["found"]["time_signatures"] == 2
     assert results["addHighlight"]["placedSegments"] == 1
-    boxes = results["highlightNotes"]["boxes"] + results["highlightSymbols"]["boxes"] + 1
-    assert text_lines(out) == 2 * boxes  # every line is stored with a start and an end tag
+    boxes = (
+        results["highlightNotes"]["boxes"]
+        + results["highlightSymbols"]["boxes"]
+        + 1
+    )
+    assert (
+        text_lines(out) == 2 * boxes
+    )  # every line is stored with a start and an end tag
 
 
 def test_clear_highlights_removes_them(tmp_path):
     out = tmp_path / "out.mscz"
-    results = run([
-        {"action": "highlightNotes", "params": {"startMeasure": 1, "endMeasure": 2, "startStaff": 0, "endStaff": 1}},
-        {"action": "clearHighlights", "params": {"startMeasure": 1, "endMeasure": 2}},
-    ], JAZZ, out=out)
+    results = run(
+        [
+            {
+                "action": "highlightNotes",
+                "params": {
+                    "startMeasure": 1,
+                    "endMeasure": 2,
+                    "startStaff": 0,
+                    "endStaff": 1,
+                },
+            },
+            {
+                "action": "clearHighlights",
+                "params": {"startMeasure": 1, "endMeasure": 2},
+            },
+        ],
+        JAZZ,
+        out=out,
+    )
     assert results[1]["result"]["removed"] == results[0]["result"]["boxes"]
     assert text_lines(out) == 0
 
 
 def test_go_to_measure_moves_the_cursor_there():
-    results = results_by_action(run([
-        {"action": "goToMeasure", "params": {"measure": 3}},
-        {"action": "setTimeSignature", "params": {"numerator": 2, "denominator": 4}},
-        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 3, "includeElements": False}},
-    ], JAZZ))
+    results = results_by_action(
+        run(
+            [
+                {"action": "goToMeasure", "params": {"measure": 3}},
+                {
+                    "action": "setTimeSignature",
+                    "params": {"numerator": 2, "denominator": 4},
+                },
+                {
+                    "action": "getScore",
+                    "params": {
+                        "startMeasure": 1,
+                        "endMeasure": 3,
+                        "includeElements": False,
+                    },
+                },
+            ],
+            JAZZ,
+        )
+    )
     selection = results["goToMeasure"]["currentSelection"]
     assert selection["startTick"] == 2 * 1440  # bars 1-2 are in 3/4
     assert (selection["startStaff"], selection["endStaff"]) == (0, 2)
@@ -74,17 +161,41 @@ def test_go_to_measure_moves_the_cursor_there():
 
 
 def test_errors_come_back_as_results():
-    (result,) = run([{"action": "colorRange", "params": {"startMeasure": 99}}], JAZZ)
+    (result,) = run(
+        [{"action": "colorRange", "params": {"startMeasure": 99}}], JAZZ
+    )
     assert "Invalid measure range" in result["result"]["error"]
 
 
 def test_bars_are_numbered_as_played():
-    results = results_by_action(run([
-        {"action": "setRepeatBarlines", "params": {"startMeasure": 2, "endMeasure": 3, "playCount": 3}},
-        {"action": "numberAsPlayed", "params": {}},
-        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 6, "includeElements": False}},
-    ], JAZZ))
-    assert [(o["measure"], o["addToNumber"]) for o in results["numberAsPlayed"]["offsets"]] == [(4, 4)]
+    results = results_by_action(
+        run(
+            [
+                {
+                    "action": "setRepeatBarlines",
+                    "params": {
+                        "startMeasure": 2,
+                        "endMeasure": 3,
+                        "playCount": 3,
+                    },
+                },
+                {"action": "numberAsPlayed", "params": {}},
+                {
+                    "action": "getScore",
+                    "params": {
+                        "startMeasure": 1,
+                        "endMeasure": 6,
+                        "includeElements": False,
+                    },
+                },
+            ],
+            JAZZ,
+        )
+    )
+    assert [
+        (o["measure"], o["addToNumber"])
+        for o in results["numberAsPlayed"]["offsets"]
+    ] == [(4, 4)]
     measures = results["getScore"]["analysis"]["measures"]
     assert [m["number"] for m in measures] == [1, 2, 3, 8, 9, 10]
     assert measures[1]["repeatStart"] is True and measures[2]["repeatEnd"] == 3
@@ -92,50 +203,160 @@ def test_bars_are_numbered_as_played():
 
 def test_add_text_is_styled(tmp_path):
     out = tmp_path / "out.mscz"
-    (entry,) = run([{"action": "addText", "params": {
-        "measure": 2, "text": "Cue", "fontSize": 8, "italic": True, "color": "#9E9E9E", "placement": "below"}}],
-        JAZZ, out=out)
+    (entry,) = run(
+        [
+            {
+                "action": "addText",
+                "params": {
+                    "measure": 2,
+                    "text": "Cue",
+                    "fontSize": 8,
+                    "italic": True,
+                    "color": "#9E9E9E",
+                    "placement": "below",
+                },
+            }
+        ],
+        JAZZ,
+        out=out,
+    )
     assert entry["result"]["success"]
     with zipfile.ZipFile(out) as z:
-        name = next(n for n in z.namelist() if n.endswith(".mscx") and "/" not in n)
+        name = next(
+            n for n in z.namelist() if n.endswith(".mscx") and "/" not in n
+        )
         xml = z.read(name).decode("utf-8")
-    staff_text = xml[xml.index("<StaffText>"):xml.index("</StaffText>")]
+    staff_text = xml[xml.index("<StaffText>") : xml.index("</StaffText>")]
     assert "<size>8</size>" in staff_text and "<italic>1</italic>" in staff_text
     assert '<color r="158" g="158" b="158"' in staff_text
     assert "<placement>below</placement>" in staff_text and "Cue" in staff_text
 
 
 def test_added_texts_and_marks_can_be_removed():
-    results = run([
-        {"action": "setTempo", "params": {"bpm": 146, "measure": 1}},
-        {"action": "addRehearsalMark", "params": {"measure": 2, "text": "Verse"}},
-        {"action": "addText", "params": {"measure": 1, "text": "* crash on 1st time only", "fontSize": 8, "italic": True}},
-        {"action": "addText", "params": {"measure": 3, "text": "**"}},
-        {"action": "addLabel", "params": {"measure": 5, "text": "Groove x7"}},
-        {"action": "addVolta", "params": {"startMeasure": 6, "endMeasure": 6}},
-        {"action": "removeAnnotations", "params": {"startMeasure": 1, "endMeasure": 8, "kinds": ["texts"], "contains": "**"}},
-        {"action": "removeAnnotations", "params": {
-            "startMeasure": 1, "endMeasure": 8, "kinds": ["texts", "labels", "rehearsal_marks", "tempo", "voltas"]}},
-        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 8, "staves": [0]}},
-    ], JAZZ)
+    results = run(
+        [
+            {"action": "setTempo", "params": {"bpm": 146, "measure": 1}},
+            {
+                "action": "addRehearsalMark",
+                "params": {"measure": 2, "text": "Verse"},
+            },
+            {
+                "action": "addText",
+                "params": {
+                    "measure": 1,
+                    "text": "* crash on 1st time only",
+                    "fontSize": 8,
+                    "italic": True,
+                },
+            },
+            {"action": "addText", "params": {"measure": 3, "text": "**"}},
+            {
+                "action": "addLabel",
+                "params": {"measure": 5, "text": "Groove x7"},
+            },
+            {
+                "action": "addVolta",
+                "params": {"startMeasure": 6, "endMeasure": 6},
+            },
+            {
+                "action": "removeAnnotations",
+                "params": {
+                    "startMeasure": 1,
+                    "endMeasure": 8,
+                    "kinds": ["texts"],
+                    "contains": "**",
+                },
+            },
+            {
+                "action": "removeAnnotations",
+                "params": {
+                    "startMeasure": 1,
+                    "endMeasure": 8,
+                    "kinds": [
+                        "texts",
+                        "labels",
+                        "rehearsal_marks",
+                        "tempo",
+                        "voltas",
+                    ],
+                },
+            },
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 8, "staves": [0]},
+            },
+        ],
+        JAZZ,
+    )
     assert results[6]["result"]["removed"]["texts"] == 1
-    assert results[7]["result"]["removed"] == {"texts": 1, "labels": 1, "rehearsal_marks": 1, "tempo": 1, "voltas": 1}
-    assert not any(m["markings"] for m in results[8]["result"]["analysis"]["measures"])
+    assert results[7]["result"]["removed"] == {
+        "texts": 1,
+        "labels": 1,
+        "rehearsal_marks": 1,
+        "tempo": 1,
+        "voltas": 1,
+    }
+    assert not any(
+        m["markings"] for m in results[8]["result"]["analysis"]["measures"]
+    )
 
 
 def test_articulations_and_ghost_notes(tmp_path):
     out = tmp_path / "out.mscz"
-    results = results_by_action(run([
-        {"action": "addArticulation", "params": {"startMeasure": 1, "endMeasure": 1, "symbol": "half_open"}},
-        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1, "staves": [0]}},
-        {"action": "removeArticulations", "params": {"startMeasure": 1, "endMeasure": 1}},
-        {"action": "ghostNotes", "params": {"startMeasure": 1, "endMeasure": 8, "mode": "list"}},
-    ], JAZZ, out=out))
+    results = results_by_action(
+        run(
+            [
+                {
+                    "action": "addArticulation",
+                    "params": {
+                        "startMeasure": 1,
+                        "endMeasure": 1,
+                        "symbol": "half_open",
+                    },
+                },
+                {
+                    "action": "getScore",
+                    "params": {
+                        "startMeasure": 1,
+                        "endMeasure": 1,
+                        "staves": [0],
+                    },
+                },
+                {
+                    "action": "removeArticulations",
+                    "params": {"startMeasure": 1, "endMeasure": 1},
+                },
+                {
+                    "action": "ghostNotes",
+                    "params": {
+                        "startMeasure": 1,
+                        "endMeasure": 8,
+                        "mode": "list",
+                    },
+                },
+            ],
+            JAZZ,
+            out=out,
+        )
+    )
     assert results["addArticulation"]["added"] > 0
-    chords = [e for e in results["getScore"]["analysis"]["measures"][0]["elements"]["staff0"] if e["name"] == "Chord"]
+    chords = [
+        e
+        for e in results["getScore"]["analysis"]["measures"][0]["elements"][
+            "staff0"
+        ]
+        if e["name"] == "Chord"
+    ]
     assert all(e.get("articulations") == ["half_open"] for e in chords)
-    assert results["removeArticulations"]["removed"] == results["addArticulation"]["added"]
-    assert results["ghostNotes"] == {"success": True, "ghostNotes": 0, "bars": []}
+    assert (
+        results["removeArticulations"]["removed"]
+        == results["addArticulation"]["added"]
+    )
+    assert results["ghostNotes"] == {
+        "success": True,
+        "ghostNotes": 0,
+        "bars": [],
+    }
 
 
 def test_remove_parts_keeps_system_texts_of_the_removed_top_staff(tmp_path):
@@ -151,27 +372,51 @@ def test_remove_parts_keeps_system_texts_of_the_removed_top_staff(tmp_path):
     out_dir = tmp_path / "out"  # the CLI clears the folder it writes into
     out_dir.mkdir()
     out = out_dir / "out.mscz"
-    results = results_by_action(run([{"action": "removeParts", "params": {"keepStaves": [3]}}], source, out=out))
+    results = results_by_action(
+        run(
+            [{"action": "removeParts", "params": {"keepStaves": [3]}}],
+            source,
+            out=out,
+        )
+    )
     assert results["removeParts"]["numStaves"] == 1
     (staff,) = ScoreFile(out).staves()
 
     def texts(tag):
-        return ["".join(e.findall("text")[0].itertext()) for e in staff.iter(tag)]
+        return [
+            "".join(e.findall("text")[0].itertext()) for e in staff.iter(tag)
+        ]
 
     assert texts("RehearsalMark") == ["A", "B"] and "q = 90" in texts("Tempo")
-    assert staff[0].tag == "VBox" and staff.findall("Measure")[1].find("startRepeat") is not None
+    assert (
+        staff[0].tag == "VBox"
+        and staff.findall("Measure")[1].find("startRepeat") is not None
+    )
 
 
 def test_export_makes_a_musicxml_copy_without_saving(tmp_path):
     """make_part_score(in_place=True) backs up the full score this way (writeScore can't write .mscz in 4.7)."""
     export = tmp_path / "full.mxl"
-    results = results_by_action(run([
-        {"action": "exportScore", "params": {"path": str(export)}},
-        {"action": "exportScore", "params": {"path": str(tmp_path / "full.mscz")}},
-    ], JAZZ))
-    assert results["exportScore"]["error"].startswith("MuseScore files cannot be exported")  # the last result wins
+    results = results_by_action(
+        run(
+            [
+                {"action": "exportScore", "params": {"path": str(export)}},
+                {
+                    "action": "exportScore",
+                    "params": {"path": str(tmp_path / "full.mscz")},
+                },
+            ],
+            JAZZ,
+        )
+    )
+    assert results["exportScore"]["error"].startswith(
+        "MuseScore files cannot be exported"
+    )  # the last result wins
     with zipfile.ZipFile(export) as z:
-        assert any(name.endswith(".xml") and "META-INF" not in name for name in z.namelist())
+        assert any(
+            name.endswith(".xml") and "META-INF" not in name
+            for name in z.namelist()
+        )
 
 
 def test_coloring_includes_flams(tmp_path):
@@ -180,18 +425,44 @@ def test_coloring_includes_flams(tmp_path):
     from tests.test_rolls import chord, write_score
 
     flam = "<Chord><acciaccatura/><durationType>eighth</durationType><Note><pitch>38</pitch><tpc>16</tpc></Note></Chord>"
-    source = write_score(tmp_path, [flam + chord("quarter", 38) + chord("quarter", 36) * 3])
+    source = write_score(
+        tmp_path, [flam + chord("quarter", 38) + chord("quarter", 36) * 3]
+    )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     out = out_dir / "out.mscz"
-    results = results_by_action(run([{"action": "colorRange", "params": {
-        "startMeasure": 1, "endMeasure": 1, "endBeat": 1, "color": "#2ca02c"}}], source, out=out))
-    assert results["colorRange"]["colored"] == 2  # the snare and its flam, not the kicks after beat 1
-    chords = ScoreFile(out).staves()[0].findall("Measure/voice")[0].findall("Chord")
+    results = results_by_action(
+        run(
+            [
+                {
+                    "action": "colorRange",
+                    "params": {
+                        "startMeasure": 1,
+                        "endMeasure": 1,
+                        "endBeat": 1,
+                        "color": "#2ca02c",
+                    },
+                }
+            ],
+            source,
+            out=out,
+        )
+    )
+    assert (
+        results["colorRange"]["colored"] == 2
+    )  # the snare and its flam, not the kicks after beat 1
+    chords = (
+        ScoreFile(out).staves()[0].findall("Measure/voice")[0].findall("Chord")
+    )
     grace, main, kick = chords[:3]
     assert grace.find("acciaccatura") is not None
     for colored in (grace, main):
-        assert colored.findall("Note/color")[0].attrib == {"r": "44", "g": "160", "b": "44", "a": "255"}
+        assert colored.findall("Note/color")[0].attrib == {
+            "r": "44",
+            "g": "160",
+            "b": "44",
+            "a": "255",
+        }
     assert kick.find("Note/color") is None
 
 
@@ -206,14 +477,42 @@ def test_beam_over_rests_inside_dotted_quarter_groups(tmp_path):
 
     rest = "<Rest><durationType>eighth</durationType></Rest>"
     hat, kick = chord("eighth", 42), chord("eighth", 36, 42)
-    source = write_score(tmp_path, [kick + rest + hat + rest + hat + hat + kick + hat + hat + kick + hat + rest])
-    source.write_text(source.read_text().replace("<sigN>4</sigN><sigD>4</sigD>", "<sigN>12</sigN><sigD>8</sigD>"))
+    source = write_score(
+        tmp_path,
+        [
+            kick
+            + rest
+            + hat
+            + rest
+            + hat
+            + hat
+            + kick
+            + hat
+            + hat
+            + kick
+            + hat
+            + rest
+        ],
+    )
+    source.write_text(
+        source.read_text().replace(
+            "<sigN>4</sigN><sigD>4</sigD>", "<sigN>12</sigN><sigD>8</sigD>"
+        )
+    )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     out = out_dir / "out.mscz"
-    results = results_by_action(run([{"action": "beamOverRests", "params": {"startMeasure": 1}}], source, out=out))
+    results = results_by_action(
+        run(
+            [{"action": "beamOverRests", "params": {"startMeasure": 1}}],
+            source,
+            out=out,
+        )
+    )
     assert results["beamOverRests"]["changed"] == 1
-    rests = ScoreFile(out).staves()[0].findall("Measure/voice")[0].findall("Rest")
+    rests = (
+        ScoreFile(out).staves()[0].findall("Measure/voice")[0].findall("Rest")
+    )
     assert [r.findtext("BeamMode") for r in rests] == ["mid", None, None]
 
 
@@ -227,21 +526,50 @@ def test_section_counts_sit_next_to_the_section_label(tmp_path):
     from tests.test_rolls import chord, write_score
 
     mark = "<RehearsalMark><text>Verse 1</text></RehearsalMark><StaffText><text>*</text></StaffText>"
-    source = write_score(tmp_path, [mark + chord("quarter", 36, 42) * 4, chord("quarter", 36, 42) * 4])
+    source = write_score(
+        tmp_path,
+        [mark + chord("quarter", 36, 42) * 4, chord("quarter", 36, 42) * 4],
+    )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     out = out_dir / "out.mscz"
     beside = {"mode": "beside"}
-    results = run([{"action": "addSectionCounts", "params": {"counts": [{"measure": 1, "text": "2x4+2"}], **beside}},
-                   {"action": "addSectionCounts", "params": {"counts": [{"measure": 1, "text": "(3x4)"}], **beside}}],
-                  source, out=out)
+    results = run(
+        [
+            {
+                "action": "addSectionCounts",
+                "params": {
+                    "counts": [{"measure": 1, "text": "2x4+2"}],
+                    **beside,
+                },
+            },
+            {
+                "action": "addSectionCounts",
+                "params": {
+                    "counts": [{"measure": 1, "text": "(3x4)"}],
+                    **beside,
+                },
+            },
+        ],
+        source,
+        out=out,
+    )
     assert [r["result"]["removed"] for r in results] == [0, 1]
-    texts = ScoreFile(out).staves()[0].findall("Measure/voice")[0].findall("StaffText")
+    texts = (
+        ScoreFile(out)
+        .staves()[0]
+        .findall("Measure/voice")[0]
+        .findall("StaffText")
+    )
     plain = ["".join(t.findall("text")[0].itertext()) for t in texts]
     assert sorted(plain) == ["*", "3x4"]
     count = texts[plain.index("3x4")]
-    assert count.findtext("autoplace") == "0" and count.find("offset") is not None
-    assert count.findtext("bold") == "1" and count.findall("color")[0].attrib == {"r": "214", "g": "39", "b": "40", "a": "255"}
+    assert (
+        count.findtext("autoplace") == "0" and count.find("offset") is not None
+    )
+    assert count.findtext("bold") == "1" and count.findall("color")[
+        0
+    ].attrib == {"r": "214", "g": "39", "b": "40", "a": "255"}
 
 
 def test_section_counts_in_the_label_replace_counts_beside_it(tmp_path):
@@ -250,16 +578,45 @@ def test_section_counts_in_the_label_replace_counts_beside_it(tmp_path):
 
     mark = "<RehearsalMark><text>Chorus 4</text></RehearsalMark>"
     stale = "<StaffText><bold>1</bold><text>4+2</text></StaffText>"  # a count left on another bar earlier
-    source = write_score(tmp_path, [mark + chord("quarter", 36, 42) * 4, stale + chord("quarter", 36, 42) * 4])
+    source = write_score(
+        tmp_path,
+        [
+            mark + chord("quarter", 36, 42) * 4,
+            stale + chord("quarter", 36, 42) * 4,
+        ],
+    )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     out = out_dir / "out.mscz"
-    run([{"action": "addSectionCounts", "params": {"counts": [{"measure": 1, "text": "4"}], "mode": "beside"}},
-         {"action": "addSectionCounts", "params": {"counts": [{"measure": 1, "text": "2x4"}]}},
-         {"action": "addSectionCounts", "params": {"counts": [{"measure": 1, "text": "(4+2)"}], "clearAll": True}}],
-        source, out=out)
+    run(
+        [
+            {
+                "action": "addSectionCounts",
+                "params": {
+                    "counts": [{"measure": 1, "text": "4"}],
+                    "mode": "beside",
+                },
+            },
+            {
+                "action": "addSectionCounts",
+                "params": {"counts": [{"measure": 1, "text": "2x4"}]},
+            },
+            {
+                "action": "addSectionCounts",
+                "params": {
+                    "counts": [{"measure": 1, "text": "(4+2)"}],
+                    "clearAll": True,
+                },
+            },
+        ],
+        source,
+        out=out,
+    )
     staff = ScoreFile(out).staves()[0]
-    assert "".join(staff.findall("Measure/voice/RehearsalMark/text")[0].itertext()) == "Chorus 4 (4+2)"
+    assert (
+        "".join(staff.findall("Measure/voice/RehearsalMark/text")[0].itertext())
+        == "Chorus 4 (4+2)"
+    )
     assert not list(staff.iter("StaffText"))
 
 
@@ -268,17 +625,37 @@ def test_delete_measures_inside_a_multi_measure_rest(tmp_path):
     from tests.test_rolls import chord, write_score
 
     rest = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
-    source = write_score(tmp_path, [chord("whole", 49)] + [rest] * 4 + [chord("whole", 38)])
+    source = write_score(
+        tmp_path, [chord("whole", 49)] + [rest] * 4 + [chord("whole", 38)]
+    )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
-    results = results_by_action(run([
-        {"action": "setStyle", "params": {"key": "createMultiMeasureRests", "value": True}},
-        {"action": "deleteMeasures", "params": {"startMeasure": 3, "endMeasure": 4}},
-        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1, "includeElements": False}},
-    ], source, out=out_dir / "out.mscz"))
+    results = results_by_action(
+        run(
+            [
+                {
+                    "action": "setStyle",
+                    "params": {"key": "createMultiMeasureRests", "value": True},
+                },
+                {
+                    "action": "deleteMeasures",
+                    "params": {"startMeasure": 3, "endMeasure": 4},
+                },
+                {
+                    "action": "getScore",
+                    "params": {
+                        "startMeasure": 1,
+                        "endMeasure": 1,
+                        "includeElements": False,
+                    },
+                },
+            ],
+            source,
+            out=out_dir / "out.mscz",
+        )
+    )
     assert results["deleteMeasures"]["numMeasures"] == 4
     assert results["getScore"]["analysis"]["numMeasures"] == 4
-
 
 
 TPC_BY_PITCH_CLASS = [14, 21, 16, 23, 18, 13, 20, 15, 22, 17, 24, 19]
@@ -317,7 +694,10 @@ def bars_of(get_score_result):
 
 def ties(element):
     """{pitch: (tieForward, tieBack)} for a chord element from getScore."""
-    return {n["pitchMidi"]: (n.get("tieForward", False), n.get("tieBack", False)) for n in element["notes"]}
+    return {
+        n["pitchMidi"]: (n.get("tieForward", False), n.get("tieBack", False))
+        for n in element["notes"]
+    }
 
 
 def test_get_score_reports_ties_per_note(tmp_path):
@@ -325,16 +705,36 @@ def test_get_score_reports_ties_per_note(tmp_path):
     # Bar 1: C-E-G with only C and E tied into C-E-A, then a D tied across the barline into bar 2
     source = tie_score(
         tmp_path,
-        xml_chord("quarter", xml_note(60, ahead="1/4"), xml_note(64, ahead="1/4"), 67)
-        + xml_chord("quarter", xml_note(60, back="1/4"), xml_note(64, back="1/4"), 69)
+        xml_chord(
+            "quarter", xml_note(60, ahead="1/4"), xml_note(64, ahead="1/4"), 67
+        )
+        + xml_chord(
+            "quarter", xml_note(60, back="1/4"), xml_note(64, back="1/4"), 69
+        )
         + xml_chord("half", xml_note(62, ahead="1/2")),
         xml_chord("whole", xml_note(62, back="1/2")),
     )
-    (entry,) = run([{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}], source)
+    (entry,) = run(
+        [
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 2},
+            }
+        ],
+        source,
+    )
     bar_1, bar_2 = bars_of(entry["result"])
 
-    assert ties(bar_1[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
-    assert ties(bar_1[1]) == {60: (False, True), 64: (False, True), 69: (False, False)}
+    assert ties(bar_1[0]) == {
+        60: (True, False),
+        64: (True, False),
+        67: (False, False),
+    }
+    assert ties(bar_1[1]) == {
+        60: (False, True),
+        64: (False, True),
+        69: (False, False),
+    }
     assert ties(bar_1[2]) == {62: (True, False)}
     assert ties(bar_2[0]) == {62: (False, True)}
     assert [e["isTie"] for e in bar_1 + bar_2] == [True, False, True, False]
@@ -343,106 +743,244 @@ def test_get_score_reports_ties_per_note(tmp_path):
 def test_add_tie_partial_chord_then_across_the_barline(tmp_path):
     source = tie_score(
         tmp_path,
-        xml_chord("quarter", 60, 64, 67) + xml_chord("quarter", 60, 64, 69) + xml_chord("half", 62),
+        xml_chord("quarter", 60, 64, 67)
+        + xml_chord("quarter", 60, 64, 69)
+        + xml_chord("half", 62),
         xml_chord("whole", 62),
     )
-    results = run([
-        {"action": "addTie", "params": {"pitches": [60, 64]}},  # the cursor starts on the first chord
-        {"action": "nextElement", "params": {}},  # addTie left the cursor on C-E-A; move on to the D
-        {"action": "addTie", "params": {}},
-        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}},
-    ], source)
+    results = run(
+        [
+            {
+                "action": "addTie",
+                "params": {"pitches": [60, 64]},
+            },  # the cursor starts on the first chord
+            {
+                "action": "nextElement",
+                "params": {},
+            },  # addTie left the cursor on C-E-A; move on to the D
+            {"action": "addTie", "params": {}},
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 2},
+            },
+        ],
+        source,
+    )
     partial, _, across, score = (r["result"] for r in results)
     assert (partial["tiedPitches"], partial["skippedPitches"]) == ([60, 64], [])
     assert across["tiedPitches"] == [62]
     bar_1, bar_2 = bars_of(score)
-    assert ties(bar_1[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
-    assert ties(bar_1[1]) == {60: (False, True), 64: (False, True), 69: (False, False)}
-    assert ties(bar_1[2]) == {62: (True, False)} and ties(bar_2[0]) == {62: (False, True)}
-    assert [e["durationTicks"] for e in bar_1 + bar_2] == [480, 480, 960, 1920]  # no notes inserted
+    assert ties(bar_1[0]) == {
+        60: (True, False),
+        64: (True, False),
+        67: (False, False),
+    }
+    assert ties(bar_1[1]) == {
+        60: (False, True),
+        64: (False, True),
+        69: (False, False),
+    }
+    assert ties(bar_1[2]) == {62: (True, False)} and ties(bar_2[0]) == {
+        62: (False, True)
+    }
+    assert [e["durationTicks"] for e in bar_1 + bar_2] == [
+        480,
+        480,
+        960,
+        1920,
+    ]  # no notes inserted
 
 
 def test_add_tie_default_pitches_skip_the_ones_not_in_the_next_chord(tmp_path):
-    source = tie_score(tmp_path, xml_chord("quarter", 60, 64, 67) + xml_chord("quarter", 60, 64, 69)
-                       + xml_chord("half", 62))
-    added, score = (r["result"] for r in run([
-        {"action": "addTie", "params": {}},
-        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}},
-    ], source))
+    source = tie_score(
+        tmp_path,
+        xml_chord("quarter", 60, 64, 67)
+        + xml_chord("quarter", 60, 64, 69)
+        + xml_chord("half", 62),
+    )
+    added, score = (
+        r["result"]
+        for r in run(
+            [
+                {"action": "addTie", "params": {}},
+                {
+                    "action": "getScore",
+                    "params": {"startMeasure": 1, "endMeasure": 1},
+                },
+            ],
+            source,
+        )
+    )
     assert (added["tiedPitches"], added["skippedPitches"]) == ([60, 64], [67])
     (bar,) = bars_of(score)
-    assert ties(bar[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
+    assert ties(bar[0]) == {
+        60: (True, False),
+        64: (True, False),
+        67: (False, False),
+    }
 
 
 def test_add_tie_chain(tmp_path):
     source = tie_score(tmp_path, xml_chord("quarter", 60) * 4)
-    results = run([{"action": "addTie", "params": {}}] * 3
-                  + [{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}], source)
+    results = run(
+        [{"action": "addTie", "params": {}}] * 3
+        + [
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 1},
+            }
+        ],
+        source,
+    )
     (bar,) = bars_of(results[-1]["result"])
-    assert [ties(e)[60] for e in bar] == [(True, False), (True, True), (True, True), (False, True)]
+    assert [ties(e)[60] for e in bar] == [
+        (True, False),
+        (True, True),
+        (True, True),
+        (False, True),
+    ]
     # Each addTie reports the chord it moved the cursor to: the one it tied to
-    assert [r["result"]["currentSelection"]["startTick"] for r in results[:3]] == [480, 960, 1440]
+    assert [
+        r["result"]["currentSelection"]["startTick"] for r in results[:3]
+    ] == [480, 960, 1440]
     (reported,) = results[0]["result"]["currentSelection"]["elements"]["staff0"]
-    assert ties(reported) == {60: (False, True)}  # the reported chord already shows its tie back
+    assert ties(reported) == {
+        60: (False, True)
+    }  # the reported chord already shows its tie back
 
 
 def test_add_tie_errors_leave_the_music_unchanged(tmp_path):
     """MuseScore's tie command would insert a new tied note here and overwrite the next one."""
     rest = "<Rest><durationType>quarter</durationType></Rest>"
-    source = tie_score(tmp_path, xml_chord("quarter", 60) + xml_chord("quarter", 62) + xml_chord("quarter", 64) + rest)
-    results = run([
-        {"action": "addTie", "params": {}},  # C, then D: no matching pitch
-        {"action": "addTie", "params": {"pitches": [62]}},  # D is not in the chord at the cursor
-        {"action": "nextElement", "params": {"numElements": 2}},
-        {"action": "addTie", "params": {}},  # E, then a rest
-        {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}},
-    ], source)
-    no_match, not_in_chord, _, before_rest, score = (r["result"] for r in results)
-    assert no_match["error"].startswith("No pitch to tie: the chord at the cursor has [60], the next chord has [62]")
+    source = tie_score(
+        tmp_path,
+        xml_chord("quarter", 60)
+        + xml_chord("quarter", 62)
+        + xml_chord("quarter", 64)
+        + rest,
+    )
+    results = run(
+        [
+            {"action": "addTie", "params": {}},  # C, then D: no matching pitch
+            {
+                "action": "addTie",
+                "params": {"pitches": [62]},
+            },  # D is not in the chord at the cursor
+            {"action": "nextElement", "params": {"numElements": 2}},
+            {"action": "addTie", "params": {}},  # E, then a rest
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 1},
+            },
+        ],
+        source,
+    )
+    no_match, not_in_chord, _, before_rest, score = (
+        r["result"] for r in results
+    )
+    assert no_match["error"].startswith(
+        "No pitch to tie: the chord at the cursor has [60], the next chord has [62]"
+    )
     assert "requested [62]" in not_in_chord["error"]
     assert "rest" in before_rest["error"]
     (bar,) = bars_of(score)
-    assert [(e["name"], e["durationTicks"]) for e in bar] == [("Chord", 480)] * 3 + [("Rest", 480)]
+    assert [(e["name"], e["durationTicks"]) for e in bar] == [
+        ("Chord", 480)
+    ] * 3 + [("Rest", 480)]
     assert not any(e["isTie"] for e in bar)
 
 
-REST_BAR = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
+REST_BAR = (
+    "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
+)
 QUARTER, EIGHTH, HALF = ({"numerator": 1, "denominator": d} for d in (4, 8, 2))
 
 
 def add_note(pitch, duration=QUARTER, advance=True, add_to_chord=False):
-    return {"action": "addNote", "params": {
-        "pitch": pitch, "duration": duration, "advanceCursorAfterAction": advance, "addToChord": add_to_chord}}
+    return {
+        "action": "addNote",
+        "params": {
+            "pitch": pitch,
+            "duration": duration,
+            "advanceCursorAfterAction": advance,
+            "addToChord": add_to_chord,
+        },
+    }
 
 
 def add_tied_note(duration, advance=True, **params):
-    return {"action": "addTiedNote", "params": {"duration": duration, "advanceCursorAfterAction": advance, **params}}
+    return {
+        "action": "addTiedNote",
+        "params": {
+            "duration": duration,
+            "advanceCursorAfterAction": advance,
+            **params,
+        },
+    }
 
 
 def chord_c_e_g():
-    return [add_note(60, advance=False), add_note(64, advance=False, add_to_chord=True),
-            add_note(67, add_to_chord=True)]
+    return [
+        add_note(60, advance=False),
+        add_note(64, advance=False, add_to_chord=True),
+        add_note(67, add_to_chord=True),
+    ]
 
 
 def test_add_tied_note_chain_after_add_note(tmp_path):
-    results = run([add_note(60), add_tied_note(EIGHTH), add_tied_note(EIGHTH),
-                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}], tie_score(tmp_path, REST_BAR, REST_BAR))
+    results = run(
+        [
+            add_note(60),
+            add_tied_note(EIGHTH),
+            add_tied_note(EIGHTH),
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 1},
+            },
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
     (bar,) = bars_of(results[-1]["result"])
     chords = [e for e in bar if e["name"] == "Chord"]
-    assert [(e["durationTicks"], ties(e)[60]) for e in chords] == [(480, (True, False)), (240, (True, True)), (240, (False, True))]
-    assert [r["result"]["currentSelection"]["startTick"] for r in results[1:3]] == [720, 960]  # after each new note
+    assert [(e["durationTicks"], ties(e)[60]) for e in chords] == [
+        (480, (True, False)),
+        (240, (True, True)),
+        (240, (False, True)),
+    ]
+    assert [
+        r["result"]["currentSelection"]["startTick"] for r in results[1:3]
+    ] == [720, 960]  # after each new note
 
 
 def test_add_tied_note_partial_chord_with_an_extra_pitch(tmp_path):
     """C-E-G into C-E-A: the A is written with the chord, before the tie (see the next test for why)."""
-    results = run(chord_c_e_g() + [add_tied_note(QUARTER, pitches=[60, 64], extraPitches=[69]),
-                                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}],
-                  tie_score(tmp_path, REST_BAR, REST_BAR))
+    results = run(
+        chord_c_e_g()
+        + [
+            add_tied_note(QUARTER, pitches=[60, 64], extraPitches=[69]),
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 1},
+            },
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
     added = results[-2]["result"]
-    assert added["tiedPitches"] == [60, 64] and added["currentSelection"]["startTick"] == 960
+    assert (
+        added["tiedPitches"] == [60, 64]
+        and added["currentSelection"]["startTick"] == 960
+    )
     (bar,) = bars_of(results[-1]["result"])
-    assert ties(bar[0]) == {60: (True, False), 64: (True, False), 67: (False, False)}
-    assert ties(bar[1]) == {60: (False, True), 64: (False, True), 69: (False, False)}
+    assert ties(bar[0]) == {
+        60: (True, False),
+        64: (True, False),
+        67: (False, False),
+    }
+    assert ties(bar[1]) == {
+        60: (False, True),
+        64: (False, True),
+        69: (False, False),
+    }
 
 
 def test_add_to_chord_after_a_tie_extends_the_tied_chord(tmp_path):
@@ -450,34 +988,100 @@ def test_add_to_chord_after_a_tie_extends_the_tied_chord(tmp_path):
 
     This is why add_tied_note takes extraPitches, and why add_tie should be used once both chords are complete.
     """
-    results = run(chord_c_e_g() + [add_tied_note(QUARTER, advance=False, pitches=[60, 64]),
-                                   add_note(69, add_to_chord=True),
-                                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}],
-                  tie_score(tmp_path, REST_BAR, REST_BAR))
+    results = run(
+        chord_c_e_g()
+        + [
+            add_tied_note(QUARTER, advance=False, pitches=[60, 64]),
+            add_note(69, add_to_chord=True),
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 1},
+            },
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
     (bar,) = bars_of(results[-1]["result"])
-    assert ties(bar[0]) == {60: (True, False), 64: (True, False), 67: (False, False), 69: (True, False)}
-    assert ties(bar[1]) == {60: (False, True), 64: (False, True), 69: (False, True)}
+    assert ties(bar[0]) == {
+        60: (True, False),
+        64: (True, False),
+        67: (False, False),
+        69: (True, False),
+    }
+    assert ties(bar[1]) == {
+        60: (False, True),
+        64: (False, True),
+        69: (False, True),
+    }
 
 
 def test_add_tied_note_longer_than_the_rest_of_the_bar(tmp_path):
     """MuseScore splits the note at the barline into tied notes; the cursor skips both parts."""
-    results = run([add_note(62), add_note(62), add_note(60), add_tied_note(HALF), add_note(64),
-                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}], tie_score(tmp_path, REST_BAR, REST_BAR))
+    results = run(
+        [
+            add_note(62),
+            add_note(62),
+            add_note(60),
+            add_tied_note(HALF),
+            add_note(64),
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 2},
+            },
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
     assert results[3]["result"]["currentSelection"]["startTick"] == 2400
     bar_1, bar_2 = bars_of(results[-1]["result"])
-    assert [(e["startTick"], ties(e)) for e in bar_1[2:]] == [(960, {60: (True, False)}), (1440, {60: (True, True)})]
-    assert [(e["startTick"], ties(e)) for e in bar_2[:2]] == [(1920, {60: (False, True)}), (2400, {64: (False, False)})]
+    assert [(e["startTick"], ties(e)) for e in bar_1[2:]] == [
+        (960, {60: (True, False)}),
+        (1440, {60: (True, True)}),
+    ]
+    assert [(e["startTick"], ties(e)) for e in bar_2[:2]] == [
+        (1920, {60: (False, True)}),
+        (2400, {64: (False, False)}),
+    ]
 
 
 def test_add_tied_note_errors_write_nothing(tmp_path):
-    rest = {"action": "addRest", "params": {"duration": QUARTER, "advanceCursorAfterAction": True}}
-    results = run([add_tied_note(QUARTER),  # nothing before the cursor
-                   add_note(60), rest, add_tied_note(QUARTER),  # a rest before the cursor
-                   add_note(64), add_tied_note(QUARTER, pitches=[62]),  # D is not in the chord before
-                   {"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 1}}], tie_score(tmp_path, REST_BAR, REST_BAR))
-    errors = [r["result"].get("error", "") for r in results if r["action"] == "addTiedNote"]
-    assert errors[0] == errors[1] == "No note or chord before the cursor to tie from"
-    assert errors[2].startswith("Pitch 62 is not in the chord before the cursor [64]")
+    rest = {
+        "action": "addRest",
+        "params": {"duration": QUARTER, "advanceCursorAfterAction": True},
+    }
+    results = run(
+        [
+            add_tied_note(QUARTER),  # nothing before the cursor
+            add_note(60),
+            rest,
+            add_tied_note(QUARTER),  # a rest before the cursor
+            add_note(64),
+            add_tied_note(
+                QUARTER, pitches=[62]
+            ),  # D is not in the chord before
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "endMeasure": 1},
+            },
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    errors = [
+        r["result"].get("error", "")
+        for r in results
+        if r["action"] == "addTiedNote"
+    ]
+    assert (
+        errors[0]
+        == errors[1]
+        == "No note or chord before the cursor to tie from"
+    )
+    assert errors[2].startswith(
+        "Pitch 62 is not in the chord before the cursor [64]"
+    )
     (bar,) = bars_of(results[-1]["result"])
-    assert [(e["name"], e["durationTicks"]) for e in bar] == [("Chord", 480), ("Rest", 480), ("Chord", 480), ("Rest", 480)]
+    assert [(e["name"], e["durationTicks"]) for e in bar] == [
+        ("Chord", 480),
+        ("Rest", 480),
+        ("Chord", 480),
+        ("Rest", 480),
+    ]
     assert not any(e["isTie"] for e in bar)

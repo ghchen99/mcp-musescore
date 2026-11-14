@@ -10,7 +10,7 @@ from ..types import ActionSequence
 
 def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Setup sequence processing tools."""
-    
+
     @mcp.tool(
         description=(
             "Run several score commands in order in a single call. "
@@ -38,4 +38,6 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             '"advanceCursorAfterAction": true}}]',
         ],
     ):
-        return await client.send_command("processSequence", {"sequence": sequence})
+        return await client.send_command(
+            "processSequence", {"sequence": sequence}
+        )

@@ -7,9 +7,11 @@ from fastmcp import FastMCP
 from ..client import MuseScoreClient
 
 
-def setup_staff_instruments_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
+def setup_staff_instruments_tools(
+    mcp: FastMCP, client: MuseScoreClient
+) -> None:
     """Setup staff and instrument tools."""
-    
+
     @mcp.tool(
         description="Add a new staff/instrument to the score.",
         tags={"staff"},
@@ -17,9 +19,9 @@ def setup_staff_instruments_tools(mcp: FastMCP, client: MuseScoreClient) -> None
     async def add_instrument(
         instrument_id: Annotated[str, "ID of the instrument to add"],
     ):
-        return await client.send_command("addInstrument", {
-            "instrumentId": instrument_id
-        })
+        return await client.send_command(
+            "addInstrument", {"instrumentId": instrument_id}
+        )
 
     @mcp.tool(
         description="Mute or unmute a staff.",
@@ -29,10 +31,9 @@ def setup_staff_instruments_tools(mcp: FastMCP, client: MuseScoreClient) -> None
         staff: Annotated[int, "Staff number (0-based)"],
         mute: Annotated[bool, "True to mute, False to unmute"],
     ):
-        return await client.send_command("setStaffMute", {
-            "staff": staff,
-            "mute": mute
-        })
+        return await client.send_command(
+            "setStaffMute", {"staff": staff, "mute": mute}
+        )
 
     @mcp.tool(
         description="Change the sound of an instrument on a staff.",
@@ -42,7 +43,7 @@ def setup_staff_instruments_tools(mcp: FastMCP, client: MuseScoreClient) -> None
         staff: Annotated[int, "Staff number (0-based)"],
         instrument_id: Annotated[str, "ID of the new instrument sound"],
     ):
-        return await client.send_command("setInstrumentSound", {
-            "staff": staff,
-            "instrumentId": instrument_id
-        })
+        return await client.send_command(
+            "setInstrumentSound",
+            {"staff": staff, "instrumentId": instrument_id},
+        )

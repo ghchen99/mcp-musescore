@@ -36,7 +36,7 @@ def test_partially_tied_chord_ties_each_tied_pitch():
 
 def test_tie_comes_before_lyrics():
     element = {**chord((C, TIED)), "lyrics": [{"text": "la"}]}
-    assert process_element(element) == "c'4~^\"la\""
+    assert process_element(element) == 'c\'4~^"la"'
 
 
 def test_tie_back_alone_adds_nothing():
@@ -47,13 +47,24 @@ def test_tie_back_alone_adds_nothing():
 def test_tie_across_a_barline():
     def bar(number, *elements):
         start = (number - 1) * 1920
-        return {"measure": number, "startTick": start, "durationTicks": 1920,
-                "elements": {"staff0": [{**e, "startTick": start + 480 * i} for i, e in enumerate(elements)]}}
+        return {
+            "measure": number,
+            "startTick": start,
+            "durationTicks": 1920,
+            "elements": {
+                "staff0": [
+                    {**e, "startTick": start + 480 * i}
+                    for i, e in enumerate(elements)
+                ]
+            },
+        }
 
-    score = {"measures": [
-        bar(1, chord(C), chord(C), chord(C), chord((C, TIED))),
-        bar(2, chord((C, {"tieBack": True}), ticks=1920)),
-    ]}
+    score = {
+        "measures": [
+            bar(1, chord(C), chord(C), chord(C), chord((C, TIED))),
+            bar(2, chord((C, {"tieBack": True}), ticks=1920)),
+        ]
+    }
     text = score_to_lilypond(score)
     assert "c'4 c'4 c'4 c'4~ | % m.1" in text
     assert "c'1 | % m.2" in text

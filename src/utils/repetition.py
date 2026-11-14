@@ -25,26 +25,34 @@ CRASH_PITCHES = {49, 57}  # crash cymbal 1 and 2
 BEAT_ONE_CYMBALS = CRASH_PITCHES | {42}
 
 
-def measure_fingerprint(elements: Sequence[Dict[str, Any]], measure_start_tick: int) -> Fingerprint:
+def measure_fingerprint(
+    elements: Sequence[Dict[str, Any]], measure_start_tick: int
+) -> Fingerprint:
     """Hashable summary of one staff's content in one measure (notes, ghost notes and articulations)."""
     items = []
     for e in elements:
-        notes = [n for n in e.get("notes", []) if n.get("pitchMidi") is not None]
-        items.append((
-            e.get("startTick", measure_start_tick) - measure_start_tick,
-            e.get("voice", 0),
-            e.get("name", ""),
-            e.get("durationTicks", 0),
-            tuple(sorted(n["pitchMidi"] for n in notes)),
-            bool(e.get("isTuplet")),
-            bool(e.get("isTie")),
-            tuple(sorted(e.get("articulations") or [])),
-            tuple(sorted(n["pitchMidi"] for n in notes if n.get("ghost"))),
-        ))
+        notes = [
+            n for n in e.get("notes", []) if n.get("pitchMidi") is not None
+        ]
+        items.append(
+            (
+                e.get("startTick", measure_start_tick) - measure_start_tick,
+                e.get("voice", 0),
+                e.get("name", ""),
+                e.get("durationTicks", 0),
+                tuple(sorted(n["pitchMidi"] for n in notes)),
+                bool(e.get("isTuplet")),
+                bool(e.get("isTie")),
+                tuple(sorted(e.get("articulations") or [])),
+                tuple(sorted(n["pitchMidi"] for n in notes if n.get("ghost"))),
+            )
+        )
     return tuple(sorted(items))
 
 
-def core_fingerprint(elements: Sequence[Dict[str, Any]], measure_start_tick: int) -> Fingerprint:
+def core_fingerprint(
+    elements: Sequence[Dict[str, Any]], measure_start_tick: int
+) -> Fingerprint:
     """Like measure_fingerprint, but ignoring ghost notes and which cymbal is hit on beat 1.
 
     A crash and a closed hi-hat on beat 1 both count as "a cymbal on 1". Bars with the same core can be
@@ -54,27 +62,39 @@ def core_fingerprint(elements: Sequence[Dict[str, Any]], measure_start_tick: int
     items = []
     for e in elements:
         tick = e.get("startTick", measure_start_tick) - measure_start_tick
-        notes = [n["pitchMidi"] for n in e.get("notes", []) if n.get("pitchMidi") is not None and not n.get("ghost")]
+        notes = [
+            n["pitchMidi"]
+            for n in e.get("notes", [])
+            if n.get("pitchMidi") is not None and not n.get("ghost")
+        ]
         if tick == 0 and any(p in BEAT_ONE_CYMBALS for p in notes):
-            notes = [p for p in notes if p not in BEAT_ONE_CYMBALS] + [-1]  # -1: a cymbal on beat 1
+            notes = [p for p in notes if p not in BEAT_ONE_CYMBALS] + [
+                -1
+            ]  # -1: a cymbal on beat 1
         name = e.get("name", "")
         if name == "Chord" and not notes:
             name = "Rest"
-        items.append((
-            tick,
-            e.get("voice", 0),
-            name,
-            e.get("durationTicks", 0),
-            tuple(sorted(notes)),
-            bool(e.get("isTuplet")),
-            tuple(sorted(e.get("articulations") or [])) if notes else (),
-        ))
+        items.append(
+            (
+                tick,
+                e.get("voice", 0),
+                name,
+                e.get("durationTicks", 0),
+                tuple(sorted(notes)),
+                bool(e.get("isTuplet")),
+                tuple(sorted(e.get("articulations") or [])) if notes else (),
+            )
+        )
     return tuple(sorted(items))
 
 
-def staff_fingerprints(measures: Sequence[Dict[str, Any]], staff: str,
-                       fingerprint: Callable[[Sequence[Dict[str, Any]], int], Fingerprint] = measure_fingerprint
-                       ) -> Tuple[List[Fingerprint], set]:
+def staff_fingerprints(
+    measures: Sequence[Dict[str, Any]],
+    staff: str,
+    fingerprint: Callable[
+        [Sequence[Dict[str, Any]], int], Fingerprint
+    ] = measure_fingerprint,
+) -> Tuple[List[Fingerprint], set]:
     """Fingerprints of one staff's measures, with existing measure-repeat signs resolved.
 
     Returns (fingerprints, indices of bars covered by an existing measure-repeat group).
@@ -84,7 +104,9 @@ def staff_fingerprints(measures: Sequence[Dict[str, Any]], staff: str,
     for i, m in enumerate(measures):
         elements = (m.get("elements") or {}).get(staff, [])
         fps.append(fingerprint(elements, m.get("startTick", 0)))
-        sign = next((e for e in elements if e.get("name") == "MeasureRepeat"), None)
+        sign = next(
+            (e for e in elements if e.get("name") == "MeasureRepeat"), None
+        )
         if sign is not None:
             size = int(sign.get("numMeasures") or 1)
             first = i - SIGN_POSITION.get(size, 0)
@@ -111,7 +133,9 @@ def _staff_index(name: str) -> int:
         return -1
 
 
-def _measure_repeats_for_staff(fps: List[Fingerprint], existing: Optional[set] = None) -> List[Tuple[int, int]]:
+def _measure_repeats_for_staff(
+    fps: List[Fingerprint], existing: Optional[set] = None
+) -> List[Tuple[int, int]]:
     """(index, size) placements of measure-repeat signs on one staff, left to right.
 
     Smaller sizes win, so four identical bars give three 1-bar repeats, and an
@@ -125,8 +149,10 @@ def _measure_repeats_for_staff(fps: List[Fingerprint], existing: Optional[set] =
         for size in MEASURE_REPEAT_SIZES:
             if i - size < 0 or i + size > len(fps):
                 continue
-            source = fps[i - size:i]
-            if fps[i:i + size] == source and any(_has_notes(fp) for fp in source):
+            source = fps[i - size : i]
+            if fps[i : i + size] == source and any(
+                _has_notes(fp) for fp in source
+            ):
                 if not set(range(i, i + size)) <= existing:
                     placements.append((i, size))
                 i += size
@@ -136,7 +162,9 @@ def _measure_repeats_for_staff(fps: List[Fingerprint], existing: Optional[set] =
     return placements
 
 
-def _merge_runs(placements: List[Tuple[int, int]]) -> List[Tuple[int, int, int]]:
+def _merge_runs(
+    placements: List[Tuple[int, int]],
+) -> List[Tuple[int, int, int]]:
     """Merge back-to-back placements of the same size into (first_index, last_index, size)."""
     runs: List[List[int]] = []
     for index, size in placements:
@@ -147,19 +175,26 @@ def _merge_runs(placements: List[Tuple[int, int]]) -> List[Tuple[int, int, int]]
     return [(first, last, size) for first, last, size in runs]
 
 
-def _best_passage(ids: List[int], content: List[bool], i: int, max_passage: int,
-                  max_ending: int) -> Optional[Tuple[int, Dict[str, Any]]]:
+def _best_passage(
+    ids: List[int],
+    content: List[bool],
+    i: int,
+    max_passage: int,
+    max_ending: int,
+) -> Optional[Tuple[int, Dict[str, Any]]]:
     """Best repeat structure starting at index i, as (saved_bars, suggestion_kwargs) or None."""
     n = len(ids)
     best = None
 
     # Plain repeat: A A (A A ...). Longest passage first, so ties keep the longer passage.
     for length in range(min(max_passage, (n - i) // 2), 0, -1):
-        block = ids[i:i + length]
-        if ids[i + length:i + 2 * length] != block or not any(content[i:i + length]):
+        block = ids[i : i + length]
+        if ids[i + length : i + 2 * length] != block or not any(
+            content[i : i + length]
+        ):
             continue
         times = 2
-        while ids[i + times * length:i + (times + 1) * length] == block:
+        while ids[i + times * length : i + (times + 1) * length] == block:
             times += 1
         saved = length * (times - 1)
         if best is None or saved > best[0]:
@@ -169,18 +204,24 @@ def _best_passage(ids: List[int], content: List[bool], i: int, max_passage: int,
     for length in range(min(max_passage, (n - i) // 2), 1, -1):
         if best is not None and length <= best[0]:
             break
-        block = ids[i:i + length]
-        if not any(content[i:i + length]):
+        block = ids[i : i + length]
+        if not any(content[i : i + length]):
             continue
         for ending in range(1, min(max_ending, length) + 1):
             second = i + length + ending
             if second + length + ending > n:
                 break
-            if ids[second:second + length] != block:
+            if ids[second : second + length] != block:
                 continue
-            if ids[i + length:second] == ids[second + length:second + length + ending]:
+            if (
+                ids[i + length : second]
+                == ids[second + length : second + length + ending]
+            ):
                 continue
-            best = (length, {"kind": "endings", "length": length, "ending": ending})
+            best = (
+                length,
+                {"kind": "endings", "length": length, "ending": ending},
+            )
             break
         if best is not None and best[1]["kind"] == "endings":
             break
@@ -212,15 +253,27 @@ def find_repeats(
     # Per-staff measure repeats, grouped across staves that share the same run
     grouped: Dict[Tuple[int, int, int], List[int]] = {}
     for staff in staff_names:
-        for first, last, size in _merge_runs(_measure_repeats_for_staff(fps[staff], existing[staff])):
-            grouped.setdefault((first, last, size), []).append(_staff_index(staff))
+        for first, last, size in _merge_runs(
+            _measure_repeats_for_staff(fps[staff], existing[staff])
+        ):
+            grouped.setdefault((first, last, size), []).append(
+                _staff_index(staff)
+            )
     measure_repeats = [
-        {"bars": size, "from": numbers[first], "to": numbers[last], "staves": staves}
+        {
+            "bars": size,
+            "from": numbers[first],
+            "to": numbers[last],
+            "staves": staves,
+        }
         for (first, last, size), staves in sorted(grouped.items())
     ]
 
     # Whole-score passages
-    combined = [tuple(fps[staff][i] for staff in staff_names) for i in range(len(measures))]
+    combined = [
+        tuple(fps[staff][i] for staff in staff_names)
+        for i in range(len(measures))
+    ]
     ids_by_bar: Dict[Tuple[Fingerprint, ...], int] = {}
     ids = [ids_by_bar.setdefault(bar, len(ids_by_bar)) for bar in combined]
     content = [any(_has_notes(fp) for fp in bar) for bar in combined]
@@ -236,27 +289,40 @@ def find_repeats(
         length = shape["length"]
         if shape["kind"] == "repeat":
             times = shape["times"]
-            passages.append({
-                "type": "repeat",
-                "start": numbers[i],
-                "end": numbers[i + length - 1],
-                "times": times,
-                "duplicate_measures": [numbers[i + length], numbers[i + length * times - 1]],
-                "saves_measures": saved,
-            })
+            passages.append(
+                {
+                    "type": "repeat",
+                    "start": numbers[i],
+                    "end": numbers[i + length - 1],
+                    "times": times,
+                    "duplicate_measures": [
+                        numbers[i + length],
+                        numbers[i + length * times - 1],
+                    ],
+                    "saves_measures": saved,
+                }
+            )
             i += length * times
         else:
             ending = shape["ending"]
             second = i + length + ending
-            passages.append({
-                "type": "repeat_with_endings",
-                "start": numbers[i],
-                "end": numbers[i + length - 1],
-                "first_ending": [numbers[i + length], numbers[second - 1]],
-                "second_ending": [numbers[second + length], numbers[second + length + ending - 1]],
-                "duplicate_measures": [numbers[second], numbers[second + length - 1]],
-                "saves_measures": saved,
-            })
+            passages.append(
+                {
+                    "type": "repeat_with_endings",
+                    "start": numbers[i],
+                    "end": numbers[i + length - 1],
+                    "first_ending": [numbers[i + length], numbers[second - 1]],
+                    "second_ending": [
+                        numbers[second + length],
+                        numbers[second + length + ending - 1],
+                    ],
+                    "duplicate_measures": [
+                        numbers[second],
+                        numbers[second + length - 1],
+                    ],
+                    "saves_measures": saved,
+                }
+            )
             i = second + length + ending
 
     return {"measure_repeats": measure_repeats, "passages": passages}

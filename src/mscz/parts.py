@@ -25,9 +25,28 @@ from .score_file import ScoreFile, ScoreFileError
 
 FRAMES = {"VBox", "TBox", "HBox", "FBox"}
 # Measure children that describe one staff, not the whole system
-PER_STAFF_MEASURE_TAGS = {"voice", "measureRepeatCount", "vspacerUp", "vspacerDown", "vspacerFixed", "visible",
-                          "slashStyle", "stemless", "StaffTypeChange", "MeasureNumber", "MMRestRange"}
-SYSTEM_TEXTS = {"Tempo", "RehearsalMark", "SystemText", "Jump", "Marker", "TempoChangeRanged", "GradualTempoChange"}
+PER_STAFF_MEASURE_TAGS = {
+    "voice",
+    "measureRepeatCount",
+    "vspacerUp",
+    "vspacerDown",
+    "vspacerFixed",
+    "visible",
+    "slashStyle",
+    "stemless",
+    "StaffTypeChange",
+    "MeasureNumber",
+    "MMRestRange",
+}
+SYSTEM_TEXTS = {
+    "Tempo",
+    "RehearsalMark",
+    "SystemText",
+    "Jump",
+    "Marker",
+    "TempoChangeRanged",
+    "GradualTempoChange",
+}
 SYSTEM_SPANNERS = {"Volta", "TempoChangeRanged", "GradualTempoChange"}
 
 
@@ -47,7 +66,9 @@ def _is_system(element: ET.Element) -> bool:
     return element.tag in SYSTEM_TEXTS
 
 
-def _voice_positions(voice: ET.Element, measure_len: int) -> List[Tuple[int, int]]:
+def _voice_positions(
+    voice: ET.Element, measure_len: int
+) -> List[Tuple[int, int]]:
     """(child index, tick) for every child of a voice; tuplets scale the durations inside them."""
     positions, tick, scale = [], 0, []
     for i, child in enumerate(voice):
@@ -71,11 +92,18 @@ def _voice_positions(voice: ET.Element, measure_len: int) -> List[Tuple[int, int
     return positions
 
 
-def _insert_at_tick(voice: ET.Element, element: ET.Element, tick: int, measure_len: int) -> bool:
+def _insert_at_tick(
+    voice: ET.Element, element: ET.Element, tick: int, measure_len: int
+) -> bool:
     """Insert `element` before the first chord/rest starting at `tick`; False if no chord/rest starts there."""
     for index, position in _voice_positions(voice, measure_len):
         child = voice[index]
-        if position == tick and child.tag in ("Chord", "Rest", "MeasureRepeat", "Tuplet"):
+        if position == tick and child.tag in (
+            "Chord",
+            "Rest",
+            "MeasureRepeat",
+            "Tuplet",
+        ):
             voice.insert(index, element)
             return True
         if position > tick:
@@ -83,13 +111,22 @@ def _insert_at_tick(voice: ET.Element, element: ET.Element, tick: int, measure_l
     return False
 
 
-def _merge_measure(system_measure: ET.Element, kept_measure: ET.Element, measure_len: int,
-                   number: int, report: Dict) -> ET.Element:
+def _merge_measure(
+    system_measure: ET.Element,
+    kept_measure: ET.Element,
+    measure_len: int,
+    number: int,
+    report: Dict,
+) -> ET.Element:
     """The kept staff's measure, with the system-level content of the old first staff's measure."""
     merged = copy.deepcopy(kept_measure)
     for key, value in system_measure.attrib.items():
         merged.attrib.setdefault(key, value)
-    system_tags = [copy.deepcopy(c) for c in system_measure if c.tag not in PER_STAFF_MEASURE_TAGS]
+    system_tags = [
+        copy.deepcopy(c)
+        for c in system_measure
+        if c.tag not in PER_STAFF_MEASURE_TAGS
+    ]
     for position, child in enumerate(system_tags):
         merged.insert(position, child)
 
@@ -106,10 +143,16 @@ def _merge_measure(system_measure: ET.Element, kept_measure: ET.Element, measure
         moved = copy.deepcopy(child)
         if not _insert_at_tick(target_voice, moved, tick, measure_len):
             # No note starts there on the kept staff: put it on the nearest earlier note
-            positions = [(i, t) for i, t in _voice_positions(target_voice, measure_len)
-                         if target_voice[i].tag in ("Chord", "Rest", "MeasureRepeat") and t <= tick]
+            positions = [
+                (i, t)
+                for i, t in _voice_positions(target_voice, measure_len)
+                if target_voice[i].tag in ("Chord", "Rest", "MeasureRepeat")
+                and t <= tick
+            ]
             target_voice.insert(positions[-1][0] if positions else 0, moved)
-            report["moved_earlier"].append({"measure": number, "element": child.tag})
+            report["moved_earlier"].append(
+                {"measure": number, "element": child.tag}
+            )
         report["system_texts"] += 1
     return merged
 
@@ -120,12 +163,21 @@ def keep_parts(score: ScoreFile, keep_staves: Sequence[int]) -> Dict:
     staves = score.staves()
     keep = set(keep_staves)
     if not keep or not keep <= set(range(len(staves))):
-        raise ScoreFileError(f"Staves {sorted(keep_staves)} do not all exist (score has {len(staves)})")
+        raise ScoreFileError(
+            f"Staves {sorted(keep_staves)} do not all exist (score has {len(staves)})"
+        )
     kept_parts = [(part, owned) for part, owned in parts if keep & set(owned)]
-    kept_indices = sorted(i for _, owned in kept_parts for i in owned if i < len(staves))
-    report = {"kept_parts": [p.findtext("trackName") or "" for p, _ in kept_parts],
-              "removed_parts": len(parts) - len(kept_parts), "staves": len(kept_indices),
-              "system_texts": 0, "moved_earlier": [], "dropped": []}
+    kept_indices = sorted(
+        i for _, owned in kept_parts for i in owned if i < len(staves)
+    )
+    report = {
+        "kept_parts": [p.findtext("trackName") or "" for p, _ in kept_parts],
+        "removed_parts": len(parts) - len(kept_parts),
+        "staves": len(kept_indices),
+        "system_texts": 0,
+        "moved_earlier": [],
+        "dropped": [],
+    }
 
     first_old = staves[0]
     new_staves = []
@@ -133,18 +185,33 @@ def keep_parts(score: ScoreFile, keep_staves: Sequence[int]) -> Dict:
         new_staves = [staves[i] for i in kept_indices]
     else:
         # Rebuild the first kept staff on the old first staff's frame/measure sequence
-        lengths = [fraction_ticks(length) for length in measure_lengths(first_old, first_old)]
+        lengths = [
+            fraction_ticks(length)
+            for length in measure_lengths(first_old, first_old)
+        ]
         kept_first = staves[kept_indices[0]].findall("Measure")
         first = ET.Element("Staff")
         number = 0
         for child in first_old:
             if child.tag == "Measure":
                 if number >= len(kept_first):
-                    raise ScoreFileError("The kept staff has fewer measures than the first staff")
-                first.append(_merge_measure(child, kept_first[number], lengths[number], number + 1, report))
+                    raise ScoreFileError(
+                        "The kept staff has fewer measures than the first staff"
+                    )
+                first.append(
+                    _merge_measure(
+                        child,
+                        kept_first[number],
+                        lengths[number],
+                        number + 1,
+                        report,
+                    )
+                )
                 number += 1
             else:
-                first.append(child)  # frames (title frame...) live on the first staff only
+                first.append(
+                    child
+                )  # frames (title frame...) live on the first staff only
         new_staves = [first] + [staves[i] for i in kept_indices[1:]]
 
     body = score.score
@@ -190,16 +257,26 @@ def detach_part(path: Path, entry: str, target: Path) -> Path:
         names = z.namelist()
         data = z.read(entry).decode("utf-8")
         folder = entry.rsplit("/", 1)[0] + "/"
-        style = next((n for n in names if n.startswith(folder) and n.endswith(".mss")), None)
-        style = style or next((n for n in names if n.endswith(".mss") and "/" not in n), None)
+        style = next(
+            (n for n in names if n.startswith(folder) and n.endswith(".mss")),
+            None,
+        )
+        style = style or next(
+            (n for n in names if n.endswith(".mss") and "/" not in n), None
+        )
         style_data = z.read(style) if style else None
     data = re.sub(r"\s*<linkedTo>[^<]*</linkedTo>", "", data)
     main = f"{target.stem}.mscx"
     rootfiles = f'<rootfile full-path="{main}"/>'
-    container = ('<?xml version="1.0" encoding="UTF-8"?>\n<container><rootfiles>' + rootfiles
-                 + "</rootfiles></container>\n")
+    container = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<container><rootfiles>'
+        + rootfiles
+        + "</rootfiles></container>\n"
+    )
 
-    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(
+        dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
+    )
     os.close(fd)
     umask = os.umask(0)
     os.umask(umask)
