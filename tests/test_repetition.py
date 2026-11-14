@@ -272,7 +272,9 @@ def crash_instead_of_hat(bar):
 
 
 def test_phrases_start_on_the_crash_bars():
-    """The intro of "Hold the Line": crash bar 1 (no hi-hat on the 2nd eighth), open hat at the end of bars 2
+    """Phrases start on the crash bars.
+
+    The intro of "Hold the Line": crash bar 1 (no hi-hat on the 2nd eighth), open hat at the end of bars 2
     and 4, crash again on bar 5, bar 6 different. 1 + [2-3]x2 + 1 leaves as few bars as 4 + 2 but starts a
     2-bar phrase on the bar after the crash; the chart should read 4 + 2.
     """

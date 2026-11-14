@@ -196,7 +196,9 @@ def test_coloring_includes_flams(tmp_path):
 
 
 def test_beam_over_rests_inside_dotted_quarter_groups(tmp_path):
-    """12/8: a rest between two eighths of a dotted-quarter group is beamed over; a rest that starts or ends a
+    """Rests inside a dotted-quarter group are beamed over.
+
+    12/8: a rest between two eighths of a dotted-quarter group is beamed over; a rest that starts or ends a
     group is not.
     """
     from src.mscz import ScoreFile
@@ -216,7 +218,9 @@ def test_beam_over_rests_inside_dotted_quarter_groups(tmp_path):
 
 
 def test_section_counts_sit_next_to_the_section_label(tmp_path):
-    """A bold red count right of the rehearsal mark, placed by offset (autoplace off); running it again replaces
+    """Section counts sit next to the section label.
+
+    A bold red count right of the rehearsal mark, placed by offset (autoplace off); running it again replaces
     it, and other staff texts (e.g. a "*" crash mark) stay.
     """
     from src.mscz import ScoreFile

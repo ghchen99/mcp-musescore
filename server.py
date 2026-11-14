@@ -1,3 +1,5 @@
+"""The MCP server: connects the MCP tools to the MuseScore plugin over a WebSocket."""
+
 import logging
 import sys
 

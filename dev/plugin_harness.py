@@ -1,11 +1,11 @@
-"""Run the QML plugin's commands headless in MuseScore, without the GUI or the WebSocket bridge.
+r"""Run the QML plugin's commands headless in MuseScore, without the GUI or the WebSocket bridge.
 
 Builds a copy of musescore-mcp-websocket.qml whose onRun executes a fixed list of commands,
 runs it on a score with MuseScore's converter (`--extension`), and prints each command's result.
 MuseScore runs from a throwaway profile in a temporary folder, so your own settings and
 plugins are not touched.
 
-    python dev/plugin_harness.py '[{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}]' \\
+    python dev/plugin_harness.py '[{"action": "getScore", "params": {"startMeasure": 1, "endMeasure": 2}}]' \
         "examples/jazz piano/Jazz Piano.mscz" --out /tmp/edited.mscz --png /tmp/edited.png
 
 Commands are a JSON list (inline or a path to a .json file) of {"action": ..., "params": {...}},
@@ -141,6 +141,7 @@ def run(commands: List[Dict[str, Any]], score: Union[str, Path], out: Optional[U
 
 
 def main() -> int:
+    """Run the harness from the command line; returns 1 if a command returned an error."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("commands", help="JSON list of commands, inline or a path to a .json file")
     parser.add_argument("score", help="Score to run them on (.mscz or .mscx); it is not modified")

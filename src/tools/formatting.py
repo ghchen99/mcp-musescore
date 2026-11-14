@@ -48,6 +48,7 @@ DRUM_PITCHES = {
 
 
 def drum_pitches(names: List[str]) -> List[int]:
+    """MIDI pitches of drum names such as "crash" or "hi-hats"; raises ToolError for unknown names."""
     pitches = []
     for name in names:
         key = name.strip().lower().replace("hihat", "hi-hat").replace("hi hat", "hi-hat")

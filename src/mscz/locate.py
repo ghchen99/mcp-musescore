@@ -22,6 +22,7 @@ SCORE_SUFFIXES = (".mscz", ".mscx")
 
 
 def musescore_data_dirs() -> List[Path]:
+    """MuseScore 4's data folders on Linux, macOS and Windows, or MUSESCORE_DATA_DIR if set."""
     if os.environ.get("MUSESCORE_DATA_DIR"):
         return [Path(os.environ["MUSESCORE_DATA_DIR"])]
     home = Path.home()
@@ -90,11 +91,13 @@ class OpenPartError(ScoreFileError):
     """The open score is a part (excerpt) stored inside another score's file."""
 
     def __init__(self, path: Path, entry: str) -> None:
+        """Record the score file (`path`) and the part's entry in it."""
         super().__init__(f"The open score is the part {entry} of {path}")
         self.path, self.entry = path, entry
 
 
 def new_score_id() -> str:
+    """A new id to tag a score with, e.g. "mcp-1a2b3c4d5e6f"."""
     return f"mcp-{uuid.uuid4().hex[:12]}"
 
 
@@ -168,6 +171,7 @@ def locate_open_score(score_id: str, staves: int, measures: int,
 
 
 def backup_dir() -> Path:
+    """Where backups go: MCP_MUSESCORE_BACKUP_DIR, or ~/.mcp-musescore/backups."""
     return Path(os.environ.get("MCP_MUSESCORE_BACKUP_DIR") or Path.home() / ".mcp-musescore" / "backups")
 
 

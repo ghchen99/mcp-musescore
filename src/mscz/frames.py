@@ -1,5 +1,7 @@
-"""Edit the texts of a score's frames: the title frame at the top, a notes frame at the end and a song
-structure page after it (a text frame that starts a new page: the frame or bar before it carries a page break).
+"""Edit the texts of a score's frames.
+
+The title frame at the top, a notes frame at the end and a song structure page after it (a text frame that
+starts a new page: the frame or bar before it carries a page break).
 
 Frames (VBox, TBox) live only in the first staff's body, between its measures. The plugin API
 cannot reach them (measure navigation skips frames, Score.addText only adds), so they are edited
@@ -244,8 +246,10 @@ def _row_bars(row: Dict[str, Any]) -> Optional[int]:
 
 
 def structure_table(rows: Sequence[Dict[str, Any]], width: int = TABLE_WIDTH) -> List[List[str]]:
-    """The table as lines of cells: a header line, then each row (wrapped cells give extra lines; the last line
-    of a row has an extra empty cell). Columns that no row fills are left out; the widest columns are narrowed
+    """The song structure table as lines of cells.
+
+    A header line, then each row (wrapped cells give extra lines; the last line of a row has an extra empty
+    cell). Columns that no row fills are left out; the widest columns are narrowed
     (their text wrapped) until a line fits in `width` characters.
     """
     rows = [{**r, "bars": _bars_cell(r)} for r in rows]
@@ -269,8 +273,9 @@ def structure_table(rows: Sequence[Dict[str, Any]], width: int = TABLE_WIDTH) ->
 def set_structure_page(score: ScoreFile, heading: str, rows: Sequence[Dict[str, Any]],
                        song: Optional[str] = None, artist: Optional[str] = None,
                        font: str = TABLE_FONT) -> Dict[str, Any]:
-    """Write the song structure as a table on a new page at the end of the score (replacing an earlier one),
-    under the heading and a "song - artist" line (by default the title of the title frame, and its composer or,
+    """Write the song structure as a table on a new page at the end.
+
+    The page replaces an earlier one, and the table comes under the heading and a "song - artist" line (by default the title of the title frame, and its composer or,
     if there is none, its subtitle). rows: {section, bars, count, groove, fill}: the Bars column shows `count`
     (or `bars` in fours) and the total adds up the bars. No rows removes the page.
     """

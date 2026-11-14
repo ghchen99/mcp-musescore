@@ -1,5 +1,7 @@
-"""Rewrite a cymbal roll (a run of repeated or tied cymbal notes) as one long note per bar, tied across
-barlines, with a tremolo: fewer symbols for the same sound.
+"""Rewrite a cymbal roll as one long note per bar, with a tremolo.
+
+A roll is a run of repeated or tied cymbal notes. The new notes are tied across barlines: fewer symbols for
+the same sound.
 
 Notes of the first chord that are not part of the roll (e.g. a kick on beat 1) move to voice 2 with their
 own length, followed by invisible rests, so the tremolo only applies to the cymbals.
@@ -30,11 +32,13 @@ CHORD_REST = {"Chord", "Rest"}
 
 
 def fraction_ticks(text: str) -> int:
+    """Ticks in a fraction of a whole note, e.g. "3/4" -> 1440."""
     num, den = text.split("/")
     return WHOLE * int(num) // int(den)
 
 
 def element_ticks(element: ET.Element, measure_len: int) -> int:
+    """Ticks a chord or rest lasts; a measure rest without a duration lasts `measure_len`."""
     kind = element.findtext("durationType")
     if kind == "measure":
         duration = element.findtext("duration")
@@ -138,8 +142,9 @@ def _voice_one(measure: ET.Element, length: int) -> Optional[List[Tuple[int, ET.
 
 def tie_chain_start(measures: List[ET.Element], lengths: List[int], start_measure: int, start_ticks: int,
                     pitches: Set[str]) -> Tuple[int, int]:
-    """(measure, ticks) where the roll really starts: walk back while the roll cymbals are tied from the chord
-    before, which must hold the roll cymbals too.
+    """Find where the roll really starts, as (measure, ticks).
+
+    Walks back while the roll cymbals are tied from the chord before, which must hold the roll cymbals too.
     """
     number, ticks = start_measure, start_ticks
     while True:
@@ -167,8 +172,10 @@ def tie_chain_start(measures: List[ET.Element], lengths: List[int], start_measur
 def simplify_roll(score: ScoreFile, staff_index: int, start_measure: int, end_measure: int,
                   end_ticks: Optional[int] = None, pitches: Sequence[int] = (49, 57), slashes: int = 3,
                   start_ticks: int = 0) -> Dict:
-    """Rewrite the roll; returns a report. start_ticks / end_ticks: where the roll starts inside start_measure
-    (default: its beginning) and ends inside end_measure (default: its end).
+    """Rewrite the roll, and return a report.
+
+    start_ticks / end_ticks: where the roll starts inside start_measure (default: its beginning) and ends inside
+    end_measure (default: its end).
     """
     staves = score.staves()
     if not 0 <= staff_index < len(staves):

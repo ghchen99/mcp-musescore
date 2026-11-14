@@ -789,7 +789,9 @@ class MockMuseScore:
         return {"success": True, "removed": removed}
 
     def _do_addSectionCounts(self, params):
-        """Mode "label": "(count)" at the end of the rehearsal mark's text; "beside": texts {measure, text,
+        """Add section counts to the mock score.
+
+        Mode "label": "(count)" at the end of the rehearsal mark's text; "beside": texts {measure, text,
         sectionCount: True}. Earlier counts at those measures, in either form, are replaced.
         """
         if (err := self._missing(params, ["counts"])):

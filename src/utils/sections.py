@@ -47,6 +47,7 @@ def bar_events(fingerprint: Fingerprint) -> Set[Event]:
 
 
 def similarity(a: Set[Event], b: Set[Event]) -> float:
+    """How alike two sets of hits are, from 0 to 1 (shared hits out of all hits)."""
     if not a and not b:
         return 1.0
     return len(a & b) / len(a | b)

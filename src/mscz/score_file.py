@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple, Union
 
 
 class ScoreFileError(Exception):
-    pass
+    """A score file cannot be read, or an edit to it cannot be made."""
 
 
 class ScoreFile:
@@ -21,6 +21,7 @@ class ScoreFile:
     """
 
     def __init__(self, path: Union[str, Path]) -> None:
+        """Read the score file at `path` (.mscz or .mscx)."""
         self.path = Path(path)
         self._entries: List[Tuple[zipfile.ZipInfo, bytes]] = []
         self._mscx_name: Optional[str] = None
@@ -60,6 +61,7 @@ class ScoreFile:
 
     @property
     def score(self) -> ET.Element:
+        """The <Score> element."""
         score = self.root.find("Score")
         if score is None:
             raise ScoreFileError(f"{self.path} does not contain a MuseScore score")
@@ -67,6 +69,7 @@ class ScoreFile:
 
     @property
     def version(self) -> str:
+        """The MuseScore file format version, e.g. "4.70"."""
         return self.root.get("version", "")
 
     def staves(self) -> List[ET.Element]:
@@ -90,6 +93,7 @@ class ScoreFile:
         return removed
 
     def to_bytes(self) -> bytes:
+        """The score as .mscx XML."""
         return ET.tostring(self.root, encoding="UTF-8", xml_declaration=True)
 
     def save(self, path: Optional[Union[str, Path]] = None) -> Path:

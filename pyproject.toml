@@ -83,6 +83,11 @@ convention = "google"
 # definition clients see and adds structured content to each result.
 # That is a decision of its own, not part of a lint cleanup.
 "src/tools/*.py" = ["ANN202"]
+# Class docstrings here would become descriptions in a tool's input schema
+# (the TypedDicts behind processSequence, and RepeatGroup), changing what
+# clients see: a decision of its own too.
+"src/types/action_types.py" = ["D101"]
+"src/tools/score_file.py" = ["D101"]
 
 # Docstring settings (docstring-tailor).
 

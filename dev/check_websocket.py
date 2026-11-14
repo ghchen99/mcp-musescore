@@ -16,6 +16,7 @@ from src.utils.lilypond_converter import json_to_lilypond
 logging.basicConfig(level=logging.INFO)
 
 async def test_websocket() -> None:
+    """Send getScore to MuseScore and print the raw result and its LilyPond form."""
     uri = "ws://localhost:8765"
     try:
         async with websockets.connect(uri) as websocket:

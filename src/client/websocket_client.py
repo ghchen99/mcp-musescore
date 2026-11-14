@@ -29,6 +29,7 @@ class MuseScoreClient:
     """Client to communicate with MuseScore WebSocket API."""
     
     def __init__(self, host: str = "localhost", port: int = 8765) -> None:
+        """Prepare a client for the plugin at `host`:`port`; it connects on first use."""
         self.uri = f"ws://{host}:{port}"
         self.websocket = None
     

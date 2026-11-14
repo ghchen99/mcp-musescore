@@ -10,6 +10,7 @@ import websockets
 
 
 async def main() -> None:
+    """Ping the plugin and check that it answers "pong"."""
     host = os.environ.get("MCP_MUSESCORE_HOST", "localhost")
     port = int(os.environ.get("MCP_MUSESCORE_PORT", "8765"))
     uri = f"ws://{host}:{port}"

@@ -83,7 +83,9 @@ async def open_score_path(client: MuseScoreClient, score_path: Optional[str] = N
 
 
 def part_file_name(source: Path, name: str) -> Path:
-    """<score> - <part>.mscz next to `source`, numbered if taken. Long part names ("Player | Kit | Drums")
+    """Name the part's score file: <score> - <part>.mscz next to `source`.
+
+    Numbered if taken. Long part names ("Player | Kit | Drums")
     are cut to their last segment; a score already named after the part (a Save As "... - Drums" of the
     full score) gives "... - Drums only".
     """
@@ -101,7 +103,9 @@ def part_file_name(source: Path, name: str) -> Path:
 
 async def open_part_as_score(client: MuseScoreClient, source: Path, entry: str, shape: Tuple[int, int],
                              reopen: bool = True) -> Path:
-    """The open score is a part tab of `source`: file edits can't touch a part alone (it is linked to the full
+    """Open a part tab of `source` as a score file of its own.
+
+    The open score is a part tab of `source`: file edits can't touch a part alone (it is linked to the full
     score), so the part becomes a score file of its own, opened in place of the full score (now, or by the
     caller's own reopen after its edit when `reopen` is False).
     """

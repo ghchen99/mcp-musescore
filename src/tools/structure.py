@@ -472,7 +472,9 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         }
 
     async def remove_other_parts(staves: List[int], score_path: Optional[str]) -> Dict:
-        """make_part_score(in_place=True). Nothing is saved before the other parts are gone: saving the full
+        """Remove the other parts from the open score: make_part_score(in_place=True).
+
+        Nothing is saved before the other parts are gone: saving the full
         score would write again (and MuseScore would flag as corrupted) a damaged bar in another instrument, and
         an imported score would first ask where to save.
         """
