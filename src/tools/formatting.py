@@ -63,7 +63,7 @@ def drum_pitches(names: List[str]) -> List[int]:
 
 
 def translucent(color: str, opacity: float) -> str:
-    """"#rrggbb" plus an opacity (0-1) as Qt's "#aarrggbb"."""
+    """Color "#rrggbb" plus an opacity (0-1) as Qt's "#aarrggbb"."""
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
         raise ToolError(f'Color must look like "#rrggbb", got {color!r}')
     if not 0 < opacity <= 1:

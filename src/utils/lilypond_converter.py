@@ -288,7 +288,7 @@ def _staff_sort_key(name: str) -> int:
 
 
 def _bar_comment(measure: Dict[str, Any]) -> str:
-    """"% m.N" plus the displayed number when it differs, and repeat barlines, e.g. "% m.4 (bar 6) |: :|x7"."""
+    """Comment "% m.N" plus the displayed number when it differs, and repeat barlines, e.g. "% m.4 (bar 6) |: :|x7"."""
     comment = f"% m.{measure.get('measure')}"
     if measure.get("number") is not None and measure.get("number") != measure.get("measure"):
         comment += f" (bar {measure['number']})"
