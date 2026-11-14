@@ -146,6 +146,7 @@ mcp-musescore/
 ├── README.md
 ├── docs/                               # User documentation (setup, tools, drum charts...)
 ├── dev/
+│   ├── check_websocket.py              # Manual check: send getScore to a running MuseScore
 │   └── plugin_harness.py               # Run the real plugin headless in MuseScore
 ├── skills/
 │   ├── mcp-musescore/                  # Agent skill: tool reference, client config, helper scripts

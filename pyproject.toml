@@ -38,6 +38,12 @@ dev = [
     "ty>=0.0.103",
 ]
 
+# Pytest and coverage settings.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
 [tool.coverage.run]
 source = ["src"]
 branch = true
@@ -47,6 +53,8 @@ branch = true
 # tests are added, never lower it: that way the coverage of the repository can only improve.
 fail_under = 86
 show_missing = true
+
+# Type checker settings (ty).
 
 [tool.ty.src]
 include = ["src", "server.py", "dev", "tests"]

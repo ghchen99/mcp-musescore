@@ -1,3 +1,10 @@
+"""Manual check of the WebSocket connection: sends getScore to a running MuseScore and prints the result.
+
+Needs MuseScore open with the plugin running. Run from the repository root:
+
+    uv run python -m dev.check_websocket
+"""
+
 import asyncio
 import websockets
 import json
