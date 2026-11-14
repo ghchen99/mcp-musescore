@@ -21,14 +21,14 @@ always_run = true
 
 [[repos.hooks]]
 id = "ruff-lint"
-name = "Ruff lint"
+name = "ruff lint"
 entry = "uv run ruff check --fix --force-exclude"
 language = "system"
 types = ["python"]
 
 [[repos.hooks]]
 id = "ruff-format"
-name = "Ruff format"
+name = "ruff format"
 entry = "uv run ruff format --force-exclude"
 language = "system"
 types = ["python"]
