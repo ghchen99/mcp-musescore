@@ -1,8 +1,8 @@
-"""Tests for finding MuseScore (dev/plugin_harness.py), without MuseScore."""
+"""Tests for the plugin harness (dev/plugin_harness.py), without MuseScore."""
 
 import os
 
-from dev.plugin_harness import find_musescore
+from dev.plugin_harness import find_musescore, refused_actions
 
 
 def test_musescore_bin_none_means_no_musescore(monkeypatch, tmp_path):
@@ -27,3 +27,16 @@ def test_musescore_bin_wins_over_the_path(monkeypatch, tmp_path):
     monkeypatch.setenv("MUSESCORE_BIN", str(chosen))
     assert find_musescore() == str(chosen)
     assert os.access(chosen, os.X_OK)
+
+
+def test_refused_actions_are_read_from_the_log():
+    log = "\n".join(
+        [
+            "12:00:00 | INFO  | ActionsDispatcher::doDispatch | try call action: tie",
+            "12:00:01 | WARN  | ActionsDispatcher::dispatch | not a registered action: undo",
+            "12:00:02 | INFO  | ActionsDispatcher::doDispatch | no one can handle the action: insert-measure",
+        ]
+    )
+    assert refused_actions(log) == ["undo", "insert-measure"]
+    assert refused_actions(log, unknown_only=True) == ["undo"]
+    assert refused_actions("try call action: tie") == []

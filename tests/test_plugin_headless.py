@@ -1129,3 +1129,154 @@ def test_add_tied_note_errors_write_nothing(tmp_path):
         ("Rest", 480),
     ]
     assert not any(e["isTie"] for e in bar)
+
+
+def get_measures(start=1, end=4):
+    return {
+        "action": "getScore",
+        "params": {"startMeasure": start, "endMeasure": end},
+    }
+
+
+def test_musescore_knows_every_action_name_the_plugin_uses(tmp_path):
+    """Every cmd() name in the plugin is an action MuseScore knows.
+
+    cmd() with an unknown name does nothing and returns no error; MuseScore only
+    logs it, and run() fails on that log line. The names are read from the
+    plugin, so a new cmd() call is checked too. A made-up name first shows that
+    the check sees refusals. Undo was broken this way: MuseScore 4.7 renamed
+    "undo" to "action://notation/undo".
+    """
+    import re
+
+    from dev.plugin_harness import GUI_ONLY_ACTIONS, PLUGIN
+
+    code = [
+        line
+        for line in PLUGIN.read_text().splitlines()
+        if not line.strip().startswith("//")
+    ]
+    names = sorted(
+        set(re.findall(r'\bcmd\("([^"]+)"\)', "\n".join(code)))
+        - GUI_ONLY_ACTIONS
+    )
+    assert "action://notation/undo" in names and "tie" in names
+    score = tie_score(tmp_path, REST_BAR, REST_BAR)
+
+    def probe(name):
+        return {"action": "harnessCmd", "params": {"name": name}}
+
+    # The names are asked for out of context (undo with nothing to undo, delete
+    # without a selection), so MuseScore may not run them: only unknown names fail
+    with pytest.raises(RuntimeError, match="harness-made-up-action"):
+        run([probe("harness-made-up-action")], score, unknown_actions_only=True)
+    results = run(
+        [probe(name) for name in names], score, unknown_actions_only=True
+    )
+    assert all(r["result"].get("success") for r in results)
+
+
+def test_undo_uses_an_action_musescore_knows(tmp_path):
+    """The undo tool asks for an action MuseScore knows and runs.
+
+    run() fails when MuseScore refuses the action. The undo itself never runs
+    here: MuseScore's converter mode has no document window to undo in, so
+    checking that the note is gone needs the GUI.
+    """
+    results = run(
+        [add_note(60), {"action": "undo", "params": {}}],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    assert results[1]["result"].get("success")
+
+
+def test_append_measure_adds_measures_at_the_end(tmp_path):
+    results = run(
+        [
+            {"action": "appendMeasure", "params": {}},
+            {"action": "appendMeasure", "params": {"count": 2}},
+            get_measures(),
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    assert results[-1]["result"]["analysis"]["numMeasures"] == 5
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="B7: MuseScore does not see the plugin's selection, so it refuses "
+    "insert-measure ('no one can handle the action')",
+)
+def test_insert_measure_goes_before_the_selected_measure(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "insertMeasure", "params": {}},
+            get_measures(),
+        ],
+        tie_score(tmp_path, REST_BAR, xml_chord("whole", 60)),
+    )
+    analysis = results[-1]["result"]["analysis"]
+    assert analysis["numMeasures"] == 3
+    # The C that was in bar 2 is in bar 3 now; the new bar 2 is empty
+    pitches = [
+        [
+            n["pitchMidi"]
+            for e in bar
+            if e["name"] == "Chord"
+            for n in e["notes"]
+        ]
+        for bar in bars_of(results[-1]["result"])
+    ]
+    assert pitches == [[], [], [60]]
+
+
+def test_delete_selection_turns_the_notes_into_rests(tmp_path):
+    results = run(
+        [
+            {
+                "action": "selectMeasures",
+                "params": {"startMeasure": 1, "endMeasure": 1},
+            },
+            {"action": "deleteSelection", "params": {}},
+            get_measures(1, 2),
+        ],
+        tie_score(
+            tmp_path, xml_chord("half", 60) + xml_chord("half", 64), REST_BAR
+        ),
+    )
+    first, second = bars_of(results[-1]["result"])
+    assert first and all(e["name"] == "Rest" for e in first)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="B8: MuseScore does not see the selection go_to_measure makes, so it "
+    "refuses the delete ('no one can handle the action')",
+)
+def test_delete_selection_after_go_to_measure(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "deleteSelection", "params": {}},
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, REST_BAR, xml_chord("whole", 60)),
+    )
+    first, second = bars_of(results[-1]["result"])
+    assert second and all(e["name"] == "Rest" for e in second)
+
+
+def test_next_element_onto_the_last_note_appends_a_measure(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "nextElement", "params": {}},
+            get_measures(),
+        ],
+        tie_score(
+            tmp_path, REST_BAR, xml_chord("half", 60) + xml_chord("half", 64)
+        ),
+    )
+    assert results[1]["result"].get("success")
+    assert results[-1]["result"]["analysis"]["numMeasures"] == 3
