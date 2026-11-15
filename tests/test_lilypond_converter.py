@@ -1,6 +1,10 @@
 """Unit tests for the LilyPond conversion (src/utils/lilypond_converter.py)."""
 
-from src.utils.lilypond_converter import process_element, score_to_lilypond
+from src.utils.lilypond_converter import (
+    midi_to_lilypond_pitch,
+    process_element,
+    score_to_lilypond,
+)
 
 C, E, G = 60, 64, 67
 
@@ -71,3 +75,17 @@ def test_tie_across_a_barline():
     text = score_to_lilypond(score)
     assert "c'4 c'4 c'4 c'4~ | % m.1" in text
     assert "c'1 | % m.2" in text
+
+
+def test_octave_follows_the_written_note_across_the_octave_boundary():
+    # C flat sounds as the B below it and B sharp as the C above it, so their
+    # written octave differs from the octave of the MIDI pitch.
+    # B5 written as C flat 6, B flat 4 as C double flat 5
+    assert midi_to_lilypond_pitch(83, tpc=7) == "ces'''"
+    assert midi_to_lilypond_pitch(70, tpc=0) == "ceses''"
+    # C4 written as B sharp 3, C sharp 4 as B double sharp 3
+    assert midi_to_lilypond_pitch(60, tpc=26) == "bis"
+    assert midi_to_lilypond_pitch(61, tpc=33) == "bisis"
+    # A plain B4 and middle C are unchanged
+    assert midi_to_lilypond_pitch(71, tpc=19) == "b'"
+    assert midi_to_lilypond_pitch(60, tpc=14) == "c'"

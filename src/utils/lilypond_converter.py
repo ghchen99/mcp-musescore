@@ -10,7 +10,9 @@ def midi_to_lilypond_pitch(midi_pitch: int, tpc: Optional[int] = None) -> str:
     """Convert a MIDI pitch to LilyPond pitch syntax.
 
     If TPC (Tonal Pitch Class) is provided, uses it to determine enharmonic
-    spelling (flats vs sharps). Errors are logged, not raised.
+    spelling (flats vs sharps). The octave is the written note's: C flat is an
+    octave above the B it sounds as, B sharp an octave below the C. Errors are
+    logged, not raised.
 
     Args:
         midi_pitch (int): The MIDI pitch; 60 is middle C.
@@ -88,6 +90,12 @@ def midi_to_lilypond_pitch(midi_pitch: int, tpc: Optional[int] = None) -> str:
             base_note = pitch_names[midi_pitch % 12]
 
         octave = (midi_pitch // 12) - 1
+        # A C flat is written in the octave above the B it sounds as, and a B
+        # sharp in the octave below the C it sounds as
+        if base_note.startswith("ces"):
+            octave += 1
+        elif base_note.startswith("bis"):
+            octave -= 1
 
         # Mapping MIDI octaves to LilyPond octaves (C4 = MIDI 60 = c')
         if octave == 4:
