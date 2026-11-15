@@ -1427,7 +1427,7 @@ def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):
     assert len({b.y for b in boxes[:6]}) == 1 and boxes[6].y > boxes[0].y
     assert render_whole_page(pdf, 0).size == (1109, 1568)
     crop = render_measures(pdf, rendered["pageWidth"], boxes, 2, 2)
-    assert crop.width == round(boxes[1].width * 25)
+    assert crop.width == round((boxes[1].width + 4) * 25)  # 2 sp margins
 
 
 def test_measures_inside_a_multi_measure_rest_have_no_box(tmp_path):
@@ -1454,3 +1454,23 @@ def test_measures_inside_a_multi_measure_rest_have_no_box(tmp_path):
     assert len(measures) == 6
     assert measures[0] is not None and measures[5] is not None
     assert measures[1:5] == [None] * 4
+
+
+def test_a_measure_content_box_takes_in_its_marker(tmp_path):
+    (result,) = run(
+        [
+            {
+                "action": "renderScore",
+                "params": {"path": (tmp_path / "r").as_posix()},
+            }
+        ],
+        measure_elements_score(tmp_path),
+    )
+    measures = result["result"]["measures"]
+    for m in measures:
+        c = m["content"]
+        assert c["x"] <= m["x"] and c["y"] <= m["y"]
+        assert c["x"] + c["width"] >= m["x"] + m["width"]
+        assert c["y"] + c["height"] >= m["y"] + m["height"]
+    # Bar 3's Coda sign stands above the staff, so its content reaches higher.
+    assert measures[2]["content"]["y"] < measures[2]["y"] - 1

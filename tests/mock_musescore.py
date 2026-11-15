@@ -138,6 +138,9 @@ class MockScore:
         self.measure_boxes: Optional[List[Optional[tuple]]] = (
             None  # (page, x, y, width, height) in staff spaces per bar, None inside a multi-measure rest
         )
+        self.content_boxes: Dict[
+            int, tuple
+        ] = {}  # bar index (0-based) -> (x, y, width, height) of what is attached to it
         self.measure_elements: Dict[
             int, List[Dict[str, Any]]
         ] = {}  # measure -> [{"name", "text"}]: markers, jumps, breaks
@@ -478,10 +481,16 @@ class MockMuseScore:
                     "y": b[2],
                     "width": b[3],
                     "height": b[4],
+                    "content": dict(
+                        zip(
+                            ["x", "y", "width", "height"],
+                            score.content_boxes.get(i, b[1:]),
+                        )
+                    ),
                 }
                 if b
                 else None
-                for b in boxes
+                for i, b in enumerate(boxes)
             ],
         }
 

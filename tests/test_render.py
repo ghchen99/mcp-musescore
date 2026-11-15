@@ -51,38 +51,39 @@ def test_a_page_is_scaled_to_fit_the_image_limit():
     run_with_mock(scenario, score)
 
 
-def test_measures_on_one_system_are_cropped_with_room_above_and_below():
+def test_measures_are_cropped_with_a_margin_around_them():
     async def scenario(c, mock):
         result = await c.call_tool("render", {"measures": "2-3"})
-        # Bars 2-3 span x 30-70 sp. The band reaches halfway to system 2
-        # (y 30-50, so 10 sp) below, and as far above: 40×40 sp.
-        assert image_of(result).size == (1000, 1000)
+        # Bars 2-3 span x 30-70 and y 10-30 sp; 2 sp of margin each side.
+        assert image_of(result).size == (1100, 600)
         assert "Measures 2-3 (page 1 of 1)" in text_of(result)
 
     run_with_mock(scenario, two_systems_score())
 
 
+def test_a_crop_takes_in_everything_attached_to_its_measures():
+    score = two_systems_score()
+    score.content_boxes = {
+        0: (12, 0, 4, 2),  # bar 1, not shown: no effect
+        1: (32, 4, 6, 3),  # a chord symbol above bar 2
+        2: (66, 2, 8, 4),  # a To Coda sign past the end of bar 3
+    }
+
+    async def scenario(c, mock):
+        result = await c.call_tool("render", {"measures": "2-3"})
+        # x 30-74 and y 2-30 sp, plus 2 sp of margin each side.
+        assert image_of(result).size == (1200, 800)
+
+    run_with_mock(scenario, score)
+
+
 def test_measures_across_two_systems_are_stacked():
     async def scenario(c, mock):
         result = await c.call_tool("render", {"measures": "3-6"})
-        # Bars 3-4 (40×40 sp) above bars 5-6 (40×40 sp): 1000×2000 px,
-        # scaled to fit 1568 px.
-        assert image_of(result).size == (784, 1568)
+        # Bars 3-4 above bars 5-6, each 44×24 sp with the margins.
+        assert image_of(result).size == (1100, 1200)
 
     run_with_mock(scenario, two_systems_score())
-
-
-def test_the_room_around_a_system_is_at_most_twice_its_height():
-    score = MockScore(staves=1, measures=2)
-    score.page_size = (100, 200)
-    score.measure_boxes = [(0, 10, 10, 20, 10), (0, 10, 150, 20, 10)]
-
-    async def scenario(c, mock):
-        result = await c.call_tool("render", {"measures": "2"})
-        # 130 sp to the system above, but at most 2 × 10 sp of room each side.
-        assert image_of(result).size == (500, 1250)
-
-    run_with_mock(scenario, score)
 
 
 def test_a_page_that_does_not_exist_is_refused():

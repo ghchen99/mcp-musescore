@@ -1658,13 +1658,15 @@ MuseScore {
                 continue;
             }
             if (!pageSize) pageSize = page.bbox;
-            measures.push({
+            var box = {
                 page: page.pagenumber,
                 x: m.pagePos.x + m.bbox.x,
                 y: m.pagePos.y + m.bbox.y,
                 width: m.bbox.width,
                 height: m.bbox.height
-            });
+            };
+            box.content = contentBoxOf(m, box);
+            measures.push(box);
         }
         return {
             success: true,
@@ -1674,6 +1676,38 @@ MuseScore {
             measures: measures,
             numbers: displayedNumbers()
         };
+    }
+
+    // The box, in staff spaces on the page, around the measure and everything attached to it that
+    // may stick out of it: markers and jumps (a To Coda sign past the barline), chord symbols, texts
+    // and other annotations, notes on ledger lines, lyrics. The render tool crops to it.
+    function contentBoxOf(measure, box) {
+        var r = { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height };
+        function add(e) {
+            if (!e || !e.bbox || !e.pagePos || (e.bbox.width <= 0 && e.bbox.height <= 0)) return;
+            var x = e.pagePos.x + e.bbox.x, y = e.pagePos.y + e.bbox.y;
+            r.x0 = Math.min(r.x0, x); r.y0 = Math.min(r.y0, y);
+            r.x1 = Math.max(r.x1, x + e.bbox.width); r.y1 = Math.max(r.y1, y + e.bbox.height);
+        }
+        var els = measure.elements || [];
+        for (var i = 0; i < els.length; i++) {
+            if (els[i].type !== Element.LAYOUT_BREAK) add(els[i]);
+        }
+        var end = measureEndTick(measure);
+        for (var seg = measure.firstSegment; seg && seg.tick < end; seg = seg.next) {
+            var annotations = seg.annotations || [];
+            for (var a = 0; a < annotations.length; a++) add(annotations[a]);
+            for (var t = 0; t < curScore.ntracks; t++) {
+                var el = seg.elementAt(t);
+                if (!el) continue;
+                add(el);
+                var notes = el.notes || [];
+                for (var n = 0; n < notes.length; n++) add(notes[n]);
+                var lyrics = el.lyrics || [];
+                for (var l = 0; l < lyrics.length; l++) add(lyrics[l]);
+            }
+        }
+        return { x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0 };
     }
 
     function getStyle(params) {

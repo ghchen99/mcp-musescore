@@ -20,12 +20,17 @@ IMAGE_LIMIT = 1568
 CROP_PIXELS_PER_SPACE = 25
 """Detail of cropped measures: a staff is 100 px high."""
 
+CROP_MARGIN = 2
+"""Staff spaces added around cropped measures, which shows the barline before."""
+
 
 @dataclass(frozen=True)
 class Box:
     """A measure's box on its page, in staff spaces from the page's top left.
 
-    The box is as high as the measure's whole system (all its staves).
+    The box is as high as the measure's whole system (all its staves). content
+    also takes in what is attached to the measure and may stick out of it: chord
+    symbols, texts, lyrics, markers and jumps, notes on ledger lines.
     """
 
     page: int
@@ -33,6 +38,7 @@ class Box:
     y: float
     width: float
     height: float
+    content: Optional["Box"] = None
 
     @property
     def bottom(self) -> float:
@@ -45,13 +51,27 @@ def boxes_from(measures: List[Optional[dict]]) -> List[Optional[Box]]:
 
     Args:
         measures (List[Optional[dict]]): One {"page", "x", "y", "width",
-            "height"} per measure, or None for a measure that is not laid out
-            (inside a multi-measure rest).
+            "height", "content"} per measure, content being {"x", "y", "width",
+            "height"}; None for a measure that is not laid out (inside a multi-
+            measure rest).
 
     Returns:
         boxes (List[Optional[Box]]): The boxes, in score order.
     """
-    return [Box(**m) if m else None for m in measures]
+    boxes: List[Optional[Box]] = []
+    for m in measures:
+        if not m:
+            boxes.append(None)
+            continue
+        fields = {k: m[k] for k in ("page", "x", "y", "width", "height")}
+        content = m.get("content")
+        boxes.append(
+            Box(
+                **fields,
+                content=Box(page=m["page"], **content) if content else None,
+            )
+        )
+    return boxes
 
 
 def render_page(pdf: Path, page: int, scale: float) -> Image.Image:
@@ -115,9 +135,9 @@ def bands(
 ) -> List[tuple[int, Box]]:
     """Return the region to crop on each system that holds measures first..last.
 
-    A band spans the chosen measures across, and reaches halfway to the
-    neighbouring systems on the page (at most twice the system's height), which
-    takes in chord symbols, markers and other text around the staves.
+    A band takes in the chosen measures of the system and everything attached to
+    them, with CROP_MARGIN staff spaces around, so that nothing of theirs is cut
+    off (a To Coda sign past the barline, a chord symbol high above).
 
     Args:
         boxes (Sequence[Optional[Box]]): Every measure's box, in score order;
@@ -129,53 +149,33 @@ def bands(
         bands (List[tuple[int, Box]]): (page, region) per system, top to bottom,
             in staff spaces.
     """
-    # (measure index, box) per system, in order
-    systems: List[List[tuple[int, Box]]] = []
-    for i, box in enumerate(boxes):
+    systems: List[List[Box]] = []  # the chosen measures, per system
+    for box in boxes[first - 1 : last]:
         if box is None:
             continue
-        prev = systems[-1][0][1] if systems else None
+        prev = systems[-1][0] if systems else None
         if prev and (prev.page, prev.y) == (box.page, box.y):
-            systems[-1].append((i, box))
+            systems[-1].append(box)
         else:
-            systems.append([(i, box)])
+            systems.append([box])
 
     result = []
-    for n, system in enumerate(systems):
-        chosen = [b for i, b in system if first - 1 <= i <= last - 1]
-        if not chosen:
-            continue
-        head = system[0][1]
-        before = systems[n - 1][0][1] if n else None
-        after = systems[n + 1][0][1] if n + 1 < len(systems) else None
-        above = (
-            (head.y - before.bottom) / 2
-            if before and before.page == head.page
-            else None
-        )
-        below = (
-            (after.y - head.bottom) / 2
-            if after and after.page == head.page
-            else None
-        )
-        if above is None:
-            above = below
-        if below is None:
-            below = above
-        limit = 2 * head.height
-        above = min(limit, above if above is not None else limit)
-        below = min(limit, below if below is not None else limit)
-        left, right = chosen[0], chosen[-1]
-        top = max(0.0, head.y - above)
+    for system in systems:
+        parts = system + [b.content for b in system if b.content]
+        left = min(b.x for b in parts) - CROP_MARGIN
+        top = min(b.y for b in parts) - CROP_MARGIN
+        right = max(b.x + b.width for b in parts) + CROP_MARGIN
+        bottom = max(b.bottom for b in parts) + CROP_MARGIN
+        page = system[0].page
         result.append(
             (
-                head.page,
+                page,
                 Box(
-                    page=head.page,
-                    x=left.x,
+                    page=page,
+                    x=left,
                     y=top,
-                    width=right.x + right.width - left.x,
-                    height=head.bottom + below - top,
+                    width=right - left,
+                    height=bottom - top,
                 ),
             )
         )
@@ -214,8 +214,8 @@ def render_measures(
         crops.append(
             image.crop(
                 (
-                    round(region.x * px),
-                    round(region.y * px),
+                    max(0, round(region.x * px)),
+                    max(0, round(region.y * px)),
                     min(image.width, round((region.x + region.width) * px)),
                     min(image.height, round(region.bottom * px)),
                 )
