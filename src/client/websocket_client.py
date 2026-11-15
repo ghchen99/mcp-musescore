@@ -4,14 +4,19 @@ The plugin runs a WebSocket server inside MuseScore. The client sends it JSON
 commands ({"action": ..., "params": {...}}) and reads its JSON replies.
 """
 
+import asyncio
 import json
 import logging
+import os
 from typing import Any, Dict, Optional
 
 import websockets
 from fastmcp.exceptions import ToolError
 
 logger = logging.getLogger("MuseScoreMCP.Client")
+
+DEFAULT_TIMEOUT = 60.0
+"""Seconds to wait for the plugin's reply; MUSESCORE_TIMEOUT overrides it."""
 
 
 def unwrap_result(response: dict) -> dict:
@@ -50,13 +55,16 @@ def unwrap_result(response: dict) -> dict:
 class MuseScoreClient:
     """A connection to the MuseScore plugin's WebSocket server.
 
-    The client connects on first use, and reconnects once when a command fails
-    on a stale connection (for example after MuseScore was restarted).
+    The client connects on first use and sends one command at a time. When a
+    command cannot be sent on a stale connection (for example after MuseScore
+    was restarted), it reconnects and sends it once more. A command that was
+    sent is never sent again, so a lost reply cannot apply it twice.
 
     Attributes:
         uri (str): The plugin's WebSocket address, e.g. "ws://localhost:8765".
         websocket (Optional[ClientConnection]): The open connection, or None
             when not connected.
+        timeout (float): Seconds to wait for the plugin's reply.
 
     Example:
         >>> client = MuseScoreClient()
@@ -66,15 +74,46 @@ class MuseScoreClient:
         True
     """
 
-    def __init__(self, host: str = "localhost", port: int = 8765) -> None:
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 8765,
+        timeout: Optional[float] = None,
+    ) -> None:
         """Prepare a client for the plugin; it connects on first use.
 
         Args:
             host (str): The host the plugin's server listens on.
             port (int): The port the plugin's server listens on.
+            timeout (Optional[float]): Seconds to wait for a reply. Defaults to
+                $MUSESCORE_TIMEOUT, or DEFAULT_TIMEOUT when that is not set.
         """
         self.uri = f"ws://{host}:{port}"
         self.websocket = None
+        self.timeout = (
+            timeout
+            if timeout is not None
+            else float(os.environ.get("MUSESCORE_TIMEOUT", DEFAULT_TIMEOUT))
+        )
+        self._lock: Optional[asyncio.Lock] = None
+        self._lock_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def _command_lock(self) -> asyncio.Lock:
+        """Return the lock that lets one command at a time use the socket.
+
+        The plugin answers commands in order on one connection, so a second
+        command must wait until the first one's reply has been read. The lock is
+        made per event loop, because the client outlives a single loop in the
+        tests.
+
+        Returns:
+            lock (asyncio.Lock): The lock for the running event loop.
+        """
+        loop = asyncio.get_running_loop()
+        if self._lock is None or self._lock_loop is not loop:
+            self._lock = asyncio.Lock()
+            self._lock_loop = loop
+        return self._lock
 
     async def connect(self) -> bool:
         """Connect to the plugin's WebSocket server.
@@ -112,9 +151,12 @@ class MuseScoreClient:
     ) -> Dict[str, Any]:
         """Send a command to the plugin and wait for its reply.
 
-        Tries the existing socket first; if that fails (e.g. MuseScore was
-        restarted and the socket is stale), the socket is dropped and the
-        command is retried once on a fresh connection.
+        Commands wait for each other, so each reply is read by the command it
+        belongs to. If the command cannot be sent (e.g. MuseScore was restarted
+        and the socket is stale), the socket is dropped and the command is sent
+        once more on a fresh connection. Once sent, it is never sent again: if
+        no reply comes within the timeout, or the connection is lost, the reply
+        is an error and the socket is dropped.
 
         Args:
             action (str): The plugin action to run, e.g. "getScore".
@@ -123,7 +165,23 @@ class MuseScoreClient:
 
         Returns:
             response (Dict[str, Any]): The plugin's parsed reply, or {"error":
-                ...} if MuseScore could not be reached.
+                ...} if MuseScore could not be reached, did not answer in time,
+                or the connection was lost after sending.
+        """
+        async with self._command_lock():
+            return await self._send_command(action, params)
+
+    async def _send_command(
+        self, action: str, params: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Send a command and read its reply; the caller holds the lock.
+
+        Args:
+            action (str): The plugin action to run.
+            params (Optional[Dict[str, Any]]): The action's parameters.
+
+        Returns:
+            response (Dict[str, Any]): As for send_command.
         """
         if params is None:
             params = {}
@@ -142,15 +200,37 @@ class MuseScoreClient:
             try:
                 logger.info(f"Sending command: {payload}")
                 await websocket.send(payload)
-                response = await websocket.recv()
-                logger.info(f"Received response: {response}")
-                return json.loads(response)
             except Exception as e:
+                # Not sent, so it is safe to try again on a fresh connection
+                # (e.g. MuseScore was restarted and the socket is stale).
                 last_error = str(e)
                 logger.warning(
                     f"Send failed (attempt {attempt + 1}/2), resetting socket: {last_error}"
                 )
                 await self._reset_socket()
+                continue
+
+            # Sent: from here on, never send it again, which could apply it twice.
+            try:
+                response = await asyncio.wait_for(
+                    websocket.recv(), self.timeout
+                )
+            except TimeoutError:
+                # A late reply would be read as the next command's reply.
+                await self._reset_socket()
+                return {
+                    "error": f"MuseScore did not answer within {self.timeout:g} s. "
+                    "It may be busy or showing a dialog; check MuseScore."
+                }
+            except Exception as e:
+                await self._reset_socket()
+                return {
+                    "error": f"The connection to MuseScore was lost after sending "
+                    f"{action!r} ({e}). The command may have been applied; check "
+                    "the score before repeating it."
+                }
+            logger.info(f"Received response: {response}")
+            return json.loads(response)
 
         return {"error": f"Not connected to MuseScore: {last_error}"}
 

@@ -8,6 +8,8 @@
   - Ensure MuseScore is running with a score open
   - Run the MuseScore plugin (Plugins → MuseScore API Server)
   - Check that port 8765 isn't blocked by firewall
+- **"MuseScore did not answer within 60 s"**: the plugin received the command but sent no reply. MuseScore is usually showing a dialog (a save prompt, an import report) or is still busy; close the dialog and try again. For commands that really take longer, raise the limit with the environment variable `MUSESCORE_TIMEOUT` (in seconds) in the server's configuration
+- **"The connection to MuseScore was lost after sending …"**: the command reached MuseScore, but its reply did not come back, so it may or may not have been applied. It is not sent again automatically, to avoid applying it twice: check the score (or `get_score`) before repeating it
 
 ## Plugin Issues
 - **Plugin not appearing**: Check the `.qml` file is in the correct plugins directory (on Ubuntu with Snap or Flatpak, see [Ubuntu](setup.md#ubuntu))
