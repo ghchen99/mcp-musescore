@@ -1,22 +1,32 @@
-"""Tests for keeping only some instruments of a score file (src/mscz/parts.py)."""
+"""Tests for keeping only some instruments of a score (src/mscz/parts.py)."""
 
 import os
 import shutil
 import stat
 import subprocess
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from dev.plugin_harness import find_musescore
 from src.mscz import ScoreFile, ScoreFileError
-import zipfile
-
-from src.mscz.locate import OpenPartError, locate_open_score, part_with_score_id, read_score_id, score_shape
+from src.mscz.locate import (
+    OpenPartError,
+    locate_open_score,
+    part_with_score_id,
+    read_score_id,
+    score_shape,
+)
 from src.mscz.parts import detach_part, keep_parts, part_name
 
-QUARTET = Path(__file__).resolve().parent.parent / "examples" / "string quartet" / "String Quartet.mscz"
+QUARTET = (
+    Path(__file__).resolve().parent.parent
+    / "examples"
+    / "string quartet"
+    / "String Quartet.mscz"
+)
 
 
 @pytest.fixture
@@ -33,11 +43,17 @@ def text_element(tag, text):
 
 
 def add_system_items(score):
-    """Tempo and a rehearsal mark on beat 1 of bar 2, a mark on beat 2 of bar 3, a repeat and a line break, all
-    on the first staff (where MuseScore stores them)."""
+    """Add the system items to the first staff.
+
+    Tempo and a rehearsal mark on beat 1 of bar 2, a mark on beat 2 of bar 3, a
+    repeat and a line break, all on the first staff (where MuseScore stores
+    them).
+    """
     first = score.staves()[0].findall("Measure")
     voice = first[1].find("voice")
-    position = next(i for i, c in enumerate(voice) if c.tag in ("Chord", "Rest"))
+    position = next(
+        i for i, c in enumerate(voice) if c.tag in ("Chord", "Rest")
+    )
     voice.insert(position, text_element("Tempo", "q = 90"))
     voice.insert(position + 1, text_element("RehearsalMark", "A"))
     voice3 = first[2].find("voice")
@@ -52,9 +68,13 @@ def add_system_items(score):
 
 def test_keeps_one_part_and_moves_the_system_items(quartet):
     add_system_items(quartet)
-    cello_before = [ET.tostring(m) for m in quartet.staves()[3].findall("Measure")]
+    cello_before = [
+        ET.tostring(m) for m in quartet.staves()[3].findall("Measure")
+    ]
     report = keep_parts(quartet, [3])
-    assert report["kept_parts"] == ["Violoncello"] and report["removed_parts"] == 3
+    assert (
+        report["kept_parts"] == ["Violoncello"] and report["removed_parts"] == 3
+    )
     assert report["system_texts"] == 3 and report["moved_earlier"] == []
 
     (staff,) = quartet.staves()
@@ -63,10 +83,16 @@ def test_keeps_one_part_and_moves_the_system_items(quartet):
     measures = staff.findall("Measure")
     assert len(measures) == len(cello_before)
     bar2 = [c.tag for c in measures[1].find("voice")]
-    assert bar2.index("Tempo") < bar2.index("RehearsalMark") < bar2.index(next(t for t in bar2 if t in ("Chord", "Rest")))
+    assert (
+        bar2.index("Tempo")
+        < bar2.index("RehearsalMark")
+        < bar2.index(next(t for t in bar2 if t in ("Chord", "Rest")))
+    )
     assert measures[1].find("startRepeat") is not None
     assert measures[3].findtext("LayoutBreak/subtype") == "line"
-    assert [p.findtext("trackName") for p in quartet.score.findall("Part")] == ["Violoncello"]
+    assert [p.findtext("trackName") for p in quartet.score.findall("Part")] == [
+        "Violoncello"
+    ]
 
 
 def test_keeping_the_first_staff_needs_no_merge(quartet):
@@ -103,21 +129,34 @@ def test_musescore_opens_the_copy(tmp_path, quartet):
     out = out_dir / "roundtrip.mscx"
     musescore = find_musescore()
     assert musescore is not None
-    result = subprocess.run([musescore, "-o", str(out), str(quartet.path)], timeout=300,
-                            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = subprocess.run(
+        [musescore, "-o", str(out), str(quartet.path)],
+        timeout=300,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     assert result.returncode == 0
     reread = ScoreFile(out)
     (staff,) = reread.staves()
-    texts = ["".join(t.findall("text")[0].itertext()) for t in staff.iter("RehearsalMark")]
+    texts = [
+        "".join(t.findall("text")[0].itertext())
+        for t in staff.iter("RehearsalMark")
+    ]
     assert texts == ["A", "B"]
-    tempos = ["".join(t.findall("text")[0].itertext()) for t in staff.findall("Measure")[1].iter("Tempo")]
+    tempos = [
+        "".join(t.findall("text")[0].itertext())
+        for t in staff.findall("Measure")[1].iter("Tempo")
+    ]
     assert "q = 90" in tempos
 
 
 def score_with_part(tmp_path, score_id="mcp-part-1"):
-    """The quartet with a cello part (as MuseScore stores parts: Excerpts/, links to the full score) whose
-    metadata holds `score_id`, as after the plugin ran in the part's tab and saved."""
+    """The quartet with a cello part whose metadata holds `score_id`.
+
+    The part is stored as MuseScore stores parts (Excerpts/, links to the full
+    score), as after the plugin ran in the part's tab and saved.
+    """
     full = tmp_path / "Quartet.mscz"
     shutil.copy(QUARTET, full)
     part = ScoreFile(full)
@@ -137,7 +176,10 @@ def score_with_part(tmp_path, score_id="mcp-part-1"):
 
 def test_a_part_tab_is_found_and_detached(tmp_path):
     full, entry = score_with_part(tmp_path)
-    assert read_score_id(full) is None and part_with_score_id(full, "mcp-part-1") == entry
+    assert (
+        read_score_id(full) is None
+        and part_with_score_id(full, "mcp-part-1") == entry
+    )
     with pytest.raises(OpenPartError) as found:
         locate_open_score("mcp-part-1", 1, 4, known=[full])
     assert (found.value.path, found.value.entry) == (full, entry)
@@ -147,12 +189,20 @@ def test_a_part_tab_is_found_and_detached(tmp_path):
     score = ScoreFile(target)
     assert len(score.staves()) == 1 and not list(score.root.iter("linkedTo"))
     with zipfile.ZipFile(target) as z:
-        assert sorted(z.namelist()) == ["META-INF/container.xml", "Quartet - Cello.mscx", "score_style.mss"]
+        assert sorted(z.namelist()) == [
+            "META-INF/container.xml",
+            "Quartet - Cello.mscx",
+            "score_style.mss",
+        ]
 
 
 def test_multi_measure_rests_are_not_counted_as_bars(tmp_path):
-    """With multi-measure rests on, MuseScore saves each one as an extra <Measure> holding <multiMeasureRest>
-    (seen in a saved drum part: 72 <Measure>s for 71 bars)."""
+    """Multi-measure rests are not counted as bars.
+
+    With multi-measure rests on, MuseScore saves each one as an extra <Measure>
+    holding <multiMeasureRest> (seen in a saved drum part: 72 <Measure>s for 71
+    bars).
+    """
     full = tmp_path / "Quartet.mscz"
     shutil.copy(QUARTET, full)
     score = ScoreFile(full)
@@ -160,11 +210,15 @@ def test_multi_measure_rests_are_not_counted_as_bars(tmp_path):
     for staff in score.staves():
         mm_rest = ET.Element("Measure")
         ET.SubElement(mm_rest, "multiMeasureRest").text = "2"
-        staff.insert(list(staff).index(staff.findall("Measure")[1]) + 1, mm_rest)
+        staff.insert(
+            list(staff).index(staff.findall("Measure")[1]) + 1, mm_rest
+        )
     score.save()
     reread = ScoreFile(full)
     assert reread.multi_measure_rests == len(reread.staves())
-    assert [len(s.findall("Measure")) for s in reread.staves()] == [bars] * len(reread.staves())
+    assert [len(s.findall("Measure")) for s in reread.staves()] == [bars] * len(
+        reread.staves()
+    )
     assert score_shape(full) == (len(reread.staves()), bars)
 
 
@@ -177,7 +231,11 @@ def test_musescore_opens_a_detached_part(tmp_path):
     out = out_dir / "roundtrip.mscx"
     musescore = find_musescore()
     assert musescore is not None
-    result = subprocess.run([musescore, "-o", str(out), str(target)], timeout=300,
-                            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = subprocess.run(
+        [musescore, "-o", str(out), str(target)],
+        timeout=300,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     assert result.returncode == 0 and len(ScoreFile(out).staves()) == 1

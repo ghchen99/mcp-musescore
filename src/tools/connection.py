@@ -2,14 +2,22 @@
 
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
+from fastmcp import FastMCP
+
 from ..client import MuseScoreClient
 
 GET_SCORE_WINDOW = 16
 
 
-def setup_connection_tools(mcp, client: MuseScoreClient):
-    """Setup connection and utility tools."""
-    
+def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
+    """Register the connection and score-reading tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
+
     @mcp.tool(
         description="Connect to the MuseScore WebSocket API.",
         tags={"connection"},
@@ -40,24 +48,34 @@ def setup_connection_tools(mcp, client: MuseScoreClient):
     async def get_score(
         start_measure: Annotated[int, "First measure to read (1-based)"] = 1,
         end_measure: Annotated[
-            Optional[int], f"Last measure to read (1-based, inclusive). Defaults to start_measure + {GET_SCORE_WINDOW - 1}."
+            Optional[int],
+            f"Last measure to read (1-based, inclusive). Defaults to start_measure + {GET_SCORE_WINDOW - 1}.",
         ] = None,
         staves: Annotated[
-            Optional[List[int]], "Staff indices to read (0-based). Defaults to all staves."
+            Optional[List[int]],
+            "Staff indices to read (0-based). Defaults to all staves.",
         ] = None,
         format: Annotated[
-            Literal["lilypond", "json"], '"lilypond" for compact notation text, "json" for the raw analysis'
+            Literal["lilypond", "json"],
+            '"lilypond" for compact notation text, "json" for the raw analysis',
         ] = "lilypond",
     ):
         if end_measure is None:
             end_measure = start_measure + GET_SCORE_WINDOW - 1
-        params: Dict[str, Any] = {"startMeasure": start_measure, "endMeasure": end_measure}
+        params: Dict[str, Any] = {
+            "startMeasure": start_measure,
+            "endMeasure": end_measure,
+        }
         if staves:
             params["staves"] = staves
 
         res = await client.send_command("getScore", params)
         result = res.get("result")
-        if not (isinstance(result, dict) and result.get("success") and isinstance(result.get("analysis"), dict)):
+        if not (
+            isinstance(result, dict)
+            and result.get("success")
+            and isinstance(result.get("analysis"), dict)
+        ):
             return res
 
         analysis = result["analysis"]
@@ -65,6 +83,7 @@ def setup_connection_tools(mcp, client: MuseScoreClient):
             return analysis
 
         from ..utils.lilypond_converter import score_to_lilypond
+
         lily_str = score_to_lilypond(analysis)
 
         total = analysis.get("numMeasures")
@@ -84,8 +103,10 @@ def setup_connection_tools(mcp, client: MuseScoreClient):
         text = f"[Métadonnées] {meta_str}\n[Partition]\n{lily_str}"
         markings = [
             f"m.{m['measure']} beat {(mk['startTick'] - m['startTick']) / 480 + 1:g}, staff {mk['staff']}: "
-            f"{mk['name']} {mk.get('text', '')}".rstrip() + (" (highlighted)" if mk.get("highlighted") else "")
-            for m in analysis.get("measures", []) for mk in m.get("markings", [])
+            f"{mk['name']} {mk.get('text', '')}".rstrip()
+            + (" (highlighted)" if mk.get("highlighted") else "")
+            for m in analysis.get("measures", [])
+            for mk in m.get("markings", [])
         ]
         if markings:
             text += "\n[Markings]\n" + "\n".join(markings)

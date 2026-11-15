@@ -2,13 +2,21 @@
 
 from typing import Annotated
 
+from fastmcp import FastMCP
+
 from ..client import MuseScoreClient
 from ..types import ActionSequence
 
 
-def setup_sequence_tools(mcp, client: MuseScoreClient):
-    """Setup sequence processing tools."""
-    
+def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
+    """Register the tool that runs a sequence of plugin actions.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
+
     @mcp.tool(
         description=(
             "Run several score commands in order in a single call. "
@@ -36,4 +44,6 @@ def setup_sequence_tools(mcp, client: MuseScoreClient):
             '"advanceCursorAfterAction": true}}]',
         ],
     ):
-        return await client.send_command("processSequence", {"sequence": sequence})
+        return await client.send_command(
+            "processSequence", {"sequence": sequence}
+        )

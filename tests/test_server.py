@@ -1,4 +1,4 @@
-"""Smoke tests that exercise the MCP server in memory, without MuseScore running."""
+"""Smoke tests that run the MCP server in memory, without MuseScore."""
 
 import asyncio
 

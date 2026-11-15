@@ -20,6 +20,27 @@ pass_filenames = false
 always_run = true
 
 [[repos.hooks]]
+id = "ruff-lint"
+name = "ruff lint"
+entry = "uv run ruff check --fix --force-exclude"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
+id = "ruff-format"
+name = "ruff format"
+entry = "uv run ruff format --force-exclude"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
+id = "docstring-tailor"
+name = "docstring-tailor docstring format"
+entry = "uv run docstring_tailor format"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
 id = "ty"
 name = "ty type check"
 entry = "uv run ty check"
@@ -28,9 +49,9 @@ types = ["python"]
 pass_filenames = false
 
 [[repos.hooks]]
-id = "qml-syntax"
-name = "QML plugin syntax check"
-entry = "node syntax_check.js"
+id = "plugin-js-syntax"
+name = "plugin JavaScript syntax check"
+entry = "node dev/check_plugin_js_syntax.js"
 language = "system"
 files = '\.qml$'
 pass_filenames = false
