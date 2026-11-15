@@ -4,6 +4,7 @@ from .connection import setup_connection_tools
 from .formatting import setup_formatting_tools
 from .navigation import setup_navigation_tools
 from .notes_measures import setup_notes_measures_tools
+from .render import setup_render_tools
 from .score_file import setup_score_file_tools
 from .sequences import setup_sequence_tools
 from .staff_instruments import setup_staff_instruments_tools
@@ -24,4 +25,5 @@ __all__ = [
     "setup_formatting_tools",
     "setup_score_file_tools",
     "setup_style_tools",
+    "setup_render_tools",
 ]

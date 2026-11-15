@@ -8,6 +8,7 @@ Repeats, drum charts and drum notation have [their own page](drum-charts.md).
 
 ## Reading the Score
 - `get_score(start_measure, end_measure, staves, format)` - Read the score as LilyPond (`format="json"` for the raw analysis), 16 measures at a time by default, optionally only some staves. Each staff is reported with its instrument name, and markings such as dynamics and chord symbols are listed per measure, along with the measure's own markers (Segno, Coda, To Coda, Fine), jumps (D.S. al Coda…) and line, page and section breaks. A chord symbol imported from MusicXML shows as `Harmony (name not readable: save and reopen the score)` until the score has been saved and reopened
+- `render(page, measures)` - Show the score as MuseScore engraves it, as an image, to check layout that the text can't show: overlapping chord symbols, marker placement, system breaks, spacing. `page=N` gives a whole page (default page 1), fitted to 1568 px; `measures="5-8"` crops those bars at 25 px per staff space, with the room above and below the staves, one band per system stacked top to bottom. Bars inside a multi-measure rest can't be cropped; render their page instead
 - `show_score(first_measure, last_measure)` - Render the score as sheet music in an interactive viewer (see [Score viewer](#score-viewer-mcp-apps))
 - `ping_musescore()` - Test connection to MuseScore
 - `connect_to_musescore()` - Establish WebSocket connection

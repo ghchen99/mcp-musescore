@@ -91,6 +91,7 @@ MuseScore {
             case "colorRange":              return colorRange(command.params);
             case "setStyle":                return setStyle(command.params);
             case "getStyle":                return getStyle(command.params);
+            case "renderScore":             return renderScore(command.params);
             case "addRehearsalMark":        return addRehearsalMark(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
@@ -1635,6 +1636,43 @@ MuseScore {
             var value = curScore.style.value(params.key);
             return { success: true, key: params.key, value: value, message: "Style " + params.key + " is " + value };
         });
+    }
+
+    // Engraved pages for the render tool: the score as <path>.pdf, and each measure's box on its page
+    // in staff spaces (the unit of pagePos and bbox), which the server uses to crop bars. A PDF, not
+    // PNG: the PNG export writes every page at the preferences' resolution (1200 DPI by default).
+    // A measure inside a multi-measure rest is not laid out and gets null.
+    function renderScore(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["path"]);
+        if (!validation.valid) return validation;
+
+        if (!writeScore(curScore, params.path + ".pdf", "pdf")) return { error: "MuseScore could not write the score as PDF" };
+        var measures = [];
+        var pageSize = null;
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) {
+            var system = m.parent;
+            var page = system && system.name === "System" ? system.parent : null;
+            if (!page || page.name !== "Page" || !m.bbox || m.bbox.width <= 0) {
+                measures.push(null);
+                continue;
+            }
+            if (!pageSize) pageSize = page.bbox;
+            measures.push({
+                page: page.pagenumber,
+                x: m.pagePos.x + m.bbox.x,
+                y: m.pagePos.y + m.bbox.y,
+                width: m.bbox.width,
+                height: m.bbox.height
+            });
+        }
+        return {
+            success: true,
+            pages: curScore.npages,
+            pageWidth: pageSize ? pageSize.width : null,
+            pageHeight: pageSize ? pageSize.height : null,
+            measures: measures
+        };
     }
 
     function getStyle(params) {

@@ -12,6 +12,7 @@ from src.tools import (
     setup_formatting_tools,
     setup_navigation_tools,
     setup_notes_measures_tools,
+    setup_render_tools,
     setup_score_file_tools,
     setup_sequence_tools,
     setup_staff_instruments_tools,
@@ -45,6 +46,7 @@ setup_structure_tools(mcp, client)
 setup_formatting_tools(mcp, client)
 setup_score_file_tools(mcp, client)
 setup_style_tools(mcp, client)
+setup_render_tools(mcp, client)
 
 # Main entry point
 if __name__ == "__main__":

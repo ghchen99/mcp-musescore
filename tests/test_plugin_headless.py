@@ -1394,3 +1394,62 @@ def test_score_reading_lists_markers_jumps_and_breaks(tmp_path):
         ],
         [{"name": "Marker", "text": "Coda"}],
     ]
+
+
+def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):
+    from src.render import boxes_from, render_measures, render_whole_page
+
+    base = tmp_path / "render"
+    results = run(
+        [
+            {"action": "renderScore", "params": {"path": base.as_posix()}},
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "includeElements": False},
+            },
+        ],
+        JAZZ,
+    )
+    rendered = results[0]["result"]
+    pdf = base.with_name("render.pdf")
+    assert rendered["pages"] == 1 and pdf.exists()
+    boxes = [b for b in boxes_from(rendered["measures"]) if b is not None]
+    assert len(boxes) == results[1]["result"]["analysis"]["numMeasures"] == 8
+    # A4 is 120 × 170 staff spaces at the default spatium (1.75 mm).
+    assert round(rendered["pageWidth"]) == 120
+    assert round(rendered["pageHeight"]) == 170
+    for box in boxes:
+        assert box.page == 0
+        assert 0 < box.x < box.x + box.width < rendered["pageWidth"]
+        assert 0 < box.y < box.bottom < rendered["pageHeight"]
+    # Bars 1-6 share the first system, bars 7-8 the second.
+    assert len({b.y for b in boxes[:6]}) == 1 and boxes[6].y > boxes[0].y
+    assert render_whole_page(pdf, 0).size == (1109, 1568)
+    crop = render_measures(pdf, rendered["pageWidth"], boxes, 2, 2)
+    assert crop.width == round(boxes[1].width * 25)
+
+
+def test_measures_inside_a_multi_measure_rest_have_no_box(tmp_path):
+    from tests.test_rolls import chord, write_score
+
+    rest = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
+    source = write_score(
+        tmp_path, [chord("whole", 49)] + [rest] * 4 + [chord("whole", 38)]
+    )
+    results = run(
+        [
+            {
+                "action": "setStyle",
+                "params": {"key": "createMultiMeasureRests", "value": True},
+            },
+            {
+                "action": "renderScore",
+                "params": {"path": (tmp_path / "mm").as_posix()},
+            },
+        ],
+        source,
+    )
+    measures = results[1]["result"]["measures"]
+    assert len(measures) == 6
+    assert measures[0] is not None and measures[5] is not None
+    assert measures[1:5] == [None] * 4
