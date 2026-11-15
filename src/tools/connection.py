@@ -90,17 +90,17 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         shown = [m.get("measure") for m in analysis.get("measures", [])]
         meta = []
         if analysis.get("title"):
-            meta.append(f"Titre: {analysis['title']}")
+            meta.append(f"Title: {analysis['title']}")
         if total is not None:
-            meta.append(f"Total Mesures: {total}")
+            meta.append(f"Total measures: {total}")
         if shown:
-            meta.append(f"Mesures affichées: {shown[0]}-{shown[-1]}")
+            meta.append(f"Measures shown: {shown[0]}-{shown[-1]}")
         num_staves = len(analysis.get("staves", []))
         if num_staves > 0:
-            meta.append(f"Nombre de portées: {num_staves}")
+            meta.append(f"Number of staves: {num_staves}")
 
-        meta_str = ", ".join(meta) if meta else "Aucune métadonnée"
-        text = f"[Métadonnées] {meta_str}\n[Partition]\n{lily_str}"
+        meta_str = ", ".join(meta) if meta else "No metadata"
+        text = f"[Metadata] {meta_str}\n[Score]\n{lily_str}"
         markings = [
             f"m.{m['measure']} beat {(mk['startTick'] - m['startTick']) / 480 + 1:g}, staff {mk['staff']}: "
             f"{mk['name']} {mk.get('text', '')}".rstrip()

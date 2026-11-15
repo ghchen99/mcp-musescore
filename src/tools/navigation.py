@@ -69,8 +69,8 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                     m_start = current_m.get("startTick", 0)
                     beat_num = (max(0, tick - m_start) // 480) + 1
 
-                meta.append(f"Mesure: {measure_num}")
-                meta.append(f"Temps: {beat_num}")
+                meta.append(f"Measure: {measure_num}")
+                meta.append(f"Beat: {beat_num}")
 
             if "startStaff" in sel:
                 start_s = sel["startStaff"]
@@ -87,15 +87,15 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                         if name:
                             staff_name = name
 
-                meta.append(f"Portée: {staff_name}")
+                meta.append(f"Staff: {staff_name}")
 
             if "title" in score_info and score_info["title"]:
-                meta.append(f"Titre: {score_info['title']}")
+                meta.append(f"Title: {score_info['title']}")
             if "numMeasures" in score_info:
-                meta.append(f"Total Mesures: {score_info['numMeasures']}")
+                meta.append(f"Total measures: {score_info['numMeasures']}")
 
-            meta_str = ", ".join(meta) if meta else "Aucune métadonnée"
-            return f"[Métadonnées] {meta_str}\n[Partition]\n{lily_str}"
+            meta_str = ", ".join(meta) if meta else "No metadata"
+            return f"[Metadata] {meta_str}\n[Score]\n{lily_str}"
         return res
 
     @mcp.tool(
