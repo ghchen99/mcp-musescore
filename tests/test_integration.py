@@ -186,9 +186,7 @@ def test_show_score_declares_its_ui_resource_and_serves_it():
 def test_get_score_returns_lilypond_in_windows():
     async def scenario(c, mock):
         first = (await c.call_tool("get_score", {})).content[0].text
-        assert (
-            "Mesures affichées: 1-16" in first and "Total Mesures: 20" in first
-        )
+        assert "Measures shown: 1-16" in first and "Total measures: 20" in first
         assert "% m.1" in first and "% m.16" in first and "% m.17" not in first
         assert "get_score(start_measure=17)" in first
         rest = (
@@ -196,9 +194,7 @@ def test_get_score_returns_lilypond_in_windows():
             .content[0]
             .text
         )
-        assert (
-            "Mesures affichées: 17-20" in rest and "More measures" not in rest
-        )
+        assert "Measures shown: 17-20" in rest and "More measures" not in rest
         assert mock.commands[-1]["params"] == {
             "startMeasure": 17,
             "endMeasure": 32,
@@ -232,7 +228,7 @@ def test_navigation_returns_lilypond_for_the_selection():
         text = (
             (await c.call_tool("go_to_measure", {"measure": 1})).content[0].text
         )
-        assert "[Partition]" in text
+        assert "[Score]" in text
         assert "c'4" in text and "c2 g2" in text
 
     run_with_mock(scenario, demo_score())

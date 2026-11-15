@@ -117,6 +117,8 @@ uv run python dev/plugin_harness.py '[{"action": "highlightNotes", "params": {"s
 
 MuseScore is found through `MUSESCORE_BIN`, an AppImage in `~/.local/bin`, or `mscore` on the `PATH`. `tests/test_plugin_headless.py` and the file round-trip test in `tests/test_mscz.py` use the same detection and are skipped when MuseScore is not installed. `MUSESCORE_BIN=none`, or `uv run pytest --no-musescore`, skips them even when MuseScore is installed. With a MuseScore installed as a Flatpak, the tests may find a launcher that returns before MuseScore is done, and the MuseScore tests fail; point `MUSESCORE_BIN` at a MuseScore AppImage instead.
 
+The plugin asks MuseScore for some edits by action name, with `cmd()` (for example `tie` or `action://notation/undo`). When MuseScore does not know the name, or will not run the action at that moment (one that needs a selection when it sees none), `cmd()` does nothing and returns no error; only MuseScore's log shows it. The harness reads that log and fails the run, so such a silent no-op makes the test fail. `test_musescore_knows_every_action_name_the_plugin_uses` checks every `cmd()` name in the plugin this way, which catches a name MuseScore renamed in a new release. Two names exist only with MuseScore's GUI (`file-save`, `instruments`) and are left out (`GUI_ONLY_ACTIONS` in the harness).
+
 CI runs these tests too, in the `musescore-tests` job: on MuseScore 4.7.0, the oldest supported version, and on the latest release. It unpacks the official AppImage (the runner has no FUSE), points `MUSESCORE_BIN` at it, and runs the tests under `xvfb-run`, because MuseScore uses X11 on Linux even when asked to run offscreen.
 
 ## Viewing Console Output

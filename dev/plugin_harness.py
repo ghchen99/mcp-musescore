@@ -35,6 +35,17 @@ PLUGIN = REPO / "musescore-mcp-websocket.qml"
 HARNESS_NAME = "mcp-harness.qml"
 EXTENSION_URI = f"musescore://extensions/v1/{HARNESS_NAME}"
 
+# Actions that MuseScore registers only with its GUI: the converter mode the harness runs in does not load the
+# project and instruments modules, so MuseScore refuses these names here although they exist (both are registered
+# in 4.7.0's src/project and src/instrumentsscene).
+GUI_ONLY_ACTIONS = {"file-save", "instruments"}
+# MuseScore's log lines for an action cmd() asked for but that did nothing: an unknown name, or a known action that
+# MuseScore would not run at that moment (e.g. one that needs a selection when it sees none)
+REFUSED_ACTION_LINES = (
+    "not a registered action: ",
+    "no one can handle the action: ",
+)
+
 
 def find_musescore() -> Optional[str]:
     """Find the MuseScore executable.
@@ -64,7 +75,10 @@ def build_harness(
 ) -> str:
     """Make a copy of the plugin whose onRun runs a fixed list of commands.
 
-    The results are stored in a "harness" meta tag of the score.
+    The results are stored in a "harness" meta tag of the score. Besides the
+    plugin's own actions, the harness knows {"action": "harnessCmd", "params":
+    {"name": ...}}, which passes the name to MuseScore's cmd(), so tests can
+    check that MuseScore knows the action names the plugin uses.
 
     Args:
         commands (List[Dict[str, Any]]): The commands, as the server sends them:
@@ -82,7 +96,14 @@ def build_harness(
         var results = [];
         for (var i = 0; i < commands.length; i++) {{
             var result;
-            try {{ result = processCommand(commands[i]); }} catch (e) {{ result = {{ error: e.toString() }}; }}
+            try {{
+                if (commands[i].action === "harnessCmd") {{
+                    cmd(commands[i].params.name);
+                    result = {{ success: true }};
+                }} else {{
+                    result = processCommand(commands[i]);
+                }}
+            }} catch (e) {{ result = {{ error: e.toString() }}; }}
             results.push({{ action: commands[i].action, result: result }});
         }}
         curScore.startCmd();
@@ -124,6 +145,31 @@ def read_results(
     return json.loads(tag.text) if tag is not None and tag.text else None
 
 
+def refused_actions(log_text: str, unknown_only: bool = False) -> List[str]:
+    """List the actions MuseScore refused, from its log.
+
+    When cmd() asks for an action MuseScore does not know ("not a registered
+    action") or will not run at that moment ("no one can handle the action"),
+    MuseScore does nothing and the plugin cannot tell: the log line is the only
+    trace.
+
+    Args:
+        log_text (str): The text of MuseScore's log file.
+        unknown_only (bool): Whether to list only the names MuseScore does not
+            know, and leave out the actions it would not run at that moment.
+
+    Returns:
+        names (List[str]): The refused action names, in order of appearance.
+    """
+    markers = REFUSED_ACTION_LINES[:1] if unknown_only else REFUSED_ACTION_LINES
+    names = []
+    for line in log_text.splitlines():
+        for marker in markers:
+            if marker in line:
+                names.append(line.split(marker, 1)[1].strip())
+    return names
+
+
 def _musescore(
     binary: str, args: List[str], home: Path, timeout: float
 ) -> subprocess.CompletedProcess[str]:
@@ -163,6 +209,7 @@ def run(
     musescore: Optional[str] = None,
     timeout: float = 300,
     png_dpi: int = 130,
+    unknown_actions_only: bool = False,
 ) -> List[Dict[str, Any]]:
     """Run plugin commands on a copy of a score, in MuseScore.
 
@@ -178,14 +225,18 @@ def run(
             find_musescore().
         timeout (float): The time limit per MuseScore run, in seconds.
         png_dpi (int): The resolution of the PNG files.
+        unknown_actions_only (bool): Whether to fail only on action names
+            MuseScore does not know, not on actions it would not run at that
+            moment (for checking names out of context).
 
     Returns:
         results (List[Dict[str, Any]]): The {"action", "result"} entry of each
             command.
 
     Raises:
-        RuntimeError: If MuseScore is not found, fails, leaves no results or
-            does not render the pages.
+        RuntimeError: If MuseScore is not found, fails, leaves no results,
+            refuses an action name (other than GUI_ONLY_ACTIONS), or does not
+            render the pages.
     """
     binary = musescore or find_musescore()
     if not binary:
@@ -247,6 +298,20 @@ def run(
         if results is None:
             raise RuntimeError(
                 "The harness ran but left no results (did the plugin fail to load?)"
+            )
+        # The log is in the throwaway home: ~/.local/share/... for an AppImage, ~/.var/app/... for a Flatpak
+        refused = [
+            name
+            for log in home.rglob("MuseScore_*.log")
+            for name in refused_actions(
+                log.read_text(errors="replace"), unknown_actions_only
+            )
+            if name not in GUI_ONLY_ACTIONS
+        ]
+        if refused:
+            raise RuntimeError(
+                f"MuseScore refused the action(s) {', '.join(sorted(set(refused)))}: it does not know the "
+                "name, or would not run the action then (see its log); the plugin's cmd() call did nothing"
             )
 
         if out:

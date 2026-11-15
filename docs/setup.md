@@ -54,7 +54,7 @@ ln -sfn "$PWD/musescore-mcp-websocket.qml" ~/Documents/MuseScore4/Plugins/musesc
 2. Get the code and install the dependencies (uv also downloads a matching Python if you don't have one):
 
    ```bash
-   git clone https://github.com/MikFerrari/mcp-musescore.git
+   git clone https://github.com/ghchen99/mcp-musescore.git
    cd mcp-musescore
    uv sync
    ```
