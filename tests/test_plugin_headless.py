@@ -1415,6 +1415,7 @@ def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):
     assert rendered["pages"] == 1 and pdf.exists()
     boxes = [b for b in boxes_from(rendered["measures"]) if b is not None]
     assert len(boxes) == results[1]["result"]["analysis"]["numMeasures"] == 8
+    assert rendered["numbers"] == list(range(1, 9))
     # A4 is 120 × 170 staff spaces at the default spatium (1.75 mm).
     assert round(rendered["pageWidth"]) == 120
     assert round(rendered["pageHeight"]) == 170

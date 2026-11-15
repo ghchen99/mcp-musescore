@@ -57,6 +57,8 @@ def setup_render_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "overlapping chord symbols, marker placement, system and page breaks and spacing. "
             "page=N gives a whole page (for layout); measures='X-Y' crops those bars from their page at higher "
             "detail, with the space above and below the staves (chord symbols, markers), one band per system. "
+            "Measures are positions in the score, as in get_score's '% m.N', not printed bar numbers: with a "
+            "pickup bar, printed bar 49 is measure 50. The caption gives the printed numbers when they differ. "
             "Render again after a change to check it."
         ),
         tags={"viewer", "layout"},
@@ -66,7 +68,8 @@ def setup_render_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             Optional[int], "Page to show (1-based). Defaults to page 1"
         ] = None,
         measures: Annotated[
-            Optional[str], 'Bars to show instead of a page, e.g. "5-8" or "5"'
+            Optional[str],
+            'Measures to show instead of a page, by position (as in get_score\'s "% m.N"), e.g. "5-8" or "5"',
         ] = None,
     ) -> ToolResult:
         if page is not None and measures is not None:
@@ -109,7 +112,18 @@ def setup_render_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                     else f"pages {shown[0]}-{shown[-1]}"
                 )
                 span = f"{first}-{last}" if last != first else str(first)
-                caption = f"Measures {span} ({where} of {pages})"
+                numbers = result.get("numbers") or []
+                printed = ""
+                if len(numbers) >= last and (
+                    numbers[first - 1] != first or numbers[last - 1] != last
+                ):
+                    low, high = numbers[first - 1], numbers[last - 1]
+                    printed = (
+                        f"printed bars {low}-{high}, "
+                        if high != low
+                        else f"printed bar {low}, "
+                    )
+                caption = f"Measures {span} ({printed}{where} of {pages})"
         return ToolResult(
             content=[
                 caption,

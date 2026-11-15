@@ -470,6 +470,7 @@ class MockMuseScore:
             "pages": pages,
             "pageWidth": score.page_size[0],
             "pageHeight": score.page_size[1],
+            "numbers": score.displayed_numbers(),
             "measures": [
                 {
                     "page": b[0],

@@ -1671,7 +1671,8 @@ MuseScore {
             pages: curScore.npages,
             pageWidth: pageSize ? pageSize.width : null,
             pageHeight: pageSize ? pageSize.height : null,
-            measures: measures
+            measures: measures,
+            numbers: displayedNumbers()
         };
     }
 

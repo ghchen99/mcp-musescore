@@ -110,3 +110,14 @@ def test_measures_hidden_in_a_multi_measure_rest_are_refused():
         )
 
     run_with_mock(scenario, score)
+
+
+def test_the_caption_gives_printed_bar_numbers_when_they_differ():
+    score = two_systems_score()
+    score.irregular = {1}  # a pickup bar: bar 2 is printed as bar 1
+
+    async def scenario(c, mock):
+        result = await c.call_tool("render", {"measures": "3-6"})
+        assert "Measures 3-6 (printed bars 2-5, page 1 of 1)" in text_of(result)
+
+    run_with_mock(scenario, score)
