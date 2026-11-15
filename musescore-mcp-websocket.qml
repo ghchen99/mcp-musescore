@@ -411,11 +411,13 @@ MuseScore {
     // CORE OPERATIONS
     // ========================================
 
+    // MuseScore 4.7 calls the undo action "action://notation/undo"; the old name "undo" is not a registered action
+    // any more (cmd() only translates a few old names), so cmd("undo") did nothing. Undo is a command of its own,
+    // so it also runs outside startCmd()/endCmd().
     function undo() {
-        return executeWithUndo(function() {
-            cmd("undo");
-            return { success: true, message: "Undo successful" };
-        });
+        if (!curScore) return { error: "No score open" };
+        cmd("action://notation/undo");
+        return { success: true, message: "Undo successful" };
     }
 
     function goToBeginningOfScore() {
