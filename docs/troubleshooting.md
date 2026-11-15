@@ -4,7 +4,7 @@
 
 
 ## Connection Issues
-- **"Not connected to MuseScore"**:
+- **"Not connected to MuseScore"** (the plugin's server can't be reached):
   - Ensure MuseScore is running with a score open
   - Run the MuseScore plugin (Plugins → MuseScore API Server)
   - Check that port 8765 isn't blocked by firewall

@@ -97,6 +97,17 @@ def test_a_command_lost_after_sending_is_not_sent_again():
     asyncio.run(scenario())
 
 
+def test_a_plugin_that_is_not_running_says_how_to_start_it():
+    async def scenario():
+        async with plugin(lambda ws: None) as port:
+            pass  # the port is free again: nothing listens there
+        client = MuseScoreClient(host="127.0.0.1", port=port, timeout=5)
+        with pytest.raises(ToolError, match=r"Plugins → MuseScore API Server"):
+            await client.request("ping")
+
+    asyncio.run(scenario())
+
+
 def test_a_restarted_plugin_is_reconnected_to():
     received = []
 

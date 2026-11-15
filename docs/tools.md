@@ -7,7 +7,7 @@ Measure numbers are 1-based and staff indices 0-based throughout. Ranges are inc
 Repeats, drum charts and drum notation have [their own page](drum-charts.md).
 
 ## Reading the Score
-- `get_score(start_measure, end_measure, staves, format)` - Read the score as LilyPond (`format="json"` for the raw analysis), 16 measures at a time by default, optionally only some staves. Each staff is reported with its instrument name, and markings such as dynamics are listed per measure
+- `get_score(start_measure, end_measure, staves, format)` - Read the score as LilyPond (`format="json"` for the raw analysis), 16 measures at a time by default, optionally only some staves. Each staff is reported with its instrument name, and markings such as dynamics and chord symbols are listed per measure, along with the measure's own markers (Segno, Coda, To Coda, Fine), jumps (D.S. al Coda…) and line, page and section breaks. A chord symbol imported from MusicXML shows as `Harmony (name not readable: save and reopen the score)` until the score has been saved and reopened
 - `show_score(first_measure, last_measure)` - Render the score as sheet music in an interactive viewer (see [Score viewer](#score-viewer-mcp-apps))
 - `ping_musescore()` - Test connection to MuseScore
 - `connect_to_musescore()` - Establish WebSocket connection
@@ -78,8 +78,12 @@ Everything these tools add can be taken off again, so a chart can be refined ste
 
 `start_beat`/`end_beat` limit coloring and highlighting to part of a bar: `start_beat=3, end_beat=4` covers beats 3 and 4, and `3.5` means the "and" of beat 3. A beat follows the time signature's denominator (a quarter in 4/4, an eighth in 6/8). Highlight boxes are sized to the layout at the moment they are drawn; after big layout changes, clear them and highlight again.
 
+## Score Style
+- `get_style(keys)` - Read style settings (Format → Style) by MuseScore's internal key, e.g. `createMultiMeasureRests`; keys MuseScore doesn't have are listed under `unknown`
+- `set_style(styles)` - Change style settings, given as `{key: value}`. An unknown key is refused (the settings before it stay applied), and each value is returned as MuseScore reads it back
+
 ## Batch Operations
-- `processSequence(sequence)` - Execute multiple plugin commands in one call (camelCase action names, see the tool description)
+- `processSequence(sequence)` - Execute multiple plugin commands in one call (camelCase action names, see the tool description). The first step that fails stops the sequence and is reported as an error naming the step; the steps before it stay applied
 
 ## Score viewer (MCP Apps)
 
