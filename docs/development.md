@@ -185,7 +185,9 @@ mcp-musescore/
     │   ├── score_file.py               # Measure-repeat signs and backups (file edits)
     │   ├── formatting.py               # Coloring, highlights and labels
     │   ├── style.py                    # Score style settings (get_style, set_style)
+    │   ├── render.py                   # render: the engraved score as an image
     │   └── viewer.py                   # show_score MCP App tool
+    ├── render.py                       # Rasterising and cropping the score's PDF
     ├── mscz/                           # Reading and editing .mscz/.mscx files
     │   ├── score_file.py
     │   ├── measure_repeats.py
