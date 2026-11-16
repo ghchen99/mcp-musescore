@@ -51,11 +51,33 @@ def test_a_page_is_scaled_to_fit_the_image_limit():
     run_with_mock(scenario, score)
 
 
-def test_measures_are_cropped_with_a_margin_around_them():
+def colour_at(image, x, y, top):
+    """Return "grey" or "white": the colour at (x, y) staff spaces.
+
+    The image is a crop of two_systems_score's systems, which span x 8-92 with
+    their margins, from y top, fitted from 25 px per staff space; the mock draws
+    each measure's box grey.
+    """
+    scale = image.width / (84 * 25)
+    r, g, b = image.convert("RGB").getpixel(
+        (int((x - 8) * 25 * scale), int((y - top) * 25 * scale))
+    )
+    return "white" if min(r, g, b) > 250 else "grey"
+
+
+def test_measures_are_cropped_in_place_with_the_rest_of_their_system_blank():
     async def scenario(c, mock):
         result = await c.call_tool("render", {"measures": "2-3"})
-        # Bars 2-3 span x 30-70 and y 10-30 sp; 2 sp of margin each side.
-        assert image_of(result).size == (1100, 600)
+        image = image_of(result)
+        # System x 10-90 and y 10-30 sp with 2 sp margins: 2100×600 px, fitted.
+        assert image.size == (1568, 448)
+        # Bars 2-3 where they stand on the system; bars 1 and 4 left blank.
+        assert [colour_at(image, x, 20, top=8) for x in (20, 40, 60, 80)] == [
+            "white",
+            "grey",
+            "grey",
+            "white",
+        ]
         assert "Measures 2-3 (page 1 of 1)" in text_of(result)
 
     run_with_mock(scenario, two_systems_score())
@@ -71,19 +93,55 @@ def test_a_crop_takes_in_everything_attached_to_its_measures():
 
     async def scenario(c, mock):
         result = await c.call_tool("render", {"measures": "2-3"})
-        # x 30-74 and y 2-30 sp, plus 2 sp of margin each side.
-        assert image_of(result).size == (1200, 800)
+        # y 2-30 sp plus the margins: 84×32 sp, 2100×800 px, fitted.
+        assert image_of(result).size == (1568, 597)
 
     run_with_mock(scenario, score)
 
 
-def test_measures_across_two_systems_are_stacked():
+def test_measures_across_two_systems_are_cropped_as_they_stand_on_the_page():
     async def scenario(c, mock):
         result = await c.call_tool("render", {"measures": "3-6"})
-        # Bars 3-4 above bars 5-6, each 44×24 sp with the margins.
-        assert image_of(result).size == (1100, 1200)
+        image = image_of(result)
+        # y 8-72 sp: both systems and the space between them, 2100×1600 px.
+        assert image.size == (1568, 1194)
+        assert [colour_at(image, x, 20, top=8) for x in (20, 60)] == [
+            "white",
+            "grey",
+        ]
+        assert [colour_at(image, x, 60, top=8) for x in (20, 60)] == [
+            "grey",
+            "white",
+        ]
 
     run_with_mock(scenario, two_systems_score())
+
+
+def test_what_stands_between_two_systems_is_shown_once():
+    score = two_systems_score()
+    score.content_boxes = {
+        3: (70, 10, 20, 35),  # lyrics below bar 4, down to y 45
+        4: (10, 35, 20, 35),  # a chord symbol above bar 5, from y 35
+    }
+
+    async def scenario(c, mock):
+        result = await c.call_tool("render", {"measures": "3-6"})
+        # Still y 8-72 sp: the space between the systems is not repeated.
+        assert image_of(result).size == (1568, 1194)
+
+    run_with_mock(scenario, score)
+
+
+def test_a_crop_stops_at_the_notes_of_the_system_above():
+    score = two_systems_score()
+    score.content_boxes = {4: (10, 20, 20, 50)}  # reaches up into system 1
+
+    async def scenario(c, mock):
+        result = await c.call_tool("render", {"measures": "5-6"})
+        # From system 1's bottom (y 30) to y 72: 84×42 sp, 2100×1050 px.
+        assert image_of(result).size == (1568, 784)
+
+    run_with_mock(scenario, score)
 
 
 def test_a_page_that_does_not_exist_is_refused():

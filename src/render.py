@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 import pypdfium2 as pdfium
-from PIL import Image
+from PIL import Image, ImageDraw
 
 IMAGE_LIMIT = 1568
 """Longest side of an image handed to Claude; larger images are scaled down."""
@@ -21,16 +21,20 @@ CROP_PIXELS_PER_SPACE = 25
 """Detail of cropped measures: a staff is 100 px high."""
 
 CROP_MARGIN = 2
-"""Staff spaces added around cropped measures, which shows the barline before."""
+"""Staff spaces added around cropped measures."""
+
+BARLINE_ROOM = 0.5
+"""Staff spaces left unblanked before the first chosen measure: its barline."""
 
 
 @dataclass(frozen=True)
 class Box:
     """A measure's box on its page, in staff spaces from the page's top left.
 
-    The box is as high as the measure's whole system (all its staves). content
-    also takes in what is attached to the measure and may stick out of it: chord
-    symbols, texts, lyrics, markers and jumps, notes on ledger lines.
+    The box is as high as the measure's whole system (all its staves). notes
+    also takes in its notes, rests and stems, which may stick out of the staves;
+    content also what is attached to it: chord symbols, texts, lyrics, markers
+    and jumps.
     """
 
     page: int
@@ -39,6 +43,7 @@ class Box:
     width: float
     height: float
     content: Optional["Box"] = None
+    notes: Optional["Box"] = None
 
     @property
     def bottom(self) -> float:
@@ -51,9 +56,9 @@ def boxes_from(measures: List[Optional[dict]]) -> List[Optional[Box]]:
 
     Args:
         measures (List[Optional[dict]]): One {"page", "x", "y", "width",
-            "height", "content"} per measure, content being {"x", "y", "width",
-            "height"}; None for a measure that is not laid out (inside a multi-
-            measure rest).
+            "height", "content", "notes"} per measure, content and notes being
+            {"x", "y", "width", "height"}; None for a measure that is not laid
+            out (inside a multi-measure rest).
 
     Returns:
         boxes (List[Optional[Box]]): The boxes, in score order.
@@ -64,11 +69,12 @@ def boxes_from(measures: List[Optional[dict]]) -> List[Optional[Box]]:
             boxes.append(None)
             continue
         fields = {k: m[k] for k in ("page", "x", "y", "width", "height")}
-        content = m.get("content")
+        content, notes = m.get("content"), m.get("notes")
         boxes.append(
             Box(
                 **fields,
                 content=Box(page=m["page"], **content) if content else None,
+                notes=Box(page=m["page"], **notes) if notes else None,
             )
         )
     return boxes
@@ -130,14 +136,55 @@ def render_whole_page(pdf: Path, page: int) -> Image.Image:
     return fit(render_page(pdf, page, IMAGE_LIMIT / max(width, height)))
 
 
-def bands(
-    boxes: Sequence[Optional[Box]], first: int, last: int
-) -> List[tuple[int, Box]]:
-    """Return the region to crop on each system that holds measures first..last.
+@dataclass(frozen=True)
+class Crop:
+    """What to cut from one page to show the chosen measures on it.
 
-    A band takes in the chosen measures of the system and everything attached to
-    them, with CROP_MARGIN staff spaces around, so that nothing of theirs is cut
-    off (a To Coda sign past the barline, a chord symbol high above).
+    region is the chosen measures' systems, whole and as they stand on the page,
+    with what is attached to the measures. The other measures of the first and
+    last system are blanked out (blanks), except where the chosen measures'
+    attachments reach into them (keep).
+    """
+
+    page: int
+    region: Box
+    blanks: List[Box]
+    keep: List[Box]
+
+
+def _span(x0: float, y0: float, x1: float, y1: float, page: int) -> Box:
+    return Box(page=page, x=x0, y=y0, width=x1 - x0, height=y1 - y0)
+
+
+def _systems(boxes: Sequence[Optional[Box]]) -> List[List[tuple[int, Box]]]:
+    """Group the laid-out measures into systems: [(measure, box)], 1-based."""
+    systems: List[List[tuple[int, Box]]] = []
+    for number, box in enumerate(boxes, start=1):
+        if box is None:
+            continue
+        prev = systems[-1][0][1] if systems else None
+        if prev and (prev.page, prev.y) == (box.page, box.y):
+            systems[-1].append((number, box))
+        else:
+            systems.append([(number, box)])
+    return systems
+
+
+def _notes(system: List[tuple[int, Box]]) -> tuple[float, float]:
+    """Return the top and bottom of a system's staves and notes."""
+    parts = [b.notes or b for _, b in system]
+    return min(b.y for b in parts), max(b.bottom for b in parts)
+
+
+def crops(boxes: Sequence[Optional[Box]], first: int, last: int) -> List[Crop]:
+    """Return what to cut from each page that holds measures first..last.
+
+    The chosen systems are cut in one piece per page, so what stands between two
+    of them shows once, and with CROP_MARGIN staff spaces around them and what
+    is attached to the chosen measures (a To Coda sign past the barline, a chord
+    symbol high above), but never into the staves and notes of the systems above
+    and below. The measures before first and after last are left blank, so the
+    chosen ones stand where they do on their system.
 
     Args:
         boxes (Sequence[Optional[Box]]): Every measure's box, in score order;
@@ -146,37 +193,53 @@ def bands(
         last (int): The last measure, 1-based and inclusive.
 
     Returns:
-        bands (List[tuple[int, Box]]): (page, region) per system, top to bottom,
-            in staff spaces.
+        crops (List[Crop]): One per page, in page order, in staff spaces.
     """
-    systems: List[List[Box]] = []  # the chosen measures, per system
-    for box in boxes[first - 1 : last]:
-        if box is None:
-            continue
-        prev = systems[-1][0] if systems else None
-        if prev and (prev.page, prev.y) == (box.page, box.y):
-            systems[-1].append(box)
-        else:
-            systems.append([box])
-
+    systems = _systems(boxes)
     result = []
-    for system in systems:
-        parts = system + [b.content for b in system if b.content]
-        left = min(b.x for b in parts) - CROP_MARGIN
+    for page in sorted({b.page for b in boxes[first - 1 : last] if b}):
+        on_page = [s for s in systems if s[0][1].page == page]
+        shown = [
+            k
+            for k, s in enumerate(on_page)
+            if any(first <= n <= last for n, _ in s)
+        ]
+        chosen_systems = on_page[shown[0] : shown[-1] + 1]
+        everything = [b for s in chosen_systems for _, b in s]
+        chosen = [b for s in chosen_systems for n, b in s if first <= n <= last]
+        parts = everything + [b.content for b in chosen if b.content]
         top = min(b.y for b in parts) - CROP_MARGIN
-        right = max(b.x + b.width for b in parts) + CROP_MARGIN
         bottom = max(b.bottom for b in parts) + CROP_MARGIN
-        page = system[0].page
+        if shown[0] > 0:
+            top = max(top, _notes(on_page[shown[0] - 1])[1])
+        if shown[-1] + 1 < len(on_page):
+            bottom = min(bottom, _notes(on_page[shown[-1] + 1])[0])
+        left = min(b.x for b in parts) - CROP_MARGIN
+        right = max(b.x + b.width for b in parts) + CROP_MARGIN
+
+        # Where one chosen system's rows end and the next one's begin.
+        cuts = [top]
+        for upper, lower in zip(chosen_systems, chosen_systems[1:]):
+            cuts.append((_notes(upper)[1] + _notes(lower)[0]) / 2)
+        cuts.append(bottom)
+
+        blanks = []
+        head = [b for n, b in chosen_systems[0] if n >= first]
+        if chosen_systems[0][0][0] < first:
+            blanks.append(
+                _span(left, cuts[0], head[0].x - BARLINE_ROOM, cuts[1], page)
+            )
+        tail = [b for n, b in chosen_systems[-1] if n <= last]
+        if chosen_systems[-1][-1][0] > last:
+            end = tail[-1].x + tail[-1].width
+            blanks.append(_span(end, cuts[-2], right, cuts[-1], page))
+
         result.append(
-            (
-                page,
-                Box(
-                    page=page,
-                    x=left,
-                    y=top,
-                    width=right - left,
-                    height=bottom - top,
-                ),
+            Crop(
+                page=page,
+                region=_span(left, top, right, bottom, page),
+                blanks=blanks,
+                keep=[b.content for b in chosen if b.content],
             )
         )
     return result
@@ -189,7 +252,10 @@ def render_measures(
     first: int,
     last: int,
 ) -> Image.Image:
-    """Crop measures first..last from their pages, one band per system, stacked.
+    """Crop measures first..last from their pages, one piece per page, stacked.
+
+    Each piece keeps its place across the page, so a bar in the middle of its
+    system stands in the middle of the image.
 
     Args:
         pdf (Path): The PDF the plugin wrote.
@@ -204,32 +270,44 @@ def render_measures(
     """
     width_points, _ = page_points(pdf)
     scale = CROP_PIXELS_PER_SPACE * page_width / width_points
-    pages: dict[int, Image.Image] = {}
-    crops = []
-    for page, region in bands(boxes, first, last):
-        if page not in pages:
-            pages[page] = render_page(pdf, page, scale)
-        image = pages[page]
-        px = image.width / page_width  # pixels per staff space
-        crops.append(
-            image.crop(
-                (
-                    max(0, round(region.x * px)),
-                    max(0, round(region.y * px)),
-                    min(image.width, round((region.x + region.width) * px)),
-                    min(image.height, round(region.bottom * px)),
-                )
+    pieces = []  # (left edge in page pixels, image)
+    for crop in crops(boxes, first, last):
+        page = render_page(pdf, crop.page, scale)
+        px = page.width / page_width  # pixels per staff space
+
+        def pixels(box: Box) -> tuple[int, int, int, int]:
+            return (
+                max(0, round(box.x * px)),
+                max(0, round(box.y * px)),
+                min(page.width, round((box.x + box.width) * px)),
+                min(page.height, round(box.bottom * px)),
             )
-        )
+
+        shown = page.copy()
+        draw = ImageDraw.Draw(shown)
+        for blank in crop.blanks:
+            x0, y0, x1, y1 = pixels(blank)
+            if x1 > x0 and y1 > y0:
+                draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill="white")
+        for keep in crop.keep:
+            area = pixels(keep)
+            shown.paste(page.crop(area), area[:2])
+        area = pixels(crop.region)
+        pieces.append((area[0], shown.crop(area)))
+
+    left = min(x for x, _ in pieces)
     stacked = Image.new(
         "RGB",
-        (max(c.width for c in crops), sum(c.height for c in crops)),
+        (
+            max(x - left + p.width for x, p in pieces),
+            sum(p.height for _, p in pieces),
+        ),
         "white",
     )
     y = 0
-    for crop in crops:
-        stacked.paste(crop, (0, y))
-        y += crop.height
+    for x, piece in pieces:
+        stacked.paste(piece, (x - left, y))
+        y += piece.height
     return fit(stacked)
 
 

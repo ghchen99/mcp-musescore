@@ -141,6 +141,9 @@ class MockScore:
         self.content_boxes: Dict[
             int, tuple
         ] = {}  # bar index (0-based) -> (x, y, width, height) of what is attached to it
+        self.notes_boxes: Dict[
+            int, tuple
+        ] = {}  # bar index (0-based) -> (x, y, width, height) of its staves and notes
         self.measure_elements: Dict[
             int, List[Dict[str, Any]]
         ] = {}  # measure -> [{"name", "text"}]: markers, jumps, breaks
@@ -447,12 +450,13 @@ class MockMuseScore:
     def _do_renderScore(self, params):
         """Write a PDF and report the measures' boxes, as the plugin does.
 
-        Pages are blank, 10 points per staff space. Boxes are in staff spaces; a
-        measure inside a multi-measure rest has none.
+        Pages are white with each measure's box filled grey, 10 points per staff
+        space. Boxes are in staff spaces; a measure inside a multi-measure rest
+        has none.
         """
         if err := self._missing(params, ["path"]):
             return err
-        from PIL import Image
+        from PIL import Image, ImageDraw
 
         score = self.score
         boxes = score.measure_boxes or [
@@ -461,6 +465,13 @@ class MockMuseScore:
         pages = max(box[0] for box in boxes if box) + 1
         size = (score.page_size[0] * 10, score.page_size[1] * 10)
         blank = [Image.new("RGB", size, "white") for _ in range(pages)]
+        for b in boxes:
+            if b:
+                page, x, y, w, h = b
+                ImageDraw.Draw(blank[page]).rectangle(
+                    (x * 10, y * 10, (x + w) * 10 - 1, (y + h) * 10 - 1),
+                    fill="grey",
+                )
         blank[0].save(
             f"{params['path']}.pdf",
             "PDF",
@@ -485,6 +496,12 @@ class MockMuseScore:
                         zip(
                             ["x", "y", "width", "height"],
                             score.content_boxes.get(i, b[1:]),
+                        )
+                    ),
+                    "notes": dict(
+                        zip(
+                            ["x", "y", "width", "height"],
+                            score.notes_boxes.get(i, b[1:]),
                         )
                     ),
                 }

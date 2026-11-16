@@ -1397,7 +1397,7 @@ def test_score_reading_lists_markers_jumps_and_breaks(tmp_path):
 
 
 def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):
-    from src.render import boxes_from, render_measures, render_whole_page
+    from src.render import boxes_from, crops, render_measures, render_whole_page
 
     base = tmp_path / "render"
     results = run(
@@ -1426,8 +1426,18 @@ def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):
     # Bars 1-6 share the first system, bars 7-8 the second.
     assert len({b.y for b in boxes[:6]}) == 1 and boxes[6].y > boxes[0].y
     assert render_whole_page(pdf, 0).size == (1109, 1568)
-    crop = render_measures(pdf, rendered["pageWidth"], boxes, 2, 2)
-    assert crop.width == round((boxes[1].width + 4) * 25)  # 2 sp margins
+    image = render_measures(pdf, rendered["pageWidth"], boxes, 2, 2)
+    (crop,) = crops(boxes, 2, 2)
+    scale = image.width / round(crop.region.width * 25)
+
+    def ink_in_the_middle_of(box):
+        x = int((box.x + box.width / 2 - crop.region.x) * 25 * scale)
+        column = image.convert("L").crop((x, 0, x + 1, image.height))
+        return min(column.tobytes()) < 128
+
+    # Bar 2 stands where it does on its system; bar 1 before it is blank.
+    assert ink_in_the_middle_of(boxes[1])
+    assert not ink_in_the_middle_of(boxes[0])
 
 
 def test_measures_inside_a_multi_measure_rest_have_no_box(tmp_path):
@@ -1468,9 +1478,12 @@ def test_a_measure_content_box_takes_in_its_marker(tmp_path):
     )
     measures = result["result"]["measures"]
     for m in measures:
-        c = m["content"]
-        assert c["x"] <= m["x"] and c["y"] <= m["y"]
-        assert c["x"] + c["width"] >= m["x"] + m["width"]
-        assert c["y"] + c["height"] >= m["y"] + m["height"]
-    # Bar 3's Coda sign stands above the staff, so its content reaches higher.
+        c, n = m["content"], m["notes"]
+        for outer, inner in ((c, n), (n, m)):
+            assert outer["x"] <= inner["x"] and outer["y"] <= inner["y"]
+            assert outer["x"] + outer["width"] >= inner["x"] + inner["width"]
+            assert outer["y"] + outer["height"] >= inner["y"] + inner["height"]
+    # Bar 3's Coda sign stands above the staff, so its content reaches higher;
+    # the sign is not a note, so its notes box does not.
     assert measures[2]["content"]["y"] < measures[2]["y"] - 1
+    assert measures[2]["notes"]["y"] > measures[2]["y"] - 1
