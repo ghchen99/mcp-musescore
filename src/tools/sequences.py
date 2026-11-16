@@ -1,11 +1,56 @@
 """Sequence processing tools for MuseScore MCP."""
 
-from typing import Annotated
+from typing import Annotated, Any, Dict, List, cast
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
+from ..bars import BarNumbers, bar_numbers
 from ..client import MuseScoreClient, unwrap_result
 from ..types import ActionSequence
+
+BAR_PARAMS = ("measure", "startMeasure", "endMeasure")
+"""Step parameters that name a bar."""
+
+
+def step_positions(sequence: ActionSequence, bars: BarNumbers) -> List[Dict]:
+    """Turn the bars named in a sequence's steps into positions.
+
+    Args:
+        sequence (ActionSequence): The steps, bars as printed.
+        bars (BarNumbers): The score's printed bar numbers.
+
+    Returns:
+        sequence (List[Dict]): Copies of the steps, measures by position.
+
+    Raises:
+        ToolError: If a step names a bar that is not printed so.
+    """
+    steps = []
+    for i, typed in enumerate(sequence):
+        step = cast(Dict[str, Any], typed)
+        params = dict(step.get("params") or {})
+        try:
+            for key in BAR_PARAMS:
+                if params.get(key) is not None:
+                    params[key] = bars.position(params[key])
+            if isinstance(params.get("exclude"), list):
+                params["exclude"] = [
+                    bars.position(b) for b in params["exclude"]
+                ]
+            if isinstance(params.get("counts"), list):
+                params["counts"] = [
+                    {**c, "measure": bars.position(c["measure"])}
+                    if isinstance(c, dict) and "measure" in c
+                    else c
+                    for c in params["counts"]
+                ]
+        except ToolError as error:
+            raise ToolError(
+                f"Step {i + 1} ({step.get('action')}): {error}. No step was applied."
+            ) from error
+        steps.append({**step, "params": params} if "params" in step else step)
+    return steps
 
 
 def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
@@ -30,8 +75,9 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "addRehearsalMark, removeParts, addHighlight, addLabel, clearHighlights, highlightNotes, "
             "highlightMarkings, highlightSymbols, setMeasureNumbering, numberAsPlayed, addText, removeAnnotations, "
             "addArticulation, removeArticulations, ghostNotes, beamOverRests, addSectionCounts. "
-            "Measure ranges use startMeasure/endMeasure (1-based, inclusive) and startStaff/endStaff "
-            "(0-based, endStaff exclusive). "
+            "Bars (measure, startMeasure/endMeasure, inclusive) are as printed in the score before the sequence "
+            'runs (a pickup bar is 0; a number printed twice is "12a"/"12b"), even after a step that inserts or '
+            "deletes bars; staves use startStaff/endStaff (0-based, endStaff exclusive). "
             "Processing stops at the first invalid action or failing step, and the error names it; "
             "the steps before it stay applied."
         ),
@@ -45,8 +91,12 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             '"advanceCursorAfterAction": true}}]',
         ],
     ):
+        bars = await bar_numbers(client)
         reply = await client.send_command(
-            "processSequence", {"sequence": sequence}
+            "processSequence", {"sequence": step_positions(sequence, bars)}
         )
-        unwrap_result(reply)  # raises ToolError when a step failed
-        return reply
+        try:
+            unwrap_result(reply)  # raises ToolError when a step failed
+        except ToolError as error:
+            raise ToolError(bars.relabel_text(str(error))) from error
+        return bars.relabel(reply)

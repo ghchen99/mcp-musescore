@@ -3,7 +3,9 @@
 from typing import Annotated, Any, Dict, Optional
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
+from ..bars import BAR_HELP, Bar, bar_numbers
 from ..client import MuseScoreClient
 
 
@@ -31,6 +33,12 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 title) and the selection as LilyPond, or the plugin's reply as
                 it is when it has no selection.
         """
+        try:
+            bars = await bar_numbers(client)
+        except ToolError:
+            bars = None  # no score open: the command says so
+        if bars and params and "measure" in params:
+            params = {**params, "measure": bars.position(params["measure"])}
         res = await client.send_command(action, params)
         result = res.get("result")
         if (
@@ -69,7 +77,10 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                     m_start = current_m.get("startTick", 0)
                     beat_num = (max(0, tick - m_start) // 480) + 1
 
-                meta.append(f"Measure: {measure_num}")
+                if bars and 1 <= measure_num <= len(bars.labels):
+                    meta.append(f"Bar: {bars.label(measure_num)}")
+                else:
+                    meta.append(f"Bar: {measure_num}")
                 meta.append(f"Beat: {beat_num}")
 
             if "startStaff" in sel:
@@ -91,8 +102,8 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
             if "title" in score_info and score_info["title"]:
                 meta.append(f"Title: {score_info['title']}")
-            if "numMeasures" in score_info:
-                meta.append(f"Total measures: {score_info['numMeasures']}")
+            if bars:
+                meta.append(f"Bars: {bars.describe()}")
 
             meta_str = ", ".join(meta) if meta else "No metadata"
             return f"[Metadata] {meta_str}\n[Score]\n{lily_str}"
@@ -107,17 +118,14 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
     @mcp.tool(
         description=(
-            "Navigate to a specific measure and select it across all staves. The cursor moves to beat 1 "
-            "of that measure on the first staff, so the next cursor tool (add_note, add_rest, add_lyrics, "
+            "Navigate to a bar and select it across all staves. The cursor moves to beat 1 "
+            "of that bar on the first staff, so the next cursor tool (add_note, add_rest, add_lyrics, "
             "set_time_signature...) acts there; use next_staff to move down to another staff."
         ),
         tags={"navigation"},
     )
     async def go_to_measure(
-        measure: Annotated[
-            int,
-            "Measure number (1-based, must not exceed the number of measures in the score)",
-        ],
+        measure: Annotated[Bar, f"Bar to go to, {BAR_HELP}"],
     ):
         return await _run_and_convert("goToMeasure", {"measure": measure})
 

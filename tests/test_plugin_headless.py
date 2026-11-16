@@ -1523,3 +1523,19 @@ def test_a_measure_content_box_takes_in_its_marker(tmp_path):
     # the sign is not a note, so its notes box does not.
     assert measures[2]["content"]["y"] < measures[2]["y"] - 1
     assert measures[2]["notes"]["y"] > measures[2]["y"] - 1
+
+
+def test_bar_numbers_tell_a_pickup_from_the_bars_after_it():
+    results = run(
+        [
+            {
+                "action": "setMeasureNumbering",
+                "params": {"measure": 1, "excludeFromCount": True},
+            },
+            {"action": "barNumbers", "params": {}},
+        ],
+        JAZZ,
+    )
+    reply = results[1]["result"]
+    assert reply["numbers"] == [1, 1, 2, 3, 4, 5, 6, 7]
+    assert reply["excluded"] == [True] + [False] * 7

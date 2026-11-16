@@ -73,8 +73,8 @@ def test_tie_across_a_barline():
         ]
     }
     text = score_to_lilypond(score)
-    assert "c'4 c'4 c'4 c'4~ | % m.1" in text
-    assert "c'1 | % m.2" in text
+    assert "c'4 c'4 c'4 c'4~ | % bar 1" in text
+    assert "c'1 | % bar 2" in text
 
 
 def test_octave_follows_the_written_note_across_the_octave_boundary():

@@ -4,6 +4,7 @@ from typing import Annotated, List, Optional
 
 from fastmcp import FastMCP
 
+from ..bars import BAR_HELP, Bar, bar_numbers, send
 from ..client import MuseScoreClient
 
 
@@ -207,39 +208,39 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     )
     async def delete_selection(
         measure: Annotated[
-            Optional[int],
-            "Measure number (1-based) to delete. If omitted, the current selection is deleted.",
+            Optional[Bar],
+            f"Bar to delete, {BAR_HELP}. If omitted, the current selection is deleted.",
         ] = None,
     ):
+        bars = await bar_numbers(client)
         params = {}
         if measure is not None:
-            params["measure"] = measure
-        return await client.send_command("deleteSelection", params)
+            params["measure"] = bars.position(measure)
+        return await send(client, bars, "deleteSelection", params)
 
     @mcp.tool(
         description=(
             "Remove whole measures (on every staff) from the score, like MuseScore's Remove selected range (Ctrl+Del). "
             "Works with multi-measure rests on (they are switched off meanwhile) and reports an error if MuseScore "
-            "deleted fewer measures than asked. Later measures are renumbered, so when removing several ranges start "
-            "from the last one."
+            "deleted fewer measures than asked. Later bars move up (and their printed numbers with them, unless the "
+            "score sets them), so when removing several ranges start from the last one."
         ),
         tags={"measures"},
     )
     async def delete_measures(
-        start_measure: Annotated[int, "First measure to remove (1-based)"],
+        start_measure: Annotated[Bar, f"First bar to remove, {BAR_HELP}"],
         end_measure: Annotated[
-            Optional[int],
-            "Last measure to remove (1-based, inclusive). Defaults to start_measure.",
+            Optional[Bar],
+            "Last bar to remove, inclusive. Defaults to start_measure.",
         ] = None,
     ):
-        return await client.send_command(
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure)
+        return await send(
+            client,
+            bars,
             "deleteMeasures",
-            {
-                "startMeasure": start_measure,
-                "endMeasure": end_measure
-                if end_measure is not None
-                else start_measure,
-            },
+            {"startMeasure": first, "endMeasure": last},
         )
 
     @mcp.tool(

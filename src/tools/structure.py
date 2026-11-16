@@ -4,11 +4,22 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
+from typing import (
+    Annotated,
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    TypeVar,
+    cast,
+)
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from ..bars import BAR_HELP, Bar, BarNumbers, bar_numbers, send
 from ..client import MuseScoreClient
 from ..mscz import ScoreFile, ScoreFileError
 from ..mscz.locate import (
@@ -64,34 +75,103 @@ def _contiguous(indices: List[int]) -> List[List[int]]:
     return runs
 
 
+BAR_FIELDS = {
+    "start",
+    "end",
+    "from",
+    "to",
+    "bar",
+    "groove_bar",
+    "first_bar",
+    "last_bar",
+}
+"""Fields of an analysis result that hold one bar's position."""
+
+BAR_LIST_FIELDS = {
+    "duplicate_measures",
+    "first_ending",
+    "second_ending",
+    "keep",
+    "exact",
+    "fills",
+    "already_repeat_signs",
+    "not_counted",
+}
+"""Fields of an analysis result that hold a list of bars' positions."""
+
+
+Result = TypeVar("Result")
+
+
+def printed_bars(value: Result, bars: BarNumbers) -> Result:
+    """Rename the bars in an analysis result as printed.
+
+    Only the fields that hold bars (BAR_FIELDS, BAR_LIST_FIELDS) change; counts
+    such as "times", "play_count", "phrase_bars" or "bars_played" stay numbers.
+
+    Args:
+        value (Result): A result of find_repeats, find_sections or
+            song_structure, bars by position.
+        bars (BarNumbers): The score's printed bar numbers.
+
+    Returns:
+        value (Result): The same result, bars as printed.
+    """
+
+    def bar(item: object) -> object:
+        if isinstance(item, int) and not isinstance(item, bool):
+            return bars.label(item)
+        return rename(item)
+
+    def rename(item: object) -> object:
+        if isinstance(item, dict):
+            return {
+                key: bar(field)
+                if key in BAR_FIELDS
+                else [bar(i) for i in field]
+                if key in BAR_LIST_FIELDS and isinstance(field, list)
+                else rename(field)
+                for key, field in item.items()
+            }
+        if isinstance(item, list):
+            return [rename(i) for i in item]
+        return item
+
+    return cast(Result, rename(value))
+
+
+def _arg(bar: str) -> str:
+    """Write a printed bar as a tool call argument: 12, or "12b" quoted."""
+    return bar if re.fullmatch(r"-?\d+", bar) else f'"{bar}"'
+
+
 def _apply_steps(passage: Dict) -> List[str]:
     """List the tool calls that compress one repeated passage.
 
-    The calls are ordered so that the measure numbers in the later calls are
-    still valid when they run.
+    The calls are ordered so that the bars in the later calls are still numbered
+    so when they run: they all come before the deleted bars.
 
     Args:
-        passage (Dict): A passage from find_repeats: a "repeat" or a
-            "repeat_with_endings".
+        passage (Dict): A passage from find_repeats, bars as printed: a "repeat"
+            or a "repeat_with_endings".
 
     Returns:
         steps (List[str]): The tool calls, e.g. "delete_measures(9, 16)".
     """
-    dup_first, dup_last = passage["duplicate_measures"]
+    dup_first, dup_last = (_arg(b) for b in passage["duplicate_measures"])
+    start, end = _arg(passage["start"]), _arg(passage["end"])
     if passage["type"] == "repeat":
         return [
             f"delete_measures({dup_first}, {dup_last})",
-            f"set_repeat_barlines({passage['start']}, {passage['end']}, play_count={passage['times']})",
+            f"set_repeat_barlines({start}, {end}, play_count={passage['times']})",
         ]
-    first_ending, second_ending = (
-        passage["first_ending"],
-        passage["second_ending"],
-    )
+    first_ending = [_arg(b) for b in passage["first_ending"]]
+    second_ending = [_arg(b) for b in passage["second_ending"]]
     return [
         f"add_volta({second_ending[0]}, {second_ending[1]}, endings=[2])",
         f"delete_measures({dup_first}, {dup_last})",
         f"add_volta({first_ending[0]}, {first_ending[1]}, endings=[1])",
-        f"set_repeat_barlines({passage['start']}, {first_ending[1]})",
+        f"set_repeat_barlines({start}, {first_ending[1]})",
     ]
 
 
@@ -104,13 +184,14 @@ async def fetch_measures(
     """Read a range of measures from the plugin, in chunks.
 
     Reading FETCH_CHUNK measures at a time keeps each reply small, so large
-    scores work too.
+    scores work too. Measures are addressed by position here, as the analysis
+    works on positions; the tools give the results as printed.
 
     Args:
         client (MuseScoreClient): The client to the plugin.
-        start_measure (int): The first measure, 1-based.
-        end_measure (Optional[int]): The last measure, 1-based and inclusive.
-            Defaults to the end of the score.
+        start_measure (int): The first measure's position, 1-based.
+        end_measure (Optional[int]): The last measure's position, 1-based and
+            inclusive. Defaults to the end of the score.
         staves (Optional[List[int]]): The staves to read, 0-based. Defaults to
             all staves.
 
@@ -195,7 +276,7 @@ def _road_map_line(section: Dict) -> str:
     """Write one line of the section map.
 
     Args:
-        section (Dict): A section from find_sections.
+        section (Dict): A section from find_sections, bars as printed.
 
     Returns:
         line (str): E.g. "Bars 6-13: groove bar 6, 5 exact copies, near 9, fill
@@ -227,7 +308,28 @@ def _road_map_line(section: Dict) -> str:
         if run["dropped"]:
             text += f", drops differences in bars {', '.join(str(d['bar']) for d in run['dropped'])}"
         parts.append(text)
-    return f"Bars {section['start']}-{section['end']}: " + ", ".join(parts)
+    bars = (
+        f"Bar {section['start']}"
+        if section["start"] == section["end"]
+        else f"Bars {section['start']}-{section['end']}"
+    )
+    return f"{bars}: " + ", ".join(parts)
+
+
+def by_position(measures: List[Dict]) -> List[Dict]:
+    """Number measures by position, for an analysis that names bars by number.
+
+    song_structure names bars by their "number" (as printed, without the letter
+    of a number printed twice); with the position in its place, the tool can
+    name them as printed itself.
+
+    Args:
+        measures (List[Dict]): The measures from the plugin's analysis.
+
+    Returns:
+        measures (List[Dict]): Copies of them, "number" set to the position.
+    """
+    return [{**m, "number": m["measure"]} for m in measures]
 
 
 def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
@@ -253,22 +355,48 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         )["analysis"]
         return analysis.get("staves", [])
 
+    async def renumber(
+        bars: BarNumbers, action: str, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Run a plugin command that renumbers bars, its reply as printed after.
+
+        Args:
+            bars (BarNumbers): The bar numbers before the command, for its
+                errors.
+            action (str): The plugin action.
+            params (Dict[str, Any]): Its parameters, measures by position.
+
+        Returns:
+            result (Dict[str, Any]): The plugin's result, bars as now printed.
+
+        Raises:
+            ToolError: If the plugin reports an error, bars as printed before.
+        """
+        try:
+            result = await client.request(action, params)
+        except ToolError as error:
+            raise ToolError(bars.relabel_text(str(error))) from error
+        return (await bar_numbers(client)).relabel(result)
+
     @mcp.tool(
         description=(
             "Find repeated material in the score. Returns (1) per-staff bars that repeat the previous 1, 2 or 4 bars, "
             "candidates for measure-repeat signs (these declutter the page but keep the length), and (2) whole-score "
             "passages played again right away, candidates for repeat barlines and 1st/2nd endings (these shorten the "
             "score once the duplicate measures are deleted). Each passage lists the tool calls that apply it. "
-            "Reads the score in small chunks, so it works on large scores. Measure numbers refer to the score as it "
+            "Reads the score in small chunks, so it works on large scores. Bars are as printed in the score as it "
             "is now: apply passages from the last one backwards."
         ),
         tags={"structure"},
     )
     async def find_repeated_measures(
-        start_measure: Annotated[int, "First measure to analyse (1-based)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar],
+            f"First bar to analyse, {BAR_HELP}. Defaults to the first bar.",
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
-            "Last measure to analyse (1-based, inclusive). Defaults to the end of the score.",
+            Optional[Bar],
+            "Last bar to analyse, inclusive. Defaults to the end of the score.",
         ] = None,
         staves: Annotated[
             Optional[List[int]],
@@ -280,29 +408,30 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "per-staff measure repeats in orange. Undo or clear_color removes it.",
         ] = False,
     ):
-        measures, staff_info = await fetch_measures(
-            client, start_measure, end_measure, staves
-        )
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure, to_end=True)
+        measures, staff_info = await fetch_measures(client, first, last, staves)
         staff_names = [st["name"] for st in staff_info]
         found = find_repeats(measures, staff_names)
-        for passage in found["passages"]:
+        passages = printed_bars(found["passages"], bars)
+        for passage in passages:
             passage["apply"] = _apply_steps(passage)
 
         result = {
             "measures_analysed": [
-                measures[0]["measure"],
-                measures[-1]["measure"],
+                bars.label(measures[0]["measure"]),
+                bars.label(measures[-1]["measure"]),
             ]
             if measures
             else [],
             "staves_analysed": [
                 st.get("index", i) for i, st in enumerate(staff_info)
             ],
-            "passages": found["passages"],
-            "measure_repeats": found["measure_repeats"],
+            "passages": passages,
+            "measure_repeats": printed_bars(found["measure_repeats"], bars),
             "notes": [
-                "Apply passages from the last one backwards: delete_measures renumbers later measures.",
-                "measure_repeats use the current measure numbers; re-run this tool after deleting measures.",
+                "Apply passages from the last one backwards: delete_measures moves later bars up.",
+                "measure_repeats use the bars as printed now; re-run this tool after deleting bars.",
                 "Place measure-repeat signs with apply_measure_repeats (one call per staff, all groups at once).",
             ],
         }
@@ -344,7 +473,7 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 legend.append(
                     {
                         "color": color,
-                        "meaning": f"duplicate of measures {passage['start']}-{passage['end']} (passage {i + 1})",
+                        "meaning": f"duplicate of bars {bars.span(passage['start'], passage['end'])} (passage {i + 1})",
                     }
                 )
             result["highlight_legend"] = legend
@@ -353,7 +482,7 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
     @mcp.tool(
         description=(
-            "Put start and end repeat barlines around a range of measures, or remove them. "
+            "Put start and end repeat barlines around a range of bars, or remove them. "
             "Needs MuseScore 4.6 or newer; on older versions the measures are selected and the reply "
             "says which palette items to click."
         ),
@@ -361,11 +490,9 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     )
     async def set_repeat_barlines(
         start_measure: Annotated[
-            int, "Measure that gets the start repeat (1-based)"
+            Bar, f"Bar that gets the start repeat, {BAR_HELP}"
         ],
-        end_measure: Annotated[
-            int, "Measure that gets the end repeat (1-based, inclusive)"
-        ],
+        end_measure: Annotated[Bar, "Bar that gets the end repeat"],
         play_count: Annotated[
             int, "How many times the passage is played in total"
         ] = 2,
@@ -373,11 +500,15 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             bool, "True to remove the repeat barlines instead of adding them"
         ] = False,
     ):
-        return await client.request(
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure)
+        return await send(
+            client,
+            bars,
             "setRepeatBarlines",
             {
-                "startMeasure": start_measure,
-                "endMeasure": end_measure,
+                "startMeasure": first,
+                "endMeasure": last,
                 "playCount": play_count,
                 "clear": clear,
             },
@@ -385,19 +516,17 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
     @mcp.tool(
         description=(
-            "Add a volta (1st/2nd ending bracket) over a range of measures. Experimental: the plugin API has no "
+            "Add a volta (1st/2nd ending bracket) over a range of bars. Experimental: the plugin API has no "
             "dedicated volta call, so check the result; if it fails, the measures are selected and the reply "
             "says which palette item to click."
         ),
         tags={"structure"},
     )
     async def add_volta(
-        start_measure: Annotated[
-            int, "First measure under the volta (1-based)"
-        ],
+        start_measure: Annotated[Bar, f"First bar under the volta, {BAR_HELP}"],
         end_measure: Annotated[
-            Optional[int],
-            "Last measure under the volta (1-based, inclusive). Defaults to start_measure.",
+            Optional[Bar],
+            "Last bar under the volta, inclusive. Defaults to start_measure.",
         ] = None,
         endings: Annotated[
             List[int],
@@ -408,16 +537,12 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             'Volta label. Defaults to the endings, e.g. "1." or "1, 2."',
         ] = None,
     ):
-        params = {
-            "startMeasure": start_measure,
-            "endMeasure": end_measure
-            if end_measure is not None
-            else start_measure,
-            "endings": endings,
-        }
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure)
+        params = {"startMeasure": first, "endMeasure": last, "endings": endings}
         if text:
             params["text"] = text
-        return await client.request("addVolta", params)
+        return await send(client, bars, "addVolta", params)
 
     @mcp.tool(
         description=(
@@ -428,12 +553,12 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     )
     async def prepare_measure_repeat(
         start_measure: Annotated[
-            int,
-            "First measure to turn into a repeat sign (1-based); it repeats the bars before it",
+            Bar,
+            f"First bar to turn into a repeat sign, {BAR_HELP}; it repeats the bars before it",
         ],
         end_measure: Annotated[
-            Optional[int],
-            "Last measure (1-based, inclusive). Defaults to start_measure + bars - 1.",
+            Optional[Bar],
+            "Last bar, inclusive. Defaults to the size of the sign from start_measure on.",
         ] = None,
         bars: Annotated[
             Literal[1, 2, 4], "Size of the measure-repeat sign: 1, 2 or 4 bars"
@@ -444,11 +569,15 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "Last staff (0-based, inclusive). Defaults to the last staff.",
         ] = None,
     ):
+        numbers = await bar_numbers(client)
+        first, last = numbers.bounds(start_measure, end_measure)
         if end_measure is None:
-            end_measure = start_measure + bars - 1
-        result = await client.request(
+            last = first + bars - 1
+        result = await send(
+            client,
+            numbers,
             "selectMeasures",
-            range_params(start_measure, end_measure, first_staff, last_staff),
+            range_params(first, last, first_staff, last_staff),
         )
         sign = "measure repeat" if bars == 1 else f"{bars}-measure repeat"
         result["next_step"] = (
@@ -472,10 +601,13 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             Optional[List[int]],
             "Staff indices to analyse (0-based). Defaults to the drum staves.",
         ] = None,
-        start_measure: Annotated[int, "First measure to analyse (1-based)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar],
+            f"First bar to analyse, {BAR_HELP}. Defaults to the first bar.",
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
-            "Last measure to analyse (1-based, inclusive). Defaults to the end of the score.",
+            Optional[Bar],
+            "Last bar to analyse, inclusive. Defaults to the end of the score.",
         ] = None,
         tolerance: Annotated[
             float,
@@ -491,12 +623,14 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                     "No drum staff found in the score; pass the staves to analyse"
                 )
 
-        measures, staff_info = await fetch_measures(
-            client, start_measure, end_measure, staves
-        )
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure, to_end=True)
+        measures, staff_info = await fetch_measures(client, first, last, staves)
         result = []
         for st in staff_info:
-            sections = find_sections(measures, st["name"], tolerance)
+            sections = printed_bars(
+                find_sections(measures, st["name"], tolerance), bars
+            )
             groups = [
                 g for sec in sections for g in sec["proposed_repeat_signs"]
             ]
@@ -554,10 +688,16 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 st["index"] for st in await staff_header() if st.get("isDrums")
             ]
             staff = drums[0] if drums else 0
+        bars = await bar_numbers(client)
         measures, staff_info = await fetch_measures(client, 1, None, [staff])
         if not staff_info:
             raise ToolError(f"Staff {staff} not found")
-        result = analyse_structure(measures, staff_info[0]["name"], tolerance)
+        result = printed_bars(
+            analyse_structure(
+                by_position(measures), staff_info[0]["name"], tolerance
+            ),
+            bars,
+        )
         result["suggested_rows"] = [
             {
                 "section": sec["section"],
@@ -590,8 +730,8 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     async def label_section_counts(
         counts: Annotated[
             Optional[List[Dict[str, Any]]],
-            'Counts to write: [{"measure": 8, "text": "2x4+2"}] (measure '
-            "= the bar holding the section label). Defaults to song_structure's counts.",
+            'Counts to write: [{"measure": 8, "text": "2x4+2"}] (measure = the bar holding the section label, '
+            f"{BAR_HELP}). Defaults to song_structure's counts.",
         ] = None,
         staff: Annotated[
             Optional[int],
@@ -613,10 +753,11 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         ] = 1,
         clear: Annotated[
             bool,
-            "Remove the counts instead (at the given measures, or at every section label)",
+            "Remove the counts instead (at the given bars, or at every section label)",
         ] = False,
     ):
         computed = counts is None
+        bars = await bar_numbers(client)
         if counts is None:
             if staff is None:
                 drums = [
@@ -634,14 +775,15 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 "sections"
             ]
             counts = [
-                {"measure": sec["first_bar"], "text": sec["count"]}
+                {"measure": bars.label(sec["first_bar"]), "text": sec["count"]}
                 for sec in sections
                 if sec["section"] != "Start"
             ]
         for c in counts:
             if (
                 not isinstance(c, dict)
-                or not isinstance(c.get("measure"), int)
+                or not isinstance(c.get("measure"), (int, str))
+                or isinstance(c.get("measure"), bool)
                 or not str(c.get("text") or "").strip()
             ):
                 raise ToolError(
@@ -650,7 +792,7 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         params = {
             "counts": [
                 {
-                    "measure": c["measure"],
+                    "measure": bars.position(c["measure"]),
                     "text": str(c["text"]).strip().strip("()").strip(),
                 }
                 for c in counts
@@ -665,8 +807,8 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             )
         if clear:
             params["clear"] = True
-        result = await client.request("addSectionCounts", params)
-        result["counts"] = params["counts"]
+        result = await send(client, bars, "addSectionCounts", params)
+        result["counts"] = bars.relabel(params["counts"])
         if placement == "label" and not clear:
             styles = {
                 "rehearsalMarkFontSize": label_size,
@@ -689,17 +831,17 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "the kept bars (shown as e.g. '7x'). With phrase_bars=2, bars start..end must be a 2-bar phrase "
             "repeated (e.g. 28-35 becomes 28-29 x4). This changes every staff, so use it in a score that contains "
             "only the part being charted (make_part_score). It refuses when any staff's copies differ in anything "
-            "but ghost notes and crashes on beat 1, unless force=True. Later measures are renumbered: collapse from "
-            "the end of the score backwards. Needs MuseScore 4.6+."
+            "but ghost notes and crashes on beat 1, unless force=True. Later bars move up: collapse from the end of "
+            "the score backwards. Needs MuseScore 4.6+."
         ),
         tags={"structure"},
     )
     async def collapse_to_repeat(
         start: Annotated[
-            int,
-            "First bar of the run (1-based); the phrase starting here is kept",
+            Bar,
+            f"First bar of the run, {BAR_HELP}; the phrase starting here is kept",
         ],
-        end: Annotated[int, "Last bar of the run (1-based, inclusive)"],
+        end: Annotated[Bar, "Last bar of the run, inclusive"],
         phrase_bars: Annotated[
             int,
             "Length of the repeated phrase in bars (1, 2, 4...); the run must be a whole number of phrases",
@@ -709,12 +851,14 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "Collapse even if copies differ in more than ghost notes and crashes on beat 1 (those differences are lost)",
         ] = False,
     ):
-        length = end - start + 1
+        numbers = await bar_numbers(client)
+        first, last = numbers.bounds(start, end)
+        length = last - first + 1
         if phrase_bars < 1 or length < 2 * phrase_bars or length % phrase_bars:
             raise ToolError(
-                f"Bars {start}-{end} are not a whole number (at least 2) of {phrase_bars}-bar phrases"
+                f"Bars {numbers.span(first, last)} are not a whole number (at least 2) of {phrase_bars}-bar phrases"
             )
-        measures, staff_info = await fetch_measures(client, start, end, None)
+        measures, staff_info = await fetch_measures(client, first, last, None)
         differing, minor = [], []
         for st in staff_info:
             core, _ = staff_fingerprints(measures, st["name"], core_fingerprint)
@@ -727,7 +871,11 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             ]
             if bars:
                 differing.append(
-                    {"staff": st.get("index"), "name": name, "bars": bars}
+                    {
+                        "staff": st.get("index"),
+                        "name": name,
+                        "bars": [numbers.label(b) for b in bars],
+                    }
                 )
             small = [
                 measures[i]["measure"]
@@ -737,33 +885,47 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             ]
             if small:
                 minor.append(
-                    {"staff": st.get("index"), "name": name, "bars": small}
+                    {
+                        "staff": st.get("index"),
+                        "name": name,
+                        "bars": [numbers.label(b) for b in small],
+                    }
                 )
+        kept_end = first + phrase_bars - 1
         if differing and not force:
             listed = "; ".join(
-                f"{d['name']} (staff {d['staff']}): bars {d['bars']}"
+                f"{d['name']} (staff {d['staff']}): bar{'s' if len(d['bars']) > 1 else ''} {', '.join(d['bars'])}"
                 for d in differing
             )
+            phrase = (
+                f"bar {numbers.label(first)}"
+                if phrase_bars == 1
+                else f"bars {numbers.span(first, kept_end)}"
+            )
             raise ToolError(
-                f"Not every phrase in {start}-{end} is a copy of bars {start}-{start + phrase_bars - 1}: {listed}. "
+                f"Not every phrase in {numbers.span(first, last)} is a copy of {phrase}: {listed}. "
                 "Collapsing would delete those differences (kicks, snares, hats or articulations). Try a longer "
                 "phrase_bars, chart a single part (make_part_score), or pass force=True after the user agrees."
             )
 
         play_count = length // phrase_bars
-        kept_end = start + phrase_bars - 1
-        repeat = await client.request(
+        repeat = await send(
+            client,
+            numbers,
             "setRepeatBarlines",
             {
-                "startMeasure": start,
+                "startMeasure": first,
                 "endMeasure": kept_end,
                 "playCount": play_count,
             },
         )
         if repeat.get("fallback"):
             return repeat
-        await client.request(
-            "deleteMeasures", {"startMeasure": kept_end + 1, "endMeasure": end}
+        await send(
+            client,
+            numbers,
+            "deleteMeasures",
+            {"startMeasure": kept_end + 1, "endMeasure": last},
         )
         try:
             await client.request(
@@ -772,13 +934,15 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         except ToolError:
             pass
         kept = (
-            f"Bar {start}" if phrase_bars == 1 else f"Bars {start}-{kept_end}"
+            f"Bar {numbers.label(first)}"
+            if phrase_bars == 1
+            else f"Bars {numbers.span(first, kept_end)}"
         )
         return {
             "success": True,
             "message": (
-                f"{kept} now play{'s' if phrase_bars == 1 else ''} {play_count} times; bars {kept_end + 1}-{end} "
-                f"were removed, so later bars moved up by {length - phrase_bars}."
+                f"{kept} now play{'s' if phrase_bars == 1 else ''} {play_count} times; bars "
+                f"{numbers.span(kept_end + 1, last)} were removed, so later bars moved up by {length - phrase_bars}."
             ),
             "differences_dropped": differing,
             "ghost_or_crash_differences_dropped": minor,
@@ -849,7 +1013,9 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
         result = await client.request("removeParts", {"keepStaves": staves})
         measures, _ = await fetch_measures(client, 1, None, None)
-        incomplete = incomplete_measures(measures)
+        incomplete = (await bar_numbers(client)).relabel(
+            incomplete_measures(measures)
+        )
         if incomplete:
             warnings.append(
                 "Bars whose notes don't fill the bar (MuseScore calls the file corrupted when it has these): "
@@ -987,23 +1153,29 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "bars (MuseScore's 'Add to measure number'), so it can be run again after changing repeats. "
             "exclude_from_count leaves bars out of the count, e.g. [1] for a silent pickup or intro bar. "
             "reset=True removes all offsets and exclusions instead (plain 1..N numbering). "
-            "Voltas are not taken into account. Needs MuseScore 4.6+. Tools keep addressing bars by position."
+            "Voltas are not taken into account. Needs MuseScore 4.6+. Tools take and give bars as printed, so after "
+            "this call they go by the new numbers."
         ),
         tags={"structure"},
     )
     async def number_bars_as_played(
         exclude_from_count: Annotated[
-            Optional[List[int]],
-            "Bar positions (1-based) to exclude from the count, e.g. [1]",
+            Optional[List[Bar]],
+            f"Bars to exclude from the count, {BAR_HELP} before this call, e.g. [1]",
         ] = None,
         reset: Annotated[
             bool, "Undo the numbering: plain 1..N, no offsets or excluded bars"
         ] = False,
     ):
-        params = {"exclude": exclude_from_count} if exclude_from_count else {}
+        bars = await bar_numbers(client)
+        params = (
+            {"exclude": [bars.position(b) for b in exclude_from_count]}
+            if exclude_from_count
+            else {}
+        )
         if reset:
             params = {"reset": True}
-        return await client.request("numberAsPlayed", params)
+        return await renumber(bars, "numberAsPlayed", params)
 
     @mcp.tool(
         description=(
@@ -1013,7 +1185,7 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"structure"},
     )
     async def set_measure_number(
-        measure: Annotated[int, "Bar position (1-based)"],
+        measure: Annotated[Bar, f"The bar, {BAR_HELP} before this call"],
         add_to_number: Annotated[
             Optional[int],
             "Value for 'Add to measure number' (0 to remove an offset)",
@@ -1024,21 +1196,26 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     ):
         if add_to_number is None and exclude_from_count is None:
             raise ToolError("Pass add_to_number and/or exclude_from_count")
-        params = {"measure": measure}
+        bars = await bar_numbers(client)
+        params = {"measure": bars.position(measure)}
         if add_to_number is not None:
             params["addToNumber"] = add_to_number
         if exclude_from_count is not None:
             params["excludeFromCount"] = exclude_from_count
-        return await client.request("setMeasureNumbering", params)
+        return await renumber(bars, "setMeasureNumbering", params)
 
     @mcp.tool(
-        description="Add a rehearsal mark (section label such as 'A' or 'Verse') at the start of a measure. Experimental: check the score afterwards.",
+        description="Add a rehearsal mark (section label such as 'A' or 'Verse') at the start of a bar. Experimental: check the score afterwards.",
         tags={"structure"},
     )
     async def add_rehearsal_mark(
-        measure: Annotated[int, "Measure number (1-based)"],
+        measure: Annotated[Bar, f"The bar, {BAR_HELP}"],
         text: Annotated[str, 'Label, e.g. "A" or "Verse 1"'],
     ):
-        return await client.request(
-            "addRehearsalMark", {"measure": measure, "text": text}
+        bars = await bar_numbers(client)
+        return await send(
+            client,
+            bars,
+            "addRehearsalMark",
+            {"measure": bars.position(measure), "text": text},
         )

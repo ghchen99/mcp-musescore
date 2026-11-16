@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, List, Literal, NotRequired, TypedDict
 
+from ..bars import Bar
+
 
 class getScoreAction(TypedDict):
     action: Literal["getScore"]
@@ -117,7 +119,7 @@ class getCursorInfoAction(TypedDict):
 
 
 class goToMeasureParams(TypedDict):
-    measure: int
+    measure: Bar
 
 
 class goToMeasureAction(TypedDict):
@@ -182,7 +184,7 @@ class prevStaffAction(TypedDict):
 
 class setTempoParams(TypedDict):
     bpm: float
-    measure: NotRequired[int]
+    measure: NotRequired[Bar]
 
 
 class setTempoAction(TypedDict):
@@ -191,8 +193,8 @@ class setTempoAction(TypedDict):
 
 
 class measureRangeParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
 
@@ -203,8 +205,8 @@ class selectMeasuresAction(TypedDict):
 
 
 class deleteMeasuresParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
 
 
 class deleteMeasuresAction(TypedDict):
@@ -213,8 +215,8 @@ class deleteMeasuresAction(TypedDict):
 
 
 class setRepeatBarlinesParams(TypedDict):
-    startMeasure: int
-    endMeasure: int
+    startMeasure: Bar
+    endMeasure: Bar
     playCount: NotRequired[int]
     clear: NotRequired[bool]
 
@@ -225,8 +227,8 @@ class setRepeatBarlinesAction(TypedDict):
 
 
 class addVoltaParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     endings: NotRequired[List[int]]
     text: NotRequired[str]
 
@@ -237,8 +239,8 @@ class addVoltaAction(TypedDict):
 
 
 class colorRangeParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     startBeat: NotRequired[float]
@@ -263,7 +265,7 @@ class setStyleAction(TypedDict):
 
 
 class addRehearsalMarkParams(TypedDict):
-    measure: int
+    measure: Bar
     text: str
 
 
@@ -282,8 +284,8 @@ class removePartsAction(TypedDict):
 
 
 class addHighlightParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     startBeat: NotRequired[float]
@@ -297,7 +299,7 @@ class addHighlightAction(TypedDict):
 
 
 class addLabelParams(TypedDict):
-    measure: int
+    measure: Bar
     text: str
     staff: NotRequired[int]
     background: NotRequired[str]
@@ -310,8 +312,8 @@ class addLabelAction(TypedDict):
 
 
 class clearHighlightsParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     kinds: NotRequired[
@@ -325,8 +327,8 @@ class clearHighlightsAction(TypedDict):
 
 
 class highlightNotesParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     startBeat: NotRequired[float]
@@ -341,8 +343,8 @@ class highlightNotesAction(TypedDict):
 
 
 class highlightMarkingsParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     types: NotRequired[List[str]]
@@ -356,8 +358,8 @@ class highlightMarkingsAction(TypedDict):
 
 
 class highlightSymbolsParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     kinds: NotRequired[
@@ -374,7 +376,7 @@ class highlightSymbolsAction(TypedDict):
 
 
 class setMeasureNumberingParams(TypedDict):
-    measure: int
+    measure: Bar
     addToNumber: NotRequired[int]
     excludeFromCount: NotRequired[bool]
 
@@ -385,7 +387,7 @@ class setMeasureNumberingAction(TypedDict):
 
 
 class numberAsPlayedParams(TypedDict):
-    exclude: NotRequired[List[int]]
+    exclude: NotRequired[List[Bar]]
 
 
 class numberAsPlayedAction(TypedDict):
@@ -394,7 +396,7 @@ class numberAsPlayedAction(TypedDict):
 
 
 class addTextParams(TypedDict):
-    measure: int
+    measure: Bar
     text: str
     staff: NotRequired[int]
     beat: NotRequired[float]
@@ -412,8 +414,8 @@ class addTextAction(TypedDict):
 
 
 class addArticulationParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     startBeat: NotRequired[float]
@@ -430,8 +432,8 @@ class addArticulationAction(TypedDict):
 
 
 class removeArticulationsParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     pitches: NotRequired[List[int]]
@@ -444,8 +446,8 @@ class removeArticulationsAction(TypedDict):
 
 
 class ghostNotesParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     pitches: NotRequired[List[int]]
@@ -458,7 +460,7 @@ class ghostNotesAction(TypedDict):
 
 
 class SectionCount(TypedDict):
-    measure: int
+    measure: Bar
     text: str
 
 
@@ -478,8 +480,8 @@ class addSectionCountsAction(TypedDict):
 
 
 class beamOverRestsParams(TypedDict):
-    startMeasure: int
-    endMeasure: NotRequired[int]
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
     clear: NotRequired[bool]

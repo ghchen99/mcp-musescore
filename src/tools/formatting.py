@@ -1,12 +1,43 @@
 """Score coloring tools for MuseScore MCP."""
 
 import re
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, List, Literal, Optional, Tuple
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from ..bars import BAR_HELP, Bar, BarNumbers, bar_numbers, send
 from ..client import MuseScoreClient
+
+
+async def bar_range(
+    client: MuseScoreClient,
+    start_measure: Optional[Bar],
+    end_measure: Optional[Bar],
+    first_staff: int,
+    last_staff: Optional[int],
+    to_end: bool = False,
+) -> Tuple[BarNumbers, dict]:
+    """Build the plugin's range parameters from a tool's bars, as printed.
+
+    Args:
+        client (MuseScoreClient): The client, to fetch the bar numbers.
+        start_measure (Optional[Bar]): The first bar. Defaults to the first bar
+            of the score.
+        end_measure (Optional[Bar]): The last bar, inclusive. Defaults to
+            start_measure, or with to_end to the last bar of the score.
+        first_staff (int): The first staff, 0-based.
+        last_staff (Optional[int]): The last staff, 0-based and inclusive.
+            Defaults to the last staff of the score.
+        to_end (bool): Whether a missing end_measure means the end of the score.
+
+    Returns:
+        bars, params (Tuple[BarNumbers, dict]): The score's bar numbers, to give
+            the reply in, and the range parameters, measures by position.
+    """
+    bars = await bar_numbers(client)
+    first, last = bars.bounds(start_measure, end_measure, to_end)
+    return bars, range_params(first, last, first_staff, last_staff)
 
 
 def range_params(
@@ -171,10 +202,10 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def color_range(
-        start_measure: Annotated[int, "First measure to color (1-based)"],
+        start_measure: Annotated[Bar, f"First bar to color, {BAR_HELP}"],
         end_measure: Annotated[
-            Optional[int],
-            "Last measure to color (1-based, inclusive). Defaults to start_measure.",
+            Optional[Bar],
+            "Last bar to color, inclusive. Defaults to start_measure.",
         ] = None,
         first_staff: Annotated[int, "First staff to color (0-based)"] = 0,
         last_staff: Annotated[
@@ -191,25 +222,28 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         start_beat: Annotated[Optional[float], START_BEAT_HELP] = None,
         end_beat: Annotated[Optional[float], END_BEAT_HELP] = None,
     ):
+        bars, plugin_range = await bar_range(
+            client, start_measure, end_measure, first_staff, last_staff
+        )
         params = beat_params(
-            range_params(start_measure, end_measure, first_staff, last_staff),
+            plugin_range,
             start_beat,
             end_beat,
         )
         params["color"] = color
         if voices:
             params["voices"] = voices
-        return await client.request("colorRange", params)
+        return await send(client, bars, "colorRange", params)
 
     @mcp.tool(
         description="Reset notes and rests in a range of measures and staves (optionally only some beats) to the default black.",
         tags={"formatting"},
     )
     async def clear_color(
-        start_measure: Annotated[int, "First measure to reset (1-based)"],
+        start_measure: Annotated[Bar, f"First bar to reset, {BAR_HELP}"],
         end_measure: Annotated[
-            Optional[int],
-            "Last measure to reset (1-based, inclusive). Defaults to start_measure.",
+            Optional[Bar],
+            "Last bar to reset, inclusive. Defaults to start_measure.",
         ] = None,
         first_staff: Annotated[int, "First staff to reset (0-based)"] = 0,
         last_staff: Annotated[
@@ -219,13 +253,16 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         start_beat: Annotated[Optional[float], START_BEAT_HELP] = None,
         end_beat: Annotated[Optional[float], END_BEAT_HELP] = None,
     ):
+        bars, plugin_range = await bar_range(
+            client, start_measure, end_measure, first_staff, last_staff
+        )
         params = beat_params(
-            range_params(start_measure, end_measure, first_staff, last_staff),
+            plugin_range,
             start_beat,
             end_beat,
         )
         params["color"] = "#000000"
-        return await client.request("colorRange", params)
+        return await send(client, bars, "colorRange", params)
 
     @mcp.tool(
         description=(
@@ -236,10 +273,10 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def highlight_bars(
-        start_measure: Annotated[int, "First measure to highlight (1-based)"],
+        start_measure: Annotated[Bar, f"First bar to highlight, {BAR_HELP}"],
         end_measure: Annotated[
-            Optional[int],
-            "Last measure (1-based, inclusive). Defaults to start_measure.",
+            Optional[Bar],
+            "Last bar, inclusive. Defaults to start_measure.",
         ] = None,
         first_staff: Annotated[int, "First staff (0-based)"] = 0,
         last_staff: Annotated[
@@ -253,18 +290,20 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         start_beat: Annotated[Optional[float], START_BEAT_HELP] = None,
         end_beat: Annotated[Optional[float], END_BEAT_HELP] = None,
     ):
+        bars, plugin_range = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff if last_staff is not None else first_staff,
+        )
         params = beat_params(
-            range_params(
-                start_measure,
-                end_measure,
-                first_staff,
-                last_staff if last_staff is not None else first_staff,
-            ),
+            plugin_range,
             start_beat,
             end_beat,
         )
         params["color"] = translucent(color, opacity)
-        return await client.request("addHighlight", params)
+        return await send(client, bars, "addHighlight", params)
 
     @mcp.tool(
         description=(
@@ -277,10 +316,10 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def highlight_notes(
-        start_measure: Annotated[int, "First measure (1-based)"],
+        start_measure: Annotated[Bar, f"First bar, {BAR_HELP}"],
         end_measure: Annotated[
-            Optional[int],
-            "Last measure (1-based, inclusive). Defaults to start_measure.",
+            Optional[Bar],
+            "Last bar, inclusive. Defaults to start_measure.",
         ] = None,
         first_staff: Annotated[int, "First staff (0-based)"] = 0,
         last_staff: Annotated[
@@ -302,13 +341,15 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         ] = "#ffd600",
         opacity: Annotated[float, "Opacity from 0 to 1"] = 0.45,
     ):
+        bars, plugin_range = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff if last_staff is not None else first_staff,
+        )
         params = beat_params(
-            range_params(
-                start_measure,
-                end_measure,
-                first_staff,
-                last_staff if last_staff is not None else first_staff,
-            ),
+            plugin_range,
             start_beat,
             end_beat,
         )
@@ -316,7 +357,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         if selected:
             params["pitches"] = sorted(set(selected))
         params["color"] = translucent(color, opacity)
-        return await client.request("highlightNotes", params)
+        return await send(client, bars, "highlightNotes", params)
 
     @mcp.tool(
         description=(
@@ -327,10 +368,12 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def highlight_symbols(
-        start_measure: Annotated[int, "First measure (1-based)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
-            "Last measure (1-based, inclusive). Defaults to the end of the score.",
+            Optional[Bar],
+            "Last bar, inclusive. Defaults to the end of the score.",
         ] = None,
         first_staff: Annotated[int, "First staff (0-based)"] = 0,
         last_staff: Annotated[
@@ -357,10 +400,13 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             bool, "Color mode only: reset the symbols to black"
         ] = False,
     ):
-        if end_measure is None:
-            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
-        params = range_params(
-            start_measure, end_measure, first_staff, last_staff
+        bars, params = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            to_end=True,
         )
         params.update({"kinds": kinds, "mode": mode, "clear": clear})
         if mode == "highlight":
@@ -368,7 +414,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         else:
             translucent(color, 1)  # validates the color
             params["color"] = color
-        return await client.request("highlightSymbols", params)
+        return await send(client, bars, "highlightSymbols", params)
 
     @mcp.tool(
         description=(
@@ -378,10 +424,12 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def highlight_markings(
-        start_measure: Annotated[int, "First measure (1-based)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
-            "Last measure (1-based, inclusive). Defaults to the end of the score.",
+            Optional[Bar],
+            "Last bar, inclusive. Defaults to the end of the score.",
         ] = None,
         first_staff: Annotated[int, "First staff (0-based)"] = 0,
         last_staff: Annotated[
@@ -401,14 +449,17 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         ] = "#ffd600",
         opacity: Annotated[float, "Opacity from 0 to 1"] = 0.55,
     ):
-        if end_measure is None:
-            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
-        params = range_params(
-            start_measure, end_measure, first_staff, last_staff
+        bars, params = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            to_end=True,
         )
         params["types"] = types
         params["color"] = translucent(color, opacity)
-        return await client.request("highlightMarkings", params)
+        return await send(client, bars, "highlightMarkings", params)
 
     @mcp.tool(
         description=(
@@ -420,7 +471,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def add_text(
-        measure: Annotated[int, "Bar position (1-based)"],
+        measure: Annotated[Bar, f"Bar, {BAR_HELP}"],
         text: Annotated[str, "The text to add"],
         staff: Annotated[int, "Staff (0-based)"] = 0,
         beat: Annotated[
@@ -440,9 +491,10 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             Literal["staff", "expression"], "Staff text, or expression text"
         ] = "staff",
     ):
+        bars = await bar_numbers(client)
         translucent(color, 1)  # validates the color
         params = {
-            "measure": measure,
+            "measure": bars.position(measure),
             "text": text,
             "staff": staff,
             "fontSize": size,
@@ -454,7 +506,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         }
         if beat is not None:
             params["beat"] = beat
-        return await client.request("addText", params)
+        return await send(client, bars, "addText", params)
 
     @mcp.tool(
         description=(
@@ -467,9 +519,11 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def remove_annotations(
-        start_measure: Annotated[int, "First bar (1-based position)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
+            Optional[Bar],
             "Last bar (inclusive). Defaults to the end of the score.",
         ] = None,
         first_staff: Annotated[int, "First staff (0-based)"] = 0,
@@ -492,16 +546,19 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             'Only remove texts equal to `contains` (e.g. "*" but not "**" or a legend)',
         ] = False,
     ):
-        if end_measure is None:
-            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
-        params = range_params(
-            start_measure, end_measure, first_staff, last_staff
+        bars, params = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            to_end=True,
         )
         params["kinds"] = kinds
         if contains:
             params["contains"] = contains
             params["exact"] = exact
-        return await client.request("removeAnnotations", params)
+        return await send(client, bars, "removeAnnotations", params)
 
     @mcp.tool(
         description=(
@@ -513,9 +570,9 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"notation"},
     )
     async def add_articulation(
-        start_measure: Annotated[int, "First bar (1-based position)"],
+        start_measure: Annotated[Bar, f"First bar, {BAR_HELP}"],
         end_measure: Annotated[
-            Optional[int], "Last bar (inclusive). Defaults to start_measure."
+            Optional[Bar], "Last bar (inclusive). Defaults to start_measure."
         ] = None,
         symbol: Annotated[
             Literal[
@@ -544,8 +601,11 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         start_beat: Annotated[Optional[float], START_BEAT_HELP] = None,
         end_beat: Annotated[Optional[float], END_BEAT_HELP] = None,
     ):
+        bars, plugin_range = await bar_range(
+            client, start_measure, end_measure, first_staff, last_staff
+        )
         params = beat_params(
-            range_params(start_measure, end_measure, first_staff, last_staff),
+            plugin_range,
             start_beat,
             end_beat,
         )
@@ -553,7 +613,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         if selected:
             params["pitches"] = sorted(set(selected))
         params["symbol"] = symbol
-        return await client.request("addArticulation", params)
+        return await send(client, bars, "addArticulation", params)
 
     @mcp.tool(
         description=(
@@ -563,9 +623,11 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"notation"},
     )
     async def remove_articulations(
-        start_measure: Annotated[int, "First bar (1-based position)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
+            Optional[Bar],
             "Last bar (inclusive). Defaults to the end of the score.",
         ] = None,
         symbols: Annotated[
@@ -594,16 +656,19 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "Last staff (0-based, inclusive). Defaults to the last staff.",
         ] = None,
     ):
-        if end_measure is None:
-            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
-        params = range_params(
-            start_measure, end_measure, first_staff, last_staff
+        bars, params = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            to_end=True,
         )
         selected = (pitches or []) + drum_pitches(drums or [])
         if selected:
             params["pitches"] = sorted(set(selected))
         params["symbols"] = symbols
-        return await client.request("removeArticulations", params)
+        return await send(client, bars, "removeArticulations", params)
 
     @mcp.tool(
         description=(
@@ -614,9 +679,11 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"notation"},
     )
     async def ghost_notes(
-        start_measure: Annotated[int, "First bar (1-based position)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
+            Optional[Bar],
             "Last bar (inclusive). Defaults to the end of the score.",
         ] = None,
         mode: Annotated[
@@ -634,16 +701,19 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "Last staff (0-based, inclusive). Defaults to the last staff.",
         ] = None,
     ):
-        if end_measure is None:
-            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
-        params = range_params(
-            start_measure, end_measure, first_staff, last_staff
+        bars, params = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            to_end=True,
         )
         selected = (pitches or []) + drum_pitches(drums or [])
         if selected:
             params["pitches"] = sorted(set(selected))
         params["mode"] = mode
-        return await client.request("ghostNotes", params)
+        return await send(client, bars, "ghostNotes", params)
 
     @mcp.tool(
         description=(
@@ -656,9 +726,11 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"notation"},
     )
     async def beam_over_rests(
-        start_measure: Annotated[int, "First bar (1-based position)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
+            Optional[Bar],
             "Last bar (inclusive). Defaults to the end of the score.",
         ] = None,
         first_staff: Annotated[int, "First staff (0-based)"] = 0,
@@ -670,14 +742,17 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             bool, "Undo: put the rests back on automatic beaming"
         ] = False,
     ):
-        if end_measure is None:
-            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
-        params = range_params(
-            start_measure, end_measure, first_staff, last_staff
+        bars, params = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            to_end=True,
         )
         if clear:
             params["clear"] = True
-        return await client.request("beamOverRests", params)
+        return await send(client, bars, "beamOverRests", params)
 
     @mcp.tool(
         description=(
@@ -687,7 +762,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def add_label(
-        measure: Annotated[int, "Measure number (1-based)"],
+        measure: Annotated[Bar, f"Bar, {BAR_HELP}"],
         text: Annotated[str, "Label text"],
         staff: Annotated[int, "Staff to attach the label to (0-based)"] = 0,
         background: Annotated[
@@ -695,15 +770,18 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         ] = "#fff2a8",
         border: Annotated[str, 'Box border color as "#rrggbb"'] = "#000000",
     ):
+        bars = await bar_numbers(client)
         for value in (background, border):
             if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                 raise ToolError(
                     f'Colors must look like "#rrggbb", got {value!r}'
                 )
-        return await client.request(
+        return await send(
+            client,
+            bars,
             "addLabel",
             {
-                "measure": measure,
+                "measure": bars.position(measure),
                 "text": text,
                 "staff": staff,
                 "background": background,
@@ -721,10 +799,12 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"formatting"},
     )
     async def clear_highlights(
-        start_measure: Annotated[int, "First measure (1-based)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
-            "Last measure (1-based, inclusive). Defaults to the end of the score.",
+            Optional[Bar],
+            "Last bar, inclusive. Defaults to the end of the score.",
         ] = None,
         first_staff: Annotated[int, "First staff (0-based)"] = 0,
         last_staff: Annotated[
@@ -736,10 +816,13 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "What to remove: highlight bands, note boxes, marking boxes, boxed labels",
         ] = ["highlights", "notes", "markings", "labels"],
     ):
-        if end_measure is None:
-            end_measure = (await client.request("scoreFileInfo"))["numMeasures"]
-        params = range_params(
-            start_measure, end_measure, first_staff, last_staff
+        bars, params = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            to_end=True,
         )
         params["kinds"] = kinds
-        return await client.request("clearHighlights", params)
+        return await send(client, bars, "clearHighlights", params)

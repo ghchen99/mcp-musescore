@@ -445,14 +445,16 @@ def _bar_comment(measure: Dict[str, Any]) -> str:
         measure (Dict[str, Any]): The measure from the plugin's analysis.
 
     Returns:
-        comment (str): "% m.N", plus the displayed number when it differs and
-            the repeat barlines, e.g. "% m.4 (bar 6) |: :|x7".
+        comment (str): "% bar N", N being the bar as printed (the measure's
+            "label", else its displayed number), plus the repeat barlines, e.g.
+            "% bar 6 |: :|x7".
     """
-    comment = f"% m.{measure.get('measure')}"
-    if measure.get("number") is not None and measure.get(
-        "number"
-    ) != measure.get("measure"):
-        comment += f" (bar {measure['number']})"
+    for key in ("label", "number", "measure"):
+        if measure.get(key) is not None:
+            comment = f"% bar {measure[key]}"
+            break
+    else:
+        comment = "% bar ?"
     if measure.get("repeatStart"):
         comment += " |:"
     if measure.get("repeatEnd"):
@@ -466,8 +468,8 @@ def score_to_lilypond(score_data: Dict[str, Any]) -> str:
     The analysis can hold one or more measures.
 
     Every voice is padded with spacers so that each measure ends on a bar check
-    followed by a "% m.N" comment, which keeps measures easy to compare by eye.
-    Errors are logged, not raised.
+    followed by a "% bar N" comment (the bar as printed), which keeps measures
+    easy to compare by eye. Errors are logged, not raised.
 
     Args:
         score_data (Dict[str, Any]): The getScore analysis from the plugin.

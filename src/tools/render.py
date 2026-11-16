@@ -10,34 +10,36 @@ from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
 from fastmcp.utilities.types import Image as McpImage
 
+from ..bars import BAR_HELP, BarNumbers, bar_numbers
 from ..client import MuseScoreClient
 from ..render import boxes_from, png_bytes, render_measures, render_whole_page
 
 
-def parse_measures(measures: str, num_measures: int) -> tuple[int, int]:
-    """Parse "X-Y" (or "X") into a measure range within the score.
+def parse_bars(measures: str, bars: BarNumbers) -> tuple[int, int]:
+    """Turn bars "X-Y" (or "X"), as printed, into their positions.
 
     Args:
-        measures (str): The range, 1-based and inclusive.
-        num_measures (int): The number of measures in the score.
+        measures (str): The range, inclusive, e.g. "49-62", "0-4" or "12b-14".
+        bars (BarNumbers): The score's printed bar numbers.
 
     Returns:
-        range (tuple[int, int]): The first and last measure.
+        range (tuple[int, int]): The first and last measure's position.
 
     Raises:
-        ToolError: If the range is malformed or outside the score.
+        ToolError: If the range is malformed, names a bar the score does not
+            print, or runs backwards.
     """
-    match = re.fullmatch(r"\s*(\d+)\s*(?:-\s*(\d+)\s*)?", measures)
+    match = re.fullmatch(r"\s*(\w+)\s*(?:-\s*(\w+)\s*)?", measures)
     if not match:
         raise ToolError(
             f'measures must look like "5-8" or "5", not {measures!r}'
         )
-    first = int(match.group(1))
-    last = int(match.group(2) or first)
-    if not 1 <= first <= last <= num_measures:
+    first = bars.position(match.group(1))
+    last = bars.position(match.group(2) or match.group(1))
+    if last < first:
         raise ToolError(
-            f"Measures {measures} are outside the score, which has "
-            f"{num_measures} measures"
+            f"Bars {measures} run backwards: bar {bars.label(last)} comes "
+            f"before bar {bars.label(first)} in the score"
         )
     return first, last
 
@@ -59,8 +61,7 @@ def setup_render_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "detail, with everything attached to them (chord symbols, texts, lyrics, markers), as they stand on their "
             "systems: the other bars of those systems are left blank, so a blank space before the first bar means "
             "the system starts earlier. "
-            "Measures are positions in the score, as in get_score's '% m.N', not printed bar numbers: with a "
-            "pickup bar, printed bar 49 is measure 50. The caption gives the printed numbers when they differ. "
+            "Bars are named as printed in the score, as the user sees them. "
             "Render again after a change to check it."
         ),
         tags={"score", "layout"},
@@ -71,7 +72,7 @@ def setup_render_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         ] = None,
         measures: Annotated[
             Optional[str],
-            'Measures to show instead of a page, by position (as in get_score\'s "% m.N"), e.g. "5-8" or "5"',
+            f'Bars to show instead of a page, e.g. "5-8" or "5", {BAR_HELP}',
         ] = None,
     ) -> ToolResult:
         if page is not None and measures is not None:
@@ -94,12 +95,13 @@ def setup_render_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 caption = f"Page {number} of {pages}"
             else:
                 boxes = boxes_from(result["measures"])
-                first, last = parse_measures(measures, len(boxes))
+                bars = await bar_numbers(client)
+                first, last = parse_bars(measures, bars)
                 for n in range(first, last + 1):
                     if boxes[n - 1] is None:
                         raise ToolError(
-                            f"Measure {n} is inside a multi-measure rest, so it has no place of its "
-                            "own on the page. Render its page instead, or turn multi-measure rests "
+                            f"Bar {bars.label(n)} is inside a multi-measure rest, so it has no place of "
+                            "its own on the page. Render its page instead, or turn multi-measure rests "
                             'off with set_style({"createMultiMeasureRests": false}).'
                         )
                 image = render_measures(
@@ -113,19 +115,7 @@ def setup_render_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                     if len(shown) == 1
                     else f"pages {shown[0]}-{shown[-1]}"
                 )
-                span = f"{first}-{last}" if last != first else str(first)
-                numbers = result.get("numbers") or []
-                printed = ""
-                if len(numbers) >= last and (
-                    numbers[first - 1] != first or numbers[last - 1] != last
-                ):
-                    low, high = numbers[first - 1], numbers[last - 1]
-                    printed = (
-                        f"printed bars {low}-{high}, "
-                        if high != low
-                        else f"printed bar {low}, "
-                    )
-                caption = f"Measures {span} ({printed}{where} of {pages})"
+                caption = f"Bars {bars.span(first, last)} ({where} of {pages})"
         return ToolResult(
             content=[
                 caption,

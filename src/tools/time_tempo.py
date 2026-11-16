@@ -4,6 +4,7 @@ from typing import Annotated, Optional
 
 from fastmcp import FastMCP
 
+from ..bars import BAR_HELP, Bar, bar_numbers, send
 from ..client import MuseScoreClient
 
 
@@ -37,7 +38,7 @@ def setup_time_tempo_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     @mcp.tool(
         description=(
             "Set the tempo with a tempo marking (in quarter-note beats per minute) "
-            "at the current cursor position, or at the start of the given measure."
+            "at the current cursor position, or at the start of the given bar."
         ),
         tags={"time"},
     )
@@ -46,11 +47,13 @@ def setup_time_tempo_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             float, "Tempo in quarter-note beats per minute (e.g. 120)"
         ],
         measure: Annotated[
-            Optional[int],
-            "Measure number (1-based) to place the tempo at. Defaults to the cursor position.",
+            Optional[Bar],
+            f"Bar to place the tempo at, {BAR_HELP}. Defaults to the cursor position.",
         ] = None,
     ):
-        params = {"bpm": bpm}
-        if measure is not None:
-            params["measure"] = measure
-        return await client.send_command("setTempo", params)
+        params: dict = {"bpm": bpm}
+        if measure is None:
+            return await client.send_command("setTempo", params)
+        bars = await bar_numbers(client)
+        params["measure"] = bars.position(measure)
+        return await send(client, bars, "setTempo", params)

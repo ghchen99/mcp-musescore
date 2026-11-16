@@ -514,6 +514,16 @@ class MockMuseScore:
             ],
         }
 
+    def _do_barNumbers(self, params):
+        score = self.score
+        return {
+            "success": True,
+            "numbers": score.displayed_numbers(),
+            "excluded": [
+                n in score.irregular for n in range(1, score.num_measures + 1)
+            ],
+        }
+
     def _do_getScore(self, params):
         return {"success": True, "analysis": self.score.summary(params)}
 
