@@ -184,6 +184,7 @@ mcp-musescore/
     │   ├── structure.py                # Repeat analysis, repeats, voltas, drum charts
     │   ├── score_file.py               # Measure-repeat signs and backups (file edits)
     │   ├── formatting.py               # Coloring, highlights and labels
+    │   ├── style.py                    # Score style settings (get_style, set_style)
     │   └── viewer.py                   # show_score MCP App tool
     ├── mscz/                           # Reading and editing .mscz/.mscx files
     │   ├── score_file.py
