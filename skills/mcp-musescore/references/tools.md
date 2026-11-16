@@ -2,7 +2,7 @@
 
 This reference describes the tools currently registered by `server.py` and the JSON actions sent to the MuseScore QML plugin. Use the Python function names when calling MCP. Use the camelCase action names only inside `processSequence`.
 
-The server currently registers 57 public tools.
+The server currently registers 65 public tools.
 
 ## Connection and score inspection
 
@@ -12,6 +12,8 @@ The server currently registers 57 public tools.
 | `ping_musescore` | none | Sends the `ping` action. A healthy plugin returns `pong`. |
 | `get_score` | `start_measure: int = 1`, `end_measure: int \| None = None`, `staves: list[int] \| None = None`, `format: "lilypond" \| "json" = "lilypond"` | Reads a window of the score (16 measures by default) as LilyPond with a `% m.N` comment at every barline, or as the raw JSON analysis. The header gives the total number of measures; page through long scores with `start_measure`, and read only some staves of large scores with `staves`. |
 | `show_score` | `first_measure: int = 1`, `last_measure: int \| None = None` | Read-only. Renders the score as sheet music in MCP Apps hosts (VexFlow viewer). Other hosts get only a text summary; use `get_score` for data. |
+
+`get_score` lists each measure's markers (Segno, Coda, Fine), jumps (D.S. al Coda) and line, page and section breaks under `[Markings]`, with the dynamics and other markings.
 
 Call `ping_musescore` before a mutation. Call `get_score` before and after a complex edit.
 
@@ -50,7 +52,7 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 | `delete_measures` | `start_measure: int`, `end_measure: int \| None = None` | Removes whole measures on every staff (MuseScore's Remove selected range), with multi-measure rests switched off meanwhile; errors if MuseScore deleted fewer measures than asked. Later measures are renumbered, so remove ranges from the last one backwards. |
 | `undo` | none | Undoes the last MuseScore operation. |
 
-## Staff, instruments, and time
+## Staff, instruments, time, and style
 
 | MCP tool | Parameters | What it does |
 |---|---|---|
@@ -59,6 +61,8 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 | `set_instrument_sound` | `staff: int`, `instrument_id: str` | Changes the sound/instrument identifier for a zero-based staff. |
 | `set_time_signature` | `numerator: int = 4`, `denominator: int = 4` | Sets the time signature at the current score context. |
 | `set_tempo` | `bpm: float`, `measure: int \| None = None` | Adds a tempo marking (quarter-note BPM) at the cursor, or at the start of `measure`. |
+| `get_style` | `keys: list[str]` | Reads score style settings (Format → Style) by MuseScore's internal key, e.g. `createMultiMeasureRests`. Returns `styles`, and lists under `unknown` the keys MuseScore does not have. |
+| `set_style` | `styles: dict` | Changes style settings, given as `{key: value}`. An unknown key is refused, and the settings before it stay applied. Returns each value as MuseScore reads it back. |
 
 ## Repeat structure and coloring
 
@@ -124,7 +128,7 @@ File edits find the open score's file by its score ID. If the open tab is a part
 
 | MCP tool | Parameters | What it does |
 |---|---|---|
-| `processSequence` | `sequence: list[object]` | Sends a list of camelCase actions to the plugin in order. Use only when the complete sequence is known and safe. |
+| `processSequence` | `sequence: list[object]` | Sends a list of camelCase actions to the plugin in order. Use only when the complete sequence is known and safe. A failing step stops the sequence and is reported as an error naming the step; the steps before it stay applied. |
 
 The currently accepted inner actions are:
 

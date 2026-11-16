@@ -23,6 +23,15 @@ from websockets.asyncio.server import serve
 
 WHOLE_NOTE_TICKS = 1920
 
+DEFAULT_STYLE = {
+    "createMultiMeasureRests": False,
+    "repeatPlayCountShow": False,
+    "rehearsalMarkFontSize": 14.0,
+    "rehearsalMarkMinDistance": 0.5,
+    "chordSymbolAFontSize": 10.0,
+}
+"""The style keys the mock knows, standing in for MuseScore's style list."""
+
 SEQUENCE_ACTIONS = {
     "getScore",
     "addNote",
@@ -108,7 +117,7 @@ class MockScore:
         self.part_names = [f"Part {i + 1}" for i in range(staves)]
         self.short_names = ["" for _ in range(staves)]
         self.drum_staves: set = set()
-        self.style: Dict[str, Any] = {}
+        self.style: Dict[str, Any] = dict(DEFAULT_STYLE)
         self.rehearsal_marks: List[Dict[str, Any]] = []
         self.highlights: List[
             Dict[str, Any]
@@ -125,6 +134,9 @@ class MockScore:
         self.markings: List[
             Dict[str, Any]
         ] = []  # {"staff", "startTick", "name", "text", "highlight"}
+        self.measure_elements: Dict[
+            int, List[Dict[str, Any]]
+        ] = {}  # measure -> [{"name", "text"}]: markers, jumps, breaks
         self.symbol_requests: List[
             Dict[str, Any]
         ] = []  # highlightSymbols calls (the mock has no symbols to find)
@@ -216,6 +228,9 @@ class MockScore:
                     }
                     for mk in self.markings
                     if mk["staff"] in staves and start <= mk["startTick"] < end
+                ]
+                entry["measureElements"] = [
+                    dict(el) for el in self.measure_elements.get(number, [])
                 ]
             measures.append(entry)
         return {
@@ -973,9 +988,27 @@ class MockMuseScore:
     def _do_setStyle(self, params):
         if err := self._missing(params, ["key", "value"]):
             return err
+        if params["key"] not in self.score.style:
+            return {"error": f"Unknown style key: {params['key']}"}
         self._mutating()
         self.score.style[params["key"]] = params["value"]
-        return {"success": True}
+        return {
+            "success": True,
+            "key": params["key"],
+            "value": self.score.style[params["key"]],
+        }
+
+    def _do_getStyle(self, params):
+        if err := self._missing(params, ["keys"]):
+            return err
+        keys = params["keys"]
+        return {
+            "success": True,
+            "styles": {
+                k: self.score.style[k] for k in keys if k in self.score.style
+            },
+            "unknown": [k for k in keys if k not in self.score.style],
+        }
 
     def _do_addRehearsalMark(self, params):
         if err := self._missing(params, ["measure", "text"]):
@@ -1572,12 +1605,23 @@ class MockMuseScore:
         if not sequence:
             return {"error": "No sequence specified"}
         try:
-            for command in sequence:
+            for i, command in enumerate(sequence):
                 if command.get("action") not in SEQUENCE_ACTIONS:
                     raise ValueError(
                         f"Invalid command: {command.get('action')}"
                     )
-                self.process_command(command)
+                result = self.process_command(command)
+                if isinstance(result, dict) and "error" in result:
+                    applied = (
+                        f"Steps 1-{i} were applied."
+                        if i
+                        else "No step was applied."
+                    )
+                    return {
+                        "error": f"Step {i + 1} of {len(sequence)} "
+                        f"({command['action']}) failed: {result['error']}. "
+                        + applied
+                    }
         except Exception as e:
             return {"error": str(e)}
         return {

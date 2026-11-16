@@ -1280,3 +1280,117 @@ def test_next_element_onto_the_last_note_appends_a_measure(tmp_path):
     )
     assert results[1]["result"].get("success")
     assert results[-1]["result"]["analysis"]["numMeasures"] == 3
+
+
+def test_style_keys_are_checked_and_read_back():
+    results = run(
+        [
+            {
+                "action": "setStyle",
+                "params": {"key": "createMultiMeasureRests", "value": True},
+            },
+            {
+                "action": "setStyle",
+                "params": {"key": "useGermanNoteNames", "value": True},
+            },
+            {
+                "action": "getStyle",
+                "params": {
+                    "keys": ["createMultiMeasureRests", "useGermanNoteNames"]
+                },
+            },
+        ],
+        JAZZ,
+    )
+    assert results[0]["result"]["value"] is True
+    assert results[1]["result"] == {
+        "error": "Unknown style key: useGermanNoteNames"
+    }
+    assert results[2]["result"]["styles"] == {"createMultiMeasureRests": True}
+    assert results[2]["result"]["unknown"] == ["useGermanNoteNames"]
+
+
+def test_a_failing_step_stops_a_sequence():
+    results = run(
+        [
+            {
+                "action": "processSequence",
+                "params": {
+                    "sequence": [
+                        {
+                            "action": "setStyle",
+                            "params": {"key": "nope", "value": 1},
+                        },
+                        {"action": "appendMeasure", "params": {}},
+                    ]
+                },
+            },
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "includeElements": False},
+            },
+        ],
+        JAZZ,
+    )
+    assert results[0]["result"] == {
+        "error": "Step 1 of 2 (setStyle) failed: Unknown style key: nope. "
+        "No step was applied."
+    }
+    before = run(
+        [
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "includeElements": False},
+            }
+        ],
+        JAZZ,
+    )
+    assert (
+        results[1]["result"]["analysis"]["numMeasures"]
+        == before[0]["result"]["analysis"]["numMeasures"]
+    )
+
+
+def measure_elements_score(tmp_path):
+    """Write a 3-bar score with a Coda, a D.S. al Coda jump and a line break."""
+    rest = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
+    coda = (
+        "<Marker><markerType>codab</markerType><style>repeat_left</style><text><sym>coda</sym></text>"
+        "<label>codab</label></Marker>"
+    )
+    jump = (
+        "<Jump><style>repeat_right</style><text>D.S. al Coda</text>"
+        "<jumpTo>segno</jumpTo><playUntil>coda</playUntil>"
+        "<continueAt>codab</continueAt></Jump>"
+    )
+    line_break = "<LayoutBreak><subtype>line</subtype></LayoutBreak>"
+    timesig = "<TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>"
+    measures = (
+        f"<Measure><voice>{timesig}{rest}</voice></Measure>"
+        f"<Measure>{jump}<voice>{rest}</voice>{line_break}</Measure>"
+        f"<Measure>{coda}<voice>{rest}</voice></Measure>"
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?><museScore version="4.70"><Score>'
+        '<Part id="1"><Staff id="1"/><trackName>Piano</trackName></Part>'
+        f'<Staff id="1">{measures}</Staff></Score></museScore>'
+    )
+    path = tmp_path / "markers.mscx"
+    path.write_text(xml)
+    return path
+
+
+def test_score_reading_lists_markers_jumps_and_breaks(tmp_path):
+    (result,) = run(
+        [{"action": "getScore", "params": {"startMeasure": 1}}],
+        measure_elements_score(tmp_path),
+    )
+    measures = result["result"]["analysis"]["measures"]
+    assert [m["measureElements"] for m in measures] == [
+        [],
+        [
+            {"name": "Jump", "text": "D.S. al Coda"},
+            {"name": "LayoutBreak", "text": "System break"},
+        ],
+        [{"name": "Marker", "text": "Coda"}],
+    ]

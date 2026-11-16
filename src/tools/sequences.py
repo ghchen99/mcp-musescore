@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastmcp import FastMCP
 
-from ..client import MuseScoreClient
+from ..client import MuseScoreClient, unwrap_result
 from ..types import ActionSequence
 
 
@@ -32,7 +32,8 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "addArticulation, removeArticulations, ghostNotes, beamOverRests, addSectionCounts. "
             "Measure ranges use startMeasure/endMeasure (1-based, inclusive) and startStaff/endStaff "
             "(0-based, endStaff exclusive). "
-            "Processing stops at the first invalid action."
+            "Processing stops at the first invalid action or failing step, and the error names it; "
+            "the steps before it stay applied."
         ),
         tags={"sequence"},
     )
@@ -44,6 +45,8 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             '"advanceCursorAfterAction": true}}]',
         ],
     ):
-        return await client.send_command(
+        reply = await client.send_command(
             "processSequence", {"sequence": sequence}
         )
+        unwrap_result(reply)  # raises ToolError when a step failed
+        return reply

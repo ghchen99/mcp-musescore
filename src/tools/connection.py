@@ -9,6 +9,24 @@ from ..client import MuseScoreClient
 GET_SCORE_WINDOW = 16
 
 
+def marking_text(marking: Dict[str, Any]) -> str:
+    """Return a marking's text as get_score shows it.
+
+    The plugin cannot read the name of a chord symbol imported from MusicXML
+    until the score has been saved and reopened, so its text arrives empty.
+
+    Args:
+        marking (Dict[str, Any]): A marking from the getScore analysis.
+
+    Returns:
+        text (str): The marking's text, or a note that it is not readable.
+    """
+    text = marking.get("text", "")
+    if marking.get("name") == "Harmony" and not text:
+        return "(name not readable: save and reopen the score)"
+    return text
+
+
 def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     """Register the connection and score-reading tools.
 
@@ -97,17 +115,22 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             meta.append(f"Measures shown: {shown[0]}-{shown[-1]}")
         num_staves = len(analysis.get("staves", []))
         if num_staves > 0:
-            meta.append(f"Number of staves: {num_staves}")
+            meta.append(f"Staves: {num_staves}")
 
         meta_str = ", ".join(meta) if meta else "No metadata"
         text = f"[Metadata] {meta_str}\n[Score]\n{lily_str}"
-        markings = [
-            f"m.{m['measure']} beat {(mk['startTick'] - m['startTick']) / 480 + 1:g}, staff {mk['staff']}: "
-            f"{mk['name']} {mk.get('text', '')}".rstrip()
-            + (" (highlighted)" if mk.get("highlighted") else "")
-            for m in analysis.get("measures", [])
-            for mk in m.get("markings", [])
-        ]
+        markings = []
+        for m in analysis.get("measures", []):
+            markings += [
+                f"m.{m['measure']}: {el['name']} {el.get('text', '')}".rstrip()
+                for el in m.get("measureElements", [])
+            ]
+            markings += [
+                f"m.{m['measure']} beat {(mk['startTick'] - m['startTick']) / 480 + 1:g}, "
+                f"staff {mk['staff']}: {mk['name']} {marking_text(mk)}".rstrip()
+                + (" (highlighted)" if mk.get("highlighted") else "")
+                for mk in m.get("markings", [])
+            ]
         if markings:
             text += "\n[Markings]\n" + "\n".join(markings)
         if shown and total is not None and shown[-1] < total:

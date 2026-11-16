@@ -223,12 +223,129 @@ def test_get_score_json_for_selected_staves():
     run_with_mock(scenario, demo_score())
 
 
+def test_get_score_lists_markers_jumps_and_breaks():
+    score = MockScore(staves=1, measures=4)
+    score.measure_elements = {
+        2: [{"name": "Marker", "text": "Coda"}],
+        4: [
+            {"name": "Jump", "text": "D.S. al Coda"},
+            {"name": "LayoutBreak", "text": "line"},
+        ],
+    }
+
+    async def scenario(c, mock):
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert (
+            "[Markings]\nm.2: Marker Coda\nm.4: Jump D.S. al Coda\n"
+            "m.4: LayoutBreak line"
+        ) in text
+
+    run_with_mock(scenario, score)
+
+
+def test_get_score_says_when_a_chord_name_is_not_readable():
+    score = MockScore(staves=1, measures=2)
+    score.markings = [
+        {"staff": 0, "startTick": 0, "name": "Harmony", "text": "Cm7"},
+        {"staff": 0, "startTick": 1920, "name": "Harmony", "text": ""},
+    ]
+
+    async def scenario(c, mock):
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert "m.1 beat 1, staff 0: Harmony Cm7\n" in text
+        assert (
+            "m.2 beat 1, staff 0: Harmony (name not readable: save and "
+            "reopen the score)"
+        ) in text
+
+    run_with_mock(scenario, score)
+
+
+def test_set_style_returns_the_values_read_back():
+    async def scenario(c, mock):
+        result = (
+            await c.call_tool(
+                "set_style", {"styles": {"createMultiMeasureRests": True}}
+            )
+        ).data
+        assert result == {"createMultiMeasureRests": True}
+        assert mock.score.style["createMultiMeasureRests"] is True
+
+    run_with_mock(scenario)
+
+
+def test_set_style_refuses_an_unknown_key():
+    async def scenario(c, mock):
+        result = await c.call_tool(
+            "set_style",
+            {"styles": {"useGermanNoteNames": True}},
+            raise_on_error=False,
+        )
+        assert result.is_error
+        assert "Unknown style key: useGermanNoteNames" in result.content[0].text
+        assert "useGermanNoteNames" not in mock.score.style
+
+    run_with_mock(scenario)
+
+
+def test_get_style_reads_known_keys_and_names_unknown_ones():
+    async def scenario(c, mock):
+        result = (
+            await c.call_tool(
+                "get_style",
+                {"keys": ["createMultiMeasureRests", "useGermanNoteNames"]},
+            )
+        ).data
+        assert result == {
+            "styles": {"createMultiMeasureRests": False},
+            "unknown": ["useGermanNoteNames"],
+        }
+
+    run_with_mock(scenario)
+
+
+def test_a_failing_step_stops_a_sequence_and_is_reported():
+    async def scenario(c, mock):
+        reply = await c.call_tool(
+            "processSequence",
+            {
+                "sequence": [
+                    {
+                        "action": "setStyle",
+                        "params": {
+                            "key": "createMultiMeasureRests",
+                            "value": True,
+                        },
+                    },
+                    {
+                        "action": "setStyle",
+                        "params": {
+                            "key": "useGermanNoteNames",
+                            "value": True,
+                        },
+                    },
+                    {"action": "appendMeasure", "params": {}},
+                ]
+            },
+            raise_on_error=False,
+        )
+        assert reply.is_error
+        assert reply.content[0].text == (
+            "Step 2 of 3 (setStyle) failed: Unknown style key: "
+            "useGermanNoteNames. Steps 1-1 were applied."
+        )
+        assert mock.score.style["createMultiMeasureRests"] is True
+        assert mock.score.num_measures == 4
+
+    run_with_mock(scenario, MockScore(staves=1, measures=4))
+
+
 def test_navigation_returns_lilypond_for_the_selection():
     async def scenario(c, mock):
         text = (
             (await c.call_tool("go_to_measure", {"measure": 1})).content[0].text
         )
-        assert "[Score]" in text
+        assert "[Score]" in text and "Measure: 1, Beat: 1" in text
         assert "c'4" in text and "c2 g2" in text
 
     run_with_mock(scenario, demo_score())

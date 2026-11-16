@@ -18,6 +18,12 @@ logger = logging.getLogger("MuseScoreMCP.Client")
 DEFAULT_TIMEOUT = 60.0
 """Seconds to wait for the plugin's reply; MUSESCORE_TIMEOUT overrides it."""
 
+NOT_CONNECTED = (
+    "Not connected to MuseScore. Open MuseScore with a score and start the "
+    "plugin from Plugins → MuseScore API Server, then try again."
+)
+"""The error when the plugin's server cannot be reached."""
+
 
 def unwrap_result(response: dict) -> dict:
     """Return the plugin's result payload, or raise ToolError on an error.
@@ -195,7 +201,7 @@ class MuseScoreClient:
                 await self.connect()
             websocket = self.websocket  # None if connecting failed
             if websocket is None:
-                return {"error": "Not connected to MuseScore"}
+                return {"error": NOT_CONNECTED}
 
             try:
                 logger.info(f"Sending command: {payload}")
@@ -232,7 +238,7 @@ class MuseScoreClient:
             logger.info(f"Received response: {response}")
             return json.loads(response)
 
-        return {"error": f"Not connected to MuseScore: {last_error}"}
+        return {"error": f"{NOT_CONNECTED} ({last_error})"}
 
     async def request(
         self, action: str, params: Optional[Dict[str, Any]] = None

@@ -90,6 +90,7 @@ MuseScore {
             case "addVolta":                return addVolta(command.params);
             case "colorRange":              return colorRange(command.params);
             case "setStyle":                return setStyle(command.params);
+            case "getStyle":                return getStyle(command.params);
             case "addRehearsalMark":        return addRehearsalMark(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
@@ -453,7 +454,16 @@ MuseScore {
                 if (!validCommands.includes(command.action)) {
                     throw new Error("Invalid command: " + command.action);
                 }
-                processCommand(command);
+                // A failing step stops the sequence, so later steps don't build on it and the
+                // reply doesn't claim success. Each step is its own undo command, so earlier ones stay.
+                var result = processCommand(command);
+                if (result && typeof result === "object" && result.error !== undefined) {
+                    return {
+                        error: "Step " + (i + 1) + " of " + params.sequence.length + " (" + command.action +
+                               ") failed: " + result.error + ". " +
+                               (i ? "Steps 1-" + i + " were applied." : "No step was applied.")
+                    };
+                }
             }
             return { success: true, message: "Sequence processed", currentSelection: selectionState };
         } catch (e) {
@@ -1616,10 +1626,30 @@ MuseScore {
         var validation = validateParams(params, ["key", "value"]);
         if (!validation.valid) return validation;
 
+        // setValue ignores a key MuseScore doesn't have (e.g. a removed one), so check it first and
+        // report the value read back rather than the one asked for.
+        if (curScore.style.value(params.key) === undefined) return { error: "Unknown style key: " + params.key };
+
         return executeWithUndo(function() {
             curScore.style.setValue(params.key, params.value);
-            return { success: true, message: "Style " + params.key + " set to " + params.value };
+            var value = curScore.style.value(params.key);
+            return { success: true, key: params.key, value: value, message: "Style " + params.key + " is " + value };
         });
+    }
+
+    function getStyle(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["keys"]);
+        if (!validation.valid) return validation;
+
+        var styles = {};
+        var unknown = [];
+        for (var i = 0; i < params.keys.length; i++) {
+            var value = curScore.style.value(params.keys[i]);
+            if (value === undefined) unknown.push(params.keys[i]);
+            else styles[params.keys[i]] = value;
+        }
+        return { success: true, styles: styles, unknown: unknown };
     }
 
     // Highlighter band: a thick, semi-transparent text line behind one staff's notes over a range of
@@ -2751,6 +2781,22 @@ MuseScore {
         }
     }
 
+    // The measure's own elements: markers (Segno, Coda, To Coda, Fine), jumps (D.S. al Coda…) and
+    // line, page and section breaks. They hang on the measure, not on a segment, so the annotation
+    // loop never sees them. A marker's text is a symbol (<sym>coda</sym>), so the type's name is used.
+    function measureElementsOf(measure) {
+        var found = [];
+        var els = measure.elements || [];
+        for (var i = 0; i < els.length; i++) {
+            var e = els[i];
+            if (e.type !== Element.MARKER && e.type !== Element.JUMP && e.type !== Element.LAYOUT_BREAK) continue;
+            var text = String(e.text || "").replace(/<[^>]*>/g, "");
+            var name = typeof e.subtypeName === "function" ? e.subtypeName() : "";
+            found.push({ name: e.name, text: e.type === Element.JUMP && text ? text : (name || text) });
+        }
+        return found;
+    }
+
     // opts: startMeasure / endMeasure (1-based, inclusive), staves (list of staff indices),
     // includeElements (false returns only measure positions, which navigation uses).
     function getScoreSummary(opts) {
@@ -2844,6 +2890,7 @@ MuseScore {
                     }
                     seg = seg.next;
                 }
+                entry.measureElements = measureElementsOf(m);
             }
             score.measures.push(entry);
         }
