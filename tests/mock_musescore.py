@@ -134,6 +134,16 @@ class MockScore:
         self.markings: List[
             Dict[str, Any]
         ] = []  # {"staff", "startTick", "name", "text", "highlight"}
+        self.page_size = (120, 170)  # page width and height, in staff spaces
+        self.measure_boxes: Optional[List[Optional[tuple]]] = (
+            None  # (page, x, y, width, height) in staff spaces per bar, None inside a multi-measure rest
+        )
+        self.content_boxes: Dict[
+            int, tuple
+        ] = {}  # bar index (0-based) -> (x, y, width, height) of what is attached to it
+        self.notes_boxes: Dict[
+            int, tuple
+        ] = {}  # bar index (0-based) -> (x, y, width, height) of its staves and notes
         self.measure_elements: Dict[
             int, List[Dict[str, Any]]
         ] = {}  # measure -> [{"name", "text"}]: markers, jumps, breaks
@@ -436,6 +446,70 @@ class MockMuseScore:
 
     def _do_ping(self, params):
         return "pong"
+
+    def _do_renderScore(self, params):
+        """Write a PDF and report the measures' boxes, as the plugin does.
+
+        Pages are white with each measure's box filled grey, 10 points per staff
+        space. Boxes are in staff spaces; a measure inside a multi-measure rest
+        has none.
+        """
+        if err := self._missing(params, ["path"]):
+            return err
+        from PIL import Image, ImageDraw
+
+        score = self.score
+        boxes = score.measure_boxes or [
+            (0, 10, 10 + 20 * i, 80, 15) for i in range(score.num_measures)
+        ]
+        pages = max(box[0] for box in boxes if box) + 1
+        size = (score.page_size[0] * 10, score.page_size[1] * 10)
+        blank = [Image.new("RGB", size, "white") for _ in range(pages)]
+        for b in boxes:
+            if b:
+                page, x, y, w, h = b
+                ImageDraw.Draw(blank[page]).rectangle(
+                    (x * 10, y * 10, (x + w) * 10 - 1, (y + h) * 10 - 1),
+                    fill="grey",
+                )
+        blank[0].save(
+            f"{params['path']}.pdf",
+            "PDF",
+            resolution=72,
+            save_all=True,
+            append_images=blank[1:],
+        )
+        return {
+            "success": True,
+            "pages": pages,
+            "pageWidth": score.page_size[0],
+            "pageHeight": score.page_size[1],
+            "numbers": score.displayed_numbers(),
+            "measures": [
+                {
+                    "page": b[0],
+                    "x": b[1],
+                    "y": b[2],
+                    "width": b[3],
+                    "height": b[4],
+                    "content": dict(
+                        zip(
+                            ["x", "y", "width", "height"],
+                            score.content_boxes.get(i, b[1:]),
+                        )
+                    ),
+                    "notes": dict(
+                        zip(
+                            ["x", "y", "width", "height"],
+                            score.notes_boxes.get(i, b[1:]),
+                        )
+                    ),
+                }
+                if b
+                else None
+                for i, b in enumerate(boxes)
+            ],
+        }
 
     def _do_getScore(self, params):
         return {"success": True, "analysis": self.score.summary(params)}
@@ -1647,7 +1721,7 @@ async def running_mock(
 
 
 def demo_score() -> MockScore:
-    """Twinkle Twinkle on two staves, for previewing the viewer."""
+    """Twinkle Twinkle on two staves, for trying the tools against the mock."""
     mock = MockMuseScore(
         MockScore(staves=2, measures=4, title="Twinkle Twinkle (demo)")
     )

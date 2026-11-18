@@ -53,7 +53,7 @@ Errors use:
 {"status": "error", "message": "..."}
 ```
 
-`get_score` and the navigation tools unwrap `result` and return LilyPond text on success. When the plugin reports an error they return the raw envelope; read `result.error` and do not claim that a formatted LilyPond response was produced. The newer tools (repeat structure, coloring, `show_score`) raise an MCP tool error instead.
+`get_score` and the navigation tools unwrap `result` and return LilyPond text on success. When the plugin reports an error they return the raw envelope; read `result.error` and do not claim that a formatted LilyPond response was produced. The newer tools (repeat structure, coloring, `render`) raise an MCP tool error instead.
 
 ## Files and versions
 

@@ -104,6 +104,8 @@ packaging==26.3
     # via fastmcp-slim
 pathable==0.6.0
     # via jsonschema-path
+pillow==13.0.0
+    # via mcp-musescore
 platformdirs==4.14.5
     # via fastmcp-slim
 py-key-value-aio==0.4.6
@@ -128,6 +130,8 @@ pygments==2.21.0
     #   rich-rst
 pyjwt==2.15.1
     # via mcp
+pypdfium2==5.15.2
+    # via mcp-musescore
 pyperclip==1.11.0
     # via fastmcp-slim
 python-dotenv==1.2.4

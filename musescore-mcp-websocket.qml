@@ -91,6 +91,7 @@ MuseScore {
             case "colorRange":              return colorRange(command.params);
             case "setStyle":                return setStyle(command.params);
             case "getStyle":                return getStyle(command.params);
+            case "renderScore":             return renderScore(command.params);
             case "addRehearsalMark":        return addRehearsalMark(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
@@ -1635,6 +1636,80 @@ MuseScore {
             var value = curScore.style.value(params.key);
             return { success: true, key: params.key, value: value, message: "Style " + params.key + " is " + value };
         });
+    }
+
+    // Engraved pages for the render tool: the score as <path>.pdf, and each measure's box on its page
+    // in staff spaces (the unit of pagePos and bbox), which the server uses to crop bars. A PDF, not
+    // PNG: the PNG export writes every page at the preferences' resolution (1200 DPI by default).
+    // A measure inside a multi-measure rest is not laid out and gets null.
+    function renderScore(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["path"]);
+        if (!validation.valid) return validation;
+
+        if (!writeScore(curScore, params.path + ".pdf", "pdf")) return { error: "MuseScore could not write the score as PDF" };
+        var measures = [];
+        var pageSize = null;
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) {
+            var system = m.parent;
+            var page = system && system.name === "System" ? system.parent : null;
+            if (!page || page.name !== "Page" || !m.bbox || m.bbox.width <= 0) {
+                measures.push(null);
+                continue;
+            }
+            if (!pageSize) pageSize = page.bbox;
+            var box = {
+                page: page.pagenumber,
+                x: m.pagePos.x + m.bbox.x,
+                y: m.pagePos.y + m.bbox.y,
+                width: m.bbox.width,
+                height: m.bbox.height
+            };
+            box.content = contentBoxOf(m, box, true);
+            box.notes = contentBoxOf(m, box, false);
+            measures.push(box);
+        }
+        return {
+            success: true,
+            pages: curScore.npages,
+            pageWidth: pageSize ? pageSize.width : null,
+            pageHeight: pageSize ? pageSize.height : null,
+            measures: measures,
+            numbers: displayedNumbers()
+        };
+    }
+
+    // The box, in staff spaces on the page, around the measure and everything attached to it that
+    // may stick out of it: markers and jumps (a To Coda sign past the barline), chord symbols, texts
+    // and other annotations, notes on ledger lines, lyrics. The render tool crops to it. Without
+    // attachments, only the staves, notes, rests and stems: where the neighbouring systems stop a crop.
+    function contentBoxOf(measure, box, attachments) {
+        var r = { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height };
+        function add(e) {
+            if (!e || !e.bbox || !e.pagePos || (e.bbox.width <= 0 && e.bbox.height <= 0)) return;
+            var x = e.pagePos.x + e.bbox.x, y = e.pagePos.y + e.bbox.y;
+            r.x0 = Math.min(r.x0, x); r.y0 = Math.min(r.y0, y);
+            r.x1 = Math.max(r.x1, x + e.bbox.width); r.y1 = Math.max(r.y1, y + e.bbox.height);
+        }
+        var els = attachments ? (measure.elements || []) : [];
+        for (var i = 0; i < els.length; i++) {
+            if (els[i].type !== Element.LAYOUT_BREAK) add(els[i]);
+        }
+        var end = measureEndTick(measure);
+        for (var seg = measure.firstSegment; seg && seg.tick < end; seg = seg.next) {
+            var annotations = attachments ? (seg.annotations || []) : [];
+            for (var a = 0; a < annotations.length; a++) add(annotations[a]);
+            for (var t = 0; t < curScore.ntracks; t++) {
+                var el = seg.elementAt(t);
+                if (!el) continue;
+                add(el);
+                var notes = el.notes || [];
+                for (var n = 0; n < notes.length; n++) add(notes[n]);
+                var lyrics = attachments ? (el.lyrics || []) : [];
+                for (var l = 0; l < lyrics.length; l++) add(lyrics[l]);
+            }
+        }
+        return { x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0 };
     }
 
     function getStyle(params) {

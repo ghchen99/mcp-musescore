@@ -34,7 +34,7 @@ def setup_style_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         description=(
             "Change score style settings (Format → Style), given as {key: value} with MuseScore's internal "
             "keys. An unknown key is refused, and the settings before it stay applied. Returns each value as "
-            "MuseScore reads it back after the change; check it with get_style when unsure."
+            "MuseScore reads it back after the change; check it with get_style or render when unsure."
         ),
         tags={"style"},
     )

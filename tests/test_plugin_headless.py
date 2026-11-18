@@ -1394,3 +1394,96 @@ def test_score_reading_lists_markers_jumps_and_breaks(tmp_path):
         ],
         [{"name": "Marker", "text": "Coda"}],
     ]
+
+
+def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):
+    from src.render import boxes_from, crops, render_measures, render_whole_page
+
+    base = tmp_path / "render"
+    results = run(
+        [
+            {"action": "renderScore", "params": {"path": base.as_posix()}},
+            {
+                "action": "getScore",
+                "params": {"startMeasure": 1, "includeElements": False},
+            },
+        ],
+        JAZZ,
+    )
+    rendered = results[0]["result"]
+    pdf = base.with_name("render.pdf")
+    assert rendered["pages"] == 1 and pdf.exists()
+    boxes = [b for b in boxes_from(rendered["measures"]) if b is not None]
+    assert len(boxes) == results[1]["result"]["analysis"]["numMeasures"] == 8
+    assert rendered["numbers"] == list(range(1, 9))
+    # A4 is 120 × 170 staff spaces at the default spatium (1.75 mm).
+    assert round(rendered["pageWidth"]) == 120
+    assert round(rendered["pageHeight"]) == 170
+    for box in boxes:
+        assert box.page == 0
+        assert 0 < box.x < box.x + box.width < rendered["pageWidth"]
+        assert 0 < box.y < box.bottom < rendered["pageHeight"]
+    # Bars 1-6 share the first system, bars 7-8 the second.
+    assert len({b.y for b in boxes[:6]}) == 1 and boxes[6].y > boxes[0].y
+    assert render_whole_page(pdf, 0).size == (1109, 1568)
+    image = render_measures(pdf, rendered["pageWidth"], boxes, 2, 2)
+    (crop,) = crops(boxes, 2, 2)
+    scale = image.width / round(crop.region.width * 25)
+
+    def ink_in_the_middle_of(box):
+        x = int((box.x + box.width / 2 - crop.region.x) * 25 * scale)
+        column = image.convert("L").crop((x, 0, x + 1, image.height))
+        return min(column.tobytes()) < 128
+
+    # Bar 2 stands where it does on its system; bar 1 before it is blank.
+    assert ink_in_the_middle_of(boxes[1])
+    assert not ink_in_the_middle_of(boxes[0])
+
+
+def test_measures_inside_a_multi_measure_rest_have_no_box(tmp_path):
+    from tests.test_rolls import chord, write_score
+
+    rest = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
+    source = write_score(
+        tmp_path, [chord("whole", 49)] + [rest] * 4 + [chord("whole", 38)]
+    )
+    results = run(
+        [
+            {
+                "action": "setStyle",
+                "params": {"key": "createMultiMeasureRests", "value": True},
+            },
+            {
+                "action": "renderScore",
+                "params": {"path": (tmp_path / "mm").as_posix()},
+            },
+        ],
+        source,
+    )
+    measures = results[1]["result"]["measures"]
+    assert len(measures) == 6
+    assert measures[0] is not None and measures[5] is not None
+    assert measures[1:5] == [None] * 4
+
+
+def test_a_measure_content_box_takes_in_its_marker(tmp_path):
+    (result,) = run(
+        [
+            {
+                "action": "renderScore",
+                "params": {"path": (tmp_path / "r").as_posix()},
+            }
+        ],
+        measure_elements_score(tmp_path),
+    )
+    measures = result["result"]["measures"]
+    for m in measures:
+        c, n = m["content"], m["notes"]
+        for outer, inner in ((c, n), (n, m)):
+            assert outer["x"] <= inner["x"] and outer["y"] <= inner["y"]
+            assert outer["x"] + outer["width"] >= inner["x"] + inner["width"]
+            assert outer["y"] + outer["height"] >= inner["y"] + inner["height"]
+    # Bar 3's Coda sign stands above the staff, so its content reaches higher;
+    # the sign is not a note, so its notes box does not.
+    assert measures[2]["content"]["y"] < measures[2]["y"] - 1
+    assert measures[2]["notes"]["y"] > measures[2]["y"] - 1
