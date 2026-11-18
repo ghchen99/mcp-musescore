@@ -84,6 +84,26 @@ def test_melody_is_written_sequentially():
     run_with_mock(scenario)
 
 
+def test_lyrics_hyphenate_and_hold_without_empty_lyrics():
+    async def scenario(c, mock):
+        await c.call_tool(
+            "add_lyrics", {"lyrics": ["Glo-", "ri", "_", "_", "a", "_", "men"]}
+        )
+        notes = mock.score.elements[0][:7]
+        lyrics = [n.get("lyrics", [None])[0] for n in notes]
+        texts = [lyric and lyric["text"] for lyric in lyrics]
+        assert texts == ["Glo", "ri", None, None, "a", None, "men"]
+        # BEGIN, END, SINGLE, SINGLE
+        assert [lyric["syllabic"] for lyric in lyrics if lyric] == [1, 2, 0, 0]
+        # "ri" is held over the next two quarter notes, "a" over one
+        assert lyrics[1]["lyricTicks"] == 2 * 480
+        assert lyrics[4]["lyricTicks"] == 480
+        # A hyphenated syllable gets a hyphen, not an extender
+        assert lyrics[0]["lyricTicks"] == 0
+
+    run_with_mock(scenario, patterned_score("AA"))
+
+
 def test_add_to_chord_stacks_pitches():
     async def scenario(c, mock):
         await c.call_tool(

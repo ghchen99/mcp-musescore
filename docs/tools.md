@@ -34,7 +34,7 @@ Navigation results come back as LilyPond with measure, beat and staff metadata.
 - `add_tied_note(duration, pitches, extra_pitches, advance_cursor_after_action)` - Write the next note or chord tied to the chord before the cursor, like `+` in MuseScore's note input. By default every pitch of the chord before is continued; `pitches` ties only some, and `extra_pitches` adds new pitches to the chord without a tie (C–E–G into C–E–A: `pitches=[60, 64], extra_pitches=[69]`). A note longer than the rest of the bar is split at the barline into tied notes.
 - `add_rest(duration, advance_cursor_after_action)` - Add rests
 - `add_tuplet(duration, ratio, advance_cursor_after_action)` - Add tuplets (triplets, etc.)
-- `add_lyrics(lyrics, verse)` - Add lyric syllables to consecutive notes from the cursor
+- `add_lyrics(lyrics, verse)` - Add lyric syllables to consecutive notes from the cursor, one entry per note (rests are skipped). End a syllable with `-` to hyphenate it to the next one; use `"_"` for a note that holds the previous syllable (a melisma), which then gets an extender line. For example, "Glo-ri-a" sung over five notes, with "ri" held for three: `["Glo-", "ri", "_", "_", "a"]`
 
 ## Measures, Time & Tempo
 - `insert_measure()` - Insert measure at current position
