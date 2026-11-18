@@ -2,19 +2,27 @@
 
 from typing import Annotated
 
-from ..client import MuseScoreClient
+from fastmcp import FastMCP
+
+from ..client import MuseScoreClient, unwrap_result
 from ..types import ActionSequence
 
 
-def setup_sequence_tools(mcp, client: MuseScoreClient):
-    """Setup sequence processing tools."""
-    
+def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
+    """Register the tool that runs a sequence of plugin actions.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
+
     @mcp.tool(
         description=(
             "Run several score commands in order in a single call. "
             'Each item is {"action": <name>, "params": {...}}, using the same camelCase action names '
             'and parameters as the plugin (e.g. "addNote" with pitch, duration, advanceCursorAfterAction). '
-            "Allowed actions: getScore, addNote, addRest, addTuplet, appendMeasure, deleteSelection, "
+            "Allowed actions: getScore, addNote, addTie, addTiedNote, addRest, addTuplet, appendMeasure, deleteSelection, "
             "getCursorInfo, goToMeasure, nextElement, prevElement, nextStaff, prevStaff, "
             "selectCurrentMeasure, insertMeasure, goToFinalMeasure, goToBeginningOfScore, "
             "setTimeSignature, addLyrics, addInstrument, setStaffMute, setInstrumentSound, setTempo, "
@@ -24,7 +32,8 @@ def setup_sequence_tools(mcp, client: MuseScoreClient):
             "addArticulation, removeArticulations, ghostNotes, beamOverRests, addSectionCounts. "
             "Measure ranges use startMeasure/endMeasure (1-based, inclusive) and startStaff/endStaff "
             "(0-based, endStaff exclusive). "
-            "Processing stops at the first invalid action."
+            "Processing stops at the first invalid action or failing step, and the error names it; "
+            "the steps before it stay applied."
         ),
         tags={"sequence"},
     )
@@ -36,4 +45,8 @@ def setup_sequence_tools(mcp, client: MuseScoreClient):
             '"advanceCursorAfterAction": true}}]',
         ],
     ):
-        return await client.send_command("processSequence", {"sequence": sequence})
+        reply = await client.send_command(
+            "processSequence", {"sequence": sequence}
+        )
+        unwrap_result(reply)  # raises ToolError when a step failed
+        return reply

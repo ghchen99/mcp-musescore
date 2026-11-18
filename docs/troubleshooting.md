@@ -4,10 +4,12 @@
 
 
 ## Connection Issues
-- **"Not connected to MuseScore"**:
+- **"Not connected to MuseScore"** (the plugin's server can't be reached):
   - Ensure MuseScore is running with a score open
   - Run the MuseScore plugin (Plugins → MuseScore API Server)
   - Check that port 8765 isn't blocked by firewall
+- **"MuseScore did not answer within 60 s"**: the plugin received the command but sent no reply. MuseScore is usually showing a dialog (a save prompt, an import report) or is still busy; close the dialog and try again. For commands that really take longer, raise the limit with the environment variable `MUSESCORE_TIMEOUT` (in seconds) in the server's configuration
+- **"The connection to MuseScore was lost after sending …"**: the command reached MuseScore, but its reply did not come back, so it may or may not have been applied. It is not sent again automatically, to avoid applying it twice: check the score (or `get_score`) before repeating it
 
 ## Plugin Issues
 - **Plugin not appearing**: Check the `.qml` file is in the correct plugins directory (on Ubuntu with Snap or Flatpak, see [Ubuntu](setup.md#ubuntu))
@@ -15,6 +17,7 @@
 - **Plugin won't enable**: Restart MuseScore after placing the plugin file
 - **No console output**: Run MuseScore from terminal to see debug messages
 - **New plugin actions are "Unknown command"**: MuseScore is still running the old plugin. Restart MuseScore and run the plugin again
+- **`go_to_measure` reports "Measure: 1" and the next note or time signature lands in bar 1**: an older plugin selected the bar inside an undo command, where the new selection isn't readable yet, so the cursor stayed where it was. Update the `.qml` file and restart the plugin. With an old copy, `go_to_beginning_of_score` followed by `next_element` steps reach the bar instead
 
 ## Python Server Issues
 - **"No server object found"**: The server object must be named `mcp`, `server`, or `app` at module level
@@ -36,7 +39,6 @@
 - **Claude follows old instructions**: upload the skill again after changing it
 
 ## API Limitations
-- **Lyrics**: Only first verse supported in MuseScore 3.x plugin API
 - **Selection persistence**: Some operations may affect current selection
 - **Measure-repeat signs**: not available to plugins, hence the [file edit](drum-charts.md#how-measure-repeat-signs-are-applied)
 - **Voltas**: no dedicated plugin API; `add_volta` is experimental

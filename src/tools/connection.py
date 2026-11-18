@@ -1,15 +1,41 @@
 """Connection and utility tools for MuseScore MCP."""
 
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
+
+from fastmcp import FastMCP
 
 from ..client import MuseScoreClient
 
 GET_SCORE_WINDOW = 16
 
 
-def setup_connection_tools(mcp, client: MuseScoreClient):
-    """Setup connection and utility tools."""
-    
+def marking_text(marking: Dict[str, Any]) -> str:
+    """Return a marking's text as get_score shows it.
+
+    The plugin cannot read the name of a chord symbol imported from MusicXML
+    until the score has been saved and reopened, so its text arrives empty.
+
+    Args:
+        marking (Dict[str, Any]): A marking from the getScore analysis.
+
+    Returns:
+        text (str): The marking's text, or a note that it is not readable.
+    """
+    text = marking.get("text", "")
+    if marking.get("name") == "Harmony" and not text:
+        return "(name not readable: save and reopen the score)"
+    return text
+
+
+def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
+    """Register the connection and score-reading tools.
+
+    Args:
+        mcp (FastMCP): The server to register the tools on.
+        client (MuseScoreClient): The client the tools send their commands
+            through.
+    """
+
     @mcp.tool(
         description="Connect to the MuseScore WebSocket API.",
         tags={"connection"},
@@ -40,24 +66,34 @@ def setup_connection_tools(mcp, client: MuseScoreClient):
     async def get_score(
         start_measure: Annotated[int, "First measure to read (1-based)"] = 1,
         end_measure: Annotated[
-            Optional[int], f"Last measure to read (1-based, inclusive). Defaults to start_measure + {GET_SCORE_WINDOW - 1}."
+            Optional[int],
+            f"Last measure to read (1-based, inclusive). Defaults to start_measure + {GET_SCORE_WINDOW - 1}.",
         ] = None,
         staves: Annotated[
-            Optional[List[int]], "Staff indices to read (0-based). Defaults to all staves."
+            Optional[List[int]],
+            "Staff indices to read (0-based). Defaults to all staves.",
         ] = None,
         format: Annotated[
-            Literal["lilypond", "json"], '"lilypond" for compact notation text, "json" for the raw analysis'
+            Literal["lilypond", "json"],
+            '"lilypond" for compact notation text, "json" for the raw analysis',
         ] = "lilypond",
     ):
         if end_measure is None:
             end_measure = start_measure + GET_SCORE_WINDOW - 1
-        params = {"startMeasure": start_measure, "endMeasure": end_measure}
+        params: Dict[str, Any] = {
+            "startMeasure": start_measure,
+            "endMeasure": end_measure,
+        }
         if staves:
             params["staves"] = staves
 
         res = await client.send_command("getScore", params)
         result = res.get("result")
-        if not (isinstance(result, dict) and result.get("success") and isinstance(result.get("analysis"), dict)):
+        if not (
+            isinstance(result, dict)
+            and result.get("success")
+            and isinstance(result.get("analysis"), dict)
+        ):
             return res
 
         analysis = result["analysis"]
@@ -65,28 +101,36 @@ def setup_connection_tools(mcp, client: MuseScoreClient):
             return analysis
 
         from ..utils.lilypond_converter import score_to_lilypond
+
         lily_str = score_to_lilypond(analysis)
 
         total = analysis.get("numMeasures")
         shown = [m.get("measure") for m in analysis.get("measures", [])]
         meta = []
         if analysis.get("title"):
-            meta.append(f"Titre: {analysis['title']}")
+            meta.append(f"Title: {analysis['title']}")
         if total is not None:
-            meta.append(f"Total Mesures: {total}")
+            meta.append(f"Total measures: {total}")
         if shown:
-            meta.append(f"Mesures affichées: {shown[0]}-{shown[-1]}")
+            meta.append(f"Measures shown: {shown[0]}-{shown[-1]}")
         num_staves = len(analysis.get("staves", []))
         if num_staves > 0:
-            meta.append(f"Nombre de portées: {num_staves}")
+            meta.append(f"Staves: {num_staves}")
 
-        meta_str = ", ".join(meta) if meta else "Aucune métadonnée"
-        text = f"[Métadonnées] {meta_str}\n[Partition]\n{lily_str}"
-        markings = [
-            f"m.{m['measure']} beat {(mk['startTick'] - m['startTick']) / 480 + 1:g}, staff {mk['staff']}: "
-            f"{mk['name']} {mk.get('text', '')}".rstrip() + (" (highlighted)" if mk.get("highlighted") else "")
-            for m in analysis.get("measures", []) for mk in m.get("markings", [])
-        ]
+        meta_str = ", ".join(meta) if meta else "No metadata"
+        text = f"[Metadata] {meta_str}\n[Score]\n{lily_str}"
+        markings = []
+        for m in analysis.get("measures", []):
+            markings += [
+                f"m.{m['measure']}: {el['name']} {el.get('text', '')}".rstrip()
+                for el in m.get("measureElements", [])
+            ]
+            markings += [
+                f"m.{m['measure']} beat {(mk['startTick'] - m['startTick']) / 480 + 1:g}, "
+                f"staff {mk['staff']}: {mk['name']} {marking_text(mk)}".rstrip()
+                + (" (highlighted)" if mk.get("highlighted") else "")
+                for mk in m.get("markings", [])
+            ]
         if markings:
             text += "\n[Markings]\n" + "\n".join(markings)
         if shown and total is not None and shown[-1] < total:

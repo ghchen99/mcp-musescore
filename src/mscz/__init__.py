@@ -1,6 +1,6 @@
-"""Editing MuseScore score files directly, for changes the plugin API cannot make."""
+"""Edit MuseScore score files directly, for what the plugin API can't do."""
 
-from .score_file import ScoreFile, ScoreFileError
 from .measure_repeats import apply_measure_repeats
+from .score_file import ScoreFile, ScoreFileError
 
 __all__ = ["ScoreFile", "ScoreFileError", "apply_measure_repeats"]

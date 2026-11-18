@@ -8,7 +8,7 @@ The command is conceptually:
 <project-venv-python> <project>/server.py
 ```
 
-Use absolute paths in client configuration. The default project location used by the helper scripts is `~/Downloads/mcp-musescore`; set `MCP_MUSESCORE_DIR` when using another location.
+Create the project venv first with `uv sync` in the repository folder; uv puts it in `.venv`, which the paths below use. Use absolute paths in client configuration. The default project location used by the helper scripts is `~/Downloads/mcp-musescore`; set `MCP_MUSESCORE_DIR` when using another location.
 
 ## Claude Code
 

@@ -2,7 +2,7 @@
 
 This reference describes the tools currently registered by `server.py` and the JSON actions sent to the MuseScore QML plugin. Use the Python function names when calling MCP. Use the camelCase action names only inside `processSequence`.
 
-The server currently registers 57 public tools.
+The server currently registers 65 public tools.
 
 ## Connection and score inspection
 
@@ -11,7 +11,9 @@ The server currently registers 57 public tools.
 | `connect_to_musescore` | none | Opens the WebSocket client connection to `ws://localhost:8765`. Returns `{success: bool}`. |
 | `ping_musescore` | none | Sends the `ping` action. A healthy plugin returns `pong`. |
 | `get_score` | `start_measure: int = 1`, `end_measure: int \| None = None`, `staves: list[int] \| None = None`, `format: "lilypond" \| "json" = "lilypond"` | Reads a window of the score (16 measures by default) as LilyPond with a `% m.N` comment at every barline, or as the raw JSON analysis. The header gives the total number of measures; page through long scores with `start_measure`, and read only some staves of large scores with `staves`. |
-| `show_score` | `first_measure: int = 1`, `last_measure: int \| None = None` | Read-only. Renders the score as sheet music in MCP Apps hosts (VexFlow viewer). Other hosts get only a text summary; use `get_score` for data. |
+| `render` | `page: int \| None = None`, `measures: str \| None = None` (e.g. `"5-8"`) | The score as MuseScore engraves it, as a PNG image: what `get_score` cannot show, such as overlapping chord symbols, marker placement, breaks and spacing. `page` gives a whole page; `measures` crops those bars from their page at higher detail, with everything attached to them, as they stand on their systems (the other bars of those systems are left blank). Bars inside a multi-measure rest are refused. Render again after a change to check it. |
+
+`get_score` lists each measure's markers (Segno, Coda, Fine), jumps (D.S. al Coda) and line, page and section breaks under `[Markings]`, with the dynamics and other markings.
 
 Call `ping_musescore` before a mutation. Call `get_score` before and after a complex edit.
 
@@ -39,6 +41,8 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 | MCP tool | Parameters | What it does |
 |---|---|---|
 | `add_note` | `pitch: int = 64`, `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a note at the current cursor position. |
+| `add_tie` | `pitches: list[int] \| None = None` | Ties notes of the chord at the cursor to the same pitches in the next chord (default: every pitch in both chords) and moves the cursor to the second chord. After `add_note` the cursor is on the next position, so move back first. Write both chords completely before tying: a pitch added later with `add_to_chord` is also added, tied, to the first chord. Fails without changing the score when no pitch can be tied. |
+| `add_tied_note` | `duration: dict`, `pitches: list[int] \| None = None`, `extra_pitches: list[int] \| None = None`, `advance_cursor_after_action: bool = true` | Writes the next note or chord tied to the chord before the cursor, like `+` in note input. Default: every pitch of the chord before; `extra_pitches` are added untied (C-E-G into C-E-A: `pitches=[60, 64], extra_pitches=[69]`). Notes longer than the rest of the bar are split into tied notes. Fails without changing the score when there is no note before the cursor or a pitch is not in it. |
 | `add_rest` | `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a rest at the current cursor position. |
 | `add_tuplet` | `duration: dict = {numerator: 1, denominator: 4}`, `ratio: dict = {numerator: 3, denominator: 2}`, `advance_cursor_after_action: bool = true` | Adds a tuplet; the default ratio represents a triplet. |
 | `add_lyrics` | `lyrics: list[str]`, `verse: int = 0` | Adds syllables to consecutive notes from the current cursor, one entry per note (rests skipped). `"Hel-"` hyphenates to the next syllable; `"_"` holds the previous syllable over that note with an extender line (no lyric is placed there). Verse is zero-based. |
@@ -48,7 +52,7 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 | `delete_measures` | `start_measure: int`, `end_measure: int \| None = None` | Removes whole measures on every staff (MuseScore's Remove selected range), with multi-measure rests switched off meanwhile; errors if MuseScore deleted fewer measures than asked. Later measures are renumbered, so remove ranges from the last one backwards. |
 | `undo` | none | Undoes the last MuseScore operation. |
 
-## Staff, instruments, and time
+## Staff, instruments, time, and style
 
 | MCP tool | Parameters | What it does |
 |---|---|---|
@@ -57,6 +61,8 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 | `set_instrument_sound` | `staff: int`, `instrument_id: str` | Changes the sound/instrument identifier for a zero-based staff. |
 | `set_time_signature` | `numerator: int = 4`, `denominator: int = 4` | Sets the time signature at the current score context. |
 | `set_tempo` | `bpm: float`, `measure: int \| None = None` | Adds a tempo marking (quarter-note BPM) at the cursor, or at the start of `measure`. |
+| `get_style` | `keys: list[str]` | Reads score style settings (Format → Style) by MuseScore's internal key, e.g. `createMultiMeasureRests`. Returns `styles`, and lists under `unknown` the keys MuseScore does not have. |
+| `set_style` | `styles: dict` | Changes style settings, given as `{key: value}`. An unknown key is refused, and the settings before it stay applied. Returns each value as MuseScore reads it back. |
 
 ## Repeat structure and coloring
 
@@ -122,12 +128,12 @@ File edits find the open score's file by its score ID. If the open tab is a part
 
 | MCP tool | Parameters | What it does |
 |---|---|---|
-| `processSequence` | `sequence: list[object]` | Sends a list of camelCase actions to the plugin in order. Use only when the complete sequence is known and safe. |
+| `processSequence` | `sequence: list[object]` | Sends a list of camelCase actions to the plugin in order. Use only when the complete sequence is known and safe. A failing step stops the sequence and is reported as an error naming the step; the steps before it stay applied. |
 
 The currently accepted inner actions are:
 
 ```text
-getScore, addNote, addRest, addTuplet, appendMeasure, deleteSelection,
+getScore, addNote, addTie, addTiedNote, addRest, addTuplet, appendMeasure, deleteSelection,
 getCursorInfo, goToMeasure, nextElement, prevElement, nextStaff, prevStaff,
 selectCurrentMeasure, processSequence, insertMeasure, goToFinalMeasure,
 goToBeginningOfScore, setTimeSignature, addLyrics, addInstrument,

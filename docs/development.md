@@ -3,22 +3,93 @@
 [Overview](../README.md) · [Setup](setup.md) · [Tools](tools.md) · [Repeats & drum charts](drum-charts.md) · [Skills](skills.md) · [Development](development.md) · [Troubleshooting](troubleshooting.md)
 
 
-For development, use the FastMCP CLI:
+The project is managed with [uv](https://docs.astral.sh/uv/). Run these commands in the repository folder:
 
 ```bash
-# Install the project dependencies (includes the FastMCP CLI)
-pip install -r requirements.txt
+# Install the dependencies, including the development tools (creates .venv from uv.lock)
+uv sync
 
 # Launch the MCP Inspector against your server
-fastmcp dev inspector server.py
+uv run fastmcp dev inspector server.py
 
 # List the registered tools
-fastmcp inspect server.py
+uv run fastmcp inspect server.py
 
 # Run the tests (no MuseScore needed; the MuseScore-based tests are skipped without it)
-pip install pytest
-pytest
+uv run pytest
 ```
+
+## Dependencies
+
+`pyproject.toml` lists the dependencies and `uv.lock` pins the exact versions that everyone, and CI, uses. Commit both.
+
+```bash
+uv add <package>          # a dependency of the server
+uv add --dev <package>    # a development tool, such as a test plugin
+uv lock --upgrade         # move to the newest versions the ranges allow
+```
+
+`requirements.txt` is generated from `uv.lock`, for setups without uv. Don't edit it by hand: when a commit changes `uv.lock` or `pyproject.toml`, the commit hook regenerates it (see below), and CI fails when it is out of date.
+
+## Checks before committing (prek)
+
+[prek](https://github.com/j178/prek) runs the checks in `prek.toml` (prek's own configuration format) before every commit. Install the hooks once per clone:
+
+```bash
+uv run prek install
+```
+
+The hooks:
+
+- **generate requirements.txt from uv.lock**: runs `uv export --no-dev --no-hashes -o requirements.txt` when a commit changes `uv.lock` or `pyproject.toml`. If the file changes, the commit stops; stage the updated `requirements.txt` and commit again.
+- **deptry**: every package the code imports is declared in `pyproject.toml`, and every declared package is used.
+- **ruff lint**: [Ruff](https://docs.astral.sh/ruff/) checks the changed Python files with the rules in `[tool.ruff.lint]` in `pyproject.toml` (Ruff's basic error rules, import sorting, type annotations and Google-style docstrings; tests need no annotations or docstrings), and fixes what it can by itself.
+- **ruff format**: formats the changed Python files, with lines up to 80 characters (`[tool.ruff]`).
+- **docstring-tailor docstring format**: [docstring-tailor](https://pypi.org/project/docstring-tailor/) formats the docstrings in the changed files to Google style, wrapped at 80 characters (`[tool.docstring_tailor]`).
+- **ty type check**: [ty](https://github.com/astral-sh/ty) checks the types in `src/`, `server.py`, `dev/` and `tests/` (set in `[tool.ty.src]` in `pyproject.toml`), with ty's default rules: errors stop the commit, warnings are only shown. It runs when a commit changes a Python file, and always checks the whole project, since a change in one module can break the types in another. To run it yourself: `uv run ty check`.
+- **plugin JavaScript syntax check**: `node dev/check_plugin_js_syntax.js` parses the JavaScript functions in the plugin; the QML around them is not checked. It only runs when a commit changes a `.qml` file, so you need [Node.js](https://nodejs.org/) only to work on the plugin.
+
+If a hook fails, the commit is stopped; fix the problem and commit again. Plain `uv run prek` checks only what is staged, setting unstaged changes aside meanwhile; to check the whole working tree, as CI does:
+
+```bash
+uv run prek run --all-files
+```
+
+## Docstrings
+
+Docstrings follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html#s3.8-comments-and-docstrings); the existing code shows how. In short:
+
+- A one-line summary that fits on one line, then a blank line and the description. docstring-tailor wraps the rest of the text, but a summary it has to wrap fails Ruff's docstring rules.
+- `Args:`, `Returns:` (only when something is returned) and `Raises:` sections. Every argument in `Args:` has its type, also when the signature is annotated, and a `Returns:` entry names the returned value, e.g. `ticks (int): The length in ticks.`
+- Classes get an `Attributes:` section when they have attributes, and classes that users create themselves an `Example:` in Python REPL style (`>>> `).
+- The MCP tool functions have no docstrings: FastMCP ignores them, because each tool's description comes from `description=` in its decorator and its parameters from `Annotated[...]`. Likewise, the classes behind tool parameters (the `TypedDict`s in `src/types/action_types.py` and `RepeatGroup`) have no docstrings, since pydantic would add them to the tool's input schema.
+- Tests need no docstrings; test names say what they test.
+
+## Tests with coverage
+
+The tests are not a commit hook: they run separately, locally and as their own step in CI.
+
+```bash
+uv run pytest --no-musescore --cov
+```
+
+- **`--no-musescore`** skips the tests that need MuseScore, even when it is installed, so the run takes a few seconds and gives the same result on every machine, whatever MuseScore is installed. CI runs the MuseScore tests in its `musescore-tests` job. When you change the plugin, run them yourself with plain `uv run pytest` (see [Running the real plugin headless](#running-the-real-plugin-headless)).
+- **`--cov`** measures branch coverage of `src/`, with the settings in `[tool.coverage]` in `pyproject.toml`. The run fails when coverage drops below 86%, the level measured without MuseScore, so coverage cannot go down unnoticed. Only raise `fail_under`, as tests are added, never lower it, so the coverage can only improve.
+
+## Makefile
+
+The Makefile gives the common commands short names; each one runs the `uv` command shown.
+
+| Command | Runs |
+|---|---|
+| `make install` | `uv sync`, then `uv run prek install` |
+| `make check` | `uv run prek run --all-files` |
+| `make test` | `uv run pytest --no-musescore --cov` |
+| `make test-musescore` | `uv run pytest`: also the MuseScore tests, when MuseScore is found |
+| `make clean` | removes the coverage data, the pytest, Ruff and `__pycache__` caches, and `artifacts/` |
+| `make skill` | packages the drum chart skill as `artifacts/musescore-drum-chart.zip`, for uploading |
+
+CI's `test` job runs `make check` and `make test`. On Windows, where `make` is usually not installed, run the `uv` commands directly.
 
 ## Mock MuseScore plugin
 
@@ -27,10 +98,10 @@ pytest
 ```bash
 # Terminal 1: fake plugin (do not run alongside the real plugin, same port)
 # --demo preloads a two-staff Twinkle Twinkle score
-python tests/mock_musescore.py --demo
+uv run python tests/mock_musescore.py --demo
 
 # Terminal 2: MCP Inspector against the server
-fastmcp dev inspector server.py
+uv run fastmcp dev inspector server.py
 ```
 
 The mock implements a subset of the plugin's actions over a simplified 4/4 score. `tests/test_integration.py` uses it to exercise the real tools and WebSocket client.
@@ -40,11 +111,15 @@ The mock implements a subset of the plugin's actions over a simplified 4/4 score
 For changes to the plugin itself, `dev/plugin_harness.py` runs the real plugin in a local MuseScore, without the GUI, on a copy of a score. It prints each command's result and can save or render the edited score. MuseScore runs from a throwaway profile, so your own settings and plugins are not touched:
 
 ```bash
-python dev/plugin_harness.py '[{"action": "highlightNotes", "params": {"startMeasure": 1, "endMeasure": 2}}]' \
+uv run python dev/plugin_harness.py '[{"action": "highlightNotes", "params": {"startMeasure": 1, "endMeasure": 2}}]' \
     "examples/jazz piano/Jazz Piano.mscz" --out /tmp/edited.mscz --png /tmp/preview.png
 ```
 
-MuseScore is found through `MUSESCORE_BIN`, an AppImage in `~/.local/bin`, or `mscore` on the `PATH`. `tests/test_plugin_headless.py` and the file round-trip test in `tests/test_mscz.py` use the same detection and are skipped when MuseScore is not installed.
+MuseScore is found through `MUSESCORE_BIN`, an AppImage in `~/.local/bin`, or `mscore` on the `PATH`. `tests/test_plugin_headless.py` and the file round-trip test in `tests/test_mscz.py` use the same detection and are skipped when MuseScore is not installed. `MUSESCORE_BIN=none`, or `uv run pytest --no-musescore`, skips them even when MuseScore is installed. With a MuseScore installed as a Flatpak, the tests may find a launcher that returns before MuseScore is done, and the MuseScore tests fail; point `MUSESCORE_BIN` at a MuseScore AppImage instead.
+
+The plugin asks MuseScore for some edits by action name, with `cmd()` (for example `tie` or `action://notation/undo`). When MuseScore does not know the name, or will not run the action at that moment (one that needs a selection when it sees none), `cmd()` does nothing and returns no error; only MuseScore's log shows it. The harness reads that log and fails the run, so such a silent no-op makes the test fail. `test_musescore_knows_every_action_name_the_plugin_uses` checks every `cmd()` name in the plugin this way, which catches a name MuseScore renamed in a new release. Two names exist only with MuseScore's GUI (`file-save`, `instruments`) and are left out (`GUI_ONLY_ACTIONS` in the harness).
+
+CI runs these tests too, in the `musescore-tests` job: on MuseScore 4.7.0, the oldest supported version, and on the latest release. It unpacks the official AppImage (the runner has no FUSE), points `MUSESCORE_BIN` at it, and runs the tests under `xvfb-run`, because MuseScore uses X11 on Linux even when asked to run offscreen.
 
 ## Viewing Console Output
 
@@ -78,10 +153,18 @@ Logs are also written to `~/.local/share/MuseScore/MuseScore4/logs/`.
 mcp-musescore/
 ├── server.py                           # Python MCP server entry point
 ├── musescore-mcp-websocket.qml         # MuseScore plugin (the WebSocket server)
-├── requirements.txt
+├── pyproject.toml                      # Project metadata and dependencies (uv)
+├── uv.lock                             # Exact dependency versions (generated by uv)
+├── requirements.txt                    # Generated from uv.lock, for setups without uv
+├── Makefile                            # Short names for common commands: install, check, test, clean, skill
+├── prek.toml                           # Commit hooks: requirements.txt, deptry, Ruff, docstring-tailor, ty, plugin JS
+├── .github/
+│   └── workflows/                      # CI (pr-validation.yml), explained in its README.md
 ├── README.md
 ├── docs/                               # User documentation (setup, tools, drum charts...)
 ├── dev/
+│   ├── check_plugin_js_syntax.js       # Syntax check of the plugin's JavaScript (a commit hook)
+│   ├── check_websocket.py              # Manual check: send getScore to a running MuseScore
 │   └── plugin_harness.py               # Run the real plugin headless in MuseScore
 ├── skills/
 │   ├── mcp-musescore/                  # Agent skill: tool reference, client config, helper scripts
@@ -101,7 +184,9 @@ mcp-musescore/
     │   ├── structure.py                # Repeat analysis, repeats, voltas, drum charts
     │   ├── score_file.py               # Measure-repeat signs and backups (file edits)
     │   ├── formatting.py               # Coloring, highlights and labels
-    │   └── viewer.py                   # show_score MCP App tool
+    │   ├── style.py                    # Score style settings (get_style, set_style)
+    │   └── render.py                   # render: the engraved score as an image
+    ├── render.py                       # Rasterising and cropping the score's PDF
     ├── mscz/                           # Reading and editing .mscz/.mscx files
     │   ├── score_file.py
     │   ├── measure_repeats.py
@@ -109,8 +194,6 @@ mcp-musescore/
     │   ├── parts.py                    # Part scores from a full score
     │   ├── rolls.py                    # Cymbal rolls
     │   └── locate.py                   # Finding the open score's file, backups
-    ├── ui/
-    │   └── score_viewer.html           # VexFlow notation viewer
     ├── utils/
     │   ├── lilypond_converter.py       # Score JSON to LilyPond
     │   ├── repetition.py               # Repeated-measure analysis

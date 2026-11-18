@@ -53,15 +53,15 @@ Errors use:
 {"status": "error", "message": "..."}
 ```
 
-`get_score` and the navigation tools unwrap `result` and return LilyPond text on success. When the plugin reports an error they return the raw envelope; read `result.error` and do not claim that a formatted LilyPond response was produced. The newer tools (repeat structure, coloring, `show_score`) raise an MCP tool error instead.
+`get_score` and the navigation tools unwrap `result` and return LilyPond text on success. When the plugin reports an error they return the raw envelope; read `result.error` and do not claim that a formatted LilyPond response was produced. The newer tools (repeat structure, coloring, `render`) raise an MCP tool error instead.
 
 ## Files and versions
 
 - Plugin source: `musescore-mcp-websocket.qml`.
 - Python entry point: `server.py`.
-- Dependency declaration: `requirements.txt`.
-- The current source imports `fastmcp` (standalone FastMCP 4, declared as `fastmcp>=4,<5` in `requirements.txt`).
-- The upstream project documents MuseScore 3.x and 4.x, but this integration was verified with MuseScore Studio 4.7.4 on macOS. Treat other versions as needing a bridge check.
+- Dependency declaration: `pyproject.toml`, with the exact versions in `uv.lock`. `requirements.txt` is generated from `uv.lock` for setups without uv.
+- The current source imports `fastmcp` (standalone FastMCP 4, declared as `fastmcp>=4.1,<5` in `pyproject.toml`).
+- Supported MuseScore versions: 4.7 or newer. MuseScore 3 is not supported. CI runs the full test suite on MuseScore 4.7.0 and on the latest release; this integration was first verified with MuseScore Studio 4.7.4 on macOS.
 
 ## Failure diagnosis
 

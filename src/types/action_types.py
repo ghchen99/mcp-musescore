@@ -1,6 +1,6 @@
 """TypedDict definitions for MuseScore MCP action sequences."""
 
-from typing import Dict, Any, List, Literal, NotRequired, TypedDict
+from typing import Any, Dict, List, Literal, NotRequired, TypedDict
 
 
 class getScoreAction(TypedDict):
@@ -39,6 +39,27 @@ class addTupletParams(TypedDict):
 class addTupletAction(TypedDict):
     action: Literal["addTuplet"]
     params: addTupletParams
+
+
+class addTieParams(TypedDict):
+    pitches: NotRequired[List[int]]
+
+
+class addTieAction(TypedDict):
+    action: Literal["addTie"]
+    params: addTieParams
+
+
+class addTiedNoteParams(TypedDict):
+    duration: Dict[Literal["numerator", "denominator"], int]
+    advanceCursorAfterAction: bool
+    pitches: NotRequired[List[int]]
+    extraPitches: NotRequired[List[int]]
+
+
+class addTiedNoteAction(TypedDict):
+    action: Literal["addTiedNote"]
+    params: addTiedNoteParams
 
 
 class addLyricsParams(TypedDict):
@@ -293,7 +314,9 @@ class clearHighlightsParams(TypedDict):
     endMeasure: NotRequired[int]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
-    kinds: NotRequired[List[Literal["highlights", "notes", "markings", "labels"]]]
+    kinds: NotRequired[
+        List[Literal["highlights", "notes", "markings", "labels"]]
+    ]
 
 
 class clearHighlightsAction(TypedDict):
@@ -337,7 +360,9 @@ class highlightSymbolsParams(TypedDict):
     endMeasure: NotRequired[int]
     startStaff: NotRequired[int]
     endStaff: NotRequired[int]
-    kinds: NotRequired[List[Literal["time_signatures", "repeat_barlines", "measure_repeats"]]]
+    kinds: NotRequired[
+        List[Literal["time_signatures", "repeat_barlines", "measure_repeats"]]
+    ]
     mode: NotRequired[Literal["highlight", "color"]]
     color: NotRequired[str]
     clear: NotRequired[bool]
@@ -394,7 +419,9 @@ class addArticulationParams(TypedDict):
     startBeat: NotRequired[float]
     endBeat: NotRequired[float]
     pitches: NotRequired[List[int]]
-    symbol: Literal["half_open", "open", "closed", "accent", "marcato", "staccato", "tenuto"]
+    symbol: Literal[
+        "half_open", "open", "closed", "accent", "marcato", "staccato", "tenuto"
+    ]
 
 
 class addArticulationAction(TypedDict):
@@ -464,17 +491,51 @@ class beamOverRestsAction(TypedDict):
 
 
 ActionSequence = List[
-    getScoreAction | addNoteAction | addRestAction | addTupletAction | 
-    addLyricsAction | addInstrumentAction | setStaffMuteAction | 
-    setInstrumentSoundAction | appendMeasureAction | deleteSelectionAction | 
-    getCursorInfoAction | goToMeasureAction | nextElementAction | 
-    prevElementAction | selectCurrentMeasureAction | insertMeasureAction | 
-    goToFinalMeasureAction | goToBeginningOfScoreAction | setTimeSignatureAction | 
-    undoAction | nextStaffAction | prevStaffAction | setTempoAction |
-    selectMeasuresAction | deleteMeasuresAction | setRepeatBarlinesAction |
-    addVoltaAction | colorRangeAction | setStyleAction | addRehearsalMarkAction |
-    removePartsAction | addHighlightAction | addLabelAction | clearHighlightsAction |
-    highlightNotesAction | highlightMarkingsAction | highlightSymbolsAction |
-    setMeasureNumberingAction | numberAsPlayedAction | addTextAction | addArticulationAction |
-    removeArticulationsAction | ghostNotesAction | beamOverRestsAction | addSectionCountsAction
+    getScoreAction
+    | addNoteAction
+    | addTieAction
+    | addTiedNoteAction
+    | addRestAction
+    | addTupletAction
+    | addLyricsAction
+    | addInstrumentAction
+    | setStaffMuteAction
+    | setInstrumentSoundAction
+    | appendMeasureAction
+    | deleteSelectionAction
+    | getCursorInfoAction
+    | goToMeasureAction
+    | nextElementAction
+    | prevElementAction
+    | selectCurrentMeasureAction
+    | insertMeasureAction
+    | goToFinalMeasureAction
+    | goToBeginningOfScoreAction
+    | setTimeSignatureAction
+    | undoAction
+    | nextStaffAction
+    | prevStaffAction
+    | setTempoAction
+    | selectMeasuresAction
+    | deleteMeasuresAction
+    | setRepeatBarlinesAction
+    | addVoltaAction
+    | colorRangeAction
+    | setStyleAction
+    | addRehearsalMarkAction
+    | removePartsAction
+    | addHighlightAction
+    | addLabelAction
+    | clearHighlightsAction
+    | highlightNotesAction
+    | highlightMarkingsAction
+    | highlightSymbolsAction
+    | setMeasureNumberingAction
+    | numberAsPlayedAction
+    | addTextAction
+    | addArticulationAction
+    | removeArticulationsAction
+    | ghostNotesAction
+    | beamOverRestsAction
+    | addSectionCountsAction
 ]

@@ -17,6 +17,34 @@ Ask Claude in plain language; it picks the tools. For example:
 - **Finish the page**: "Tidy the title and call it a drum chart" cleans up the title frame; "Print what changed at the end" adds a summary of the differences from the original after the last bar, so it ends up in the PDF.
 - **Iterate**: everything the tools add can be removed again ("remove the ** marks", "clear the crash highlights", "reset the bar numbers"), so you can refine the result step by step.
 
+## Requirements
+
+- **MuseScore 4.7 or newer.** See [Version requirements](docs/tools.md#version-requirements).
+- **[uv](https://docs.astral.sh/uv/)**, which installs Python 3.13 or newer for you. Without uv you need Python 3.13+ and pip; see [Setup and running](docs/setup.md).
+- **An MCP client**, such as Claude Desktop or Claude Code.
+
+## Quick start
+
+1. **Get the code and its dependencies** (uv also installs a matching Python if needed):
+
+   ```bash
+   git clone https://github.com/ghchen99/mcp-musescore.git
+   cd mcp-musescore
+   uv sync
+   ```
+
+2. **Install the MuseScore plugin:** copy `musescore-mcp-websocket.qml` into your MuseScore plugins folder (usually `~/Documents/MuseScore4/Plugins`), then enable **MuseScore API Server** under **Plugins → Plugin Manager**.
+
+3. **Register the server with Claude Desktop** (run this in the repository folder):
+
+   ```bash
+   uv run fastmcp install claude-desktop server.py --name musescore --project .
+   ```
+
+4. **Start it:** open a score in MuseScore and run **Plugins → MuseScore API Server**. Then restart Claude Desktop and ask it to work on your score. The plugin has to be running whenever Claude uses the tools.
+
+Other MCP clients, a manual configuration, platform notes and the setup without uv are in [Setup and running](docs/setup.md).
+
 ## Example use case: a drum chart from a Songsterr tab
 
 How the [drum-chart skill](docs/skills.md) is used day to day, from a song on [Songsterr](https://www.songsterr.com/) to a printable drum chart.
@@ -53,11 +81,30 @@ How the [drum-chart skill](docs/skills.md) is used day to day, from a song on [S
 | Page | What's in it |
 |---|---|
 | [Setup and running](docs/setup.md) | Prerequisites, installing the plugin, registering the server with Claude Desktop (with `uv` or a virtual environment), Ubuntu notes, starting order, updating, sample scores |
-| [Tool reference](docs/tools.md) | Reading and navigating the score, notes, measures, tempo, instruments, highlighting and coloring, batch operations, the score viewer, version requirements, examples |
+| [Tool reference](docs/tools.md) | Reading, rendering and navigating the score, notes, measures, tempo, instruments, highlighting and coloring, batch operations, version requirements, examples |
 | [Repeats and drum charts](docs/drum-charts.md) | Compressing a score with repeats, drum-chart tools, measure-repeat signs and how they are written, drum notation, chart examples |
 | [Agent skills](docs/skills.md) | The bundled skills and how to install them in Claude Desktop or Claude Code |
 | [Development and testing](docs/development.md) | Tests, the mock plugin, running the real plugin headless, console output, file structure |
 | [Troubleshooting](docs/troubleshooting.md) | Connection, plugin, server, score-file and skill problems, API limitations |
+
+## Contributing
+
+Contributions are welcome: fork the repository, work on a branch, and open a pull request against `main`. To set up and check your changes:
+
+```bash
+uv sync                            # install the dependencies, including the test tools
+uv run prek install                # check every commit (once per clone)
+uv run pytest --no-musescore --cov # run the tests with coverage
+```
+
+- **Before every commit**, prek checks the dependencies with deptry, lints and formats the code with Ruff and docstring-tailor, checks the types with ty, and the plugin's JavaScript syntax when it changed (needs Node.js). The tests run separately. With `make`, `make check` and `make test` run the checks and the tests, as CI does.
+
+- **Without MuseScore**, the tests use a mock plugin, and the tests that need MuseScore skip themselves.
+- **CI runs the tests twice more with MuseScore**: on 4.7.0, the oldest supported version, and on the latest release. So changes to the plugin are checked too.
+- **When you change the plugin** (`musescore-mcp-websocket.qml`), it is still quicker to run the tests locally with MuseScore installed first.
+- **When you change dependencies**, use `uv add` and commit `uv.lock`; the commit hook regenerates `requirements.txt`, and CI checks that the two match.
+
+[Development and testing](docs/development.md) has the details: the checks before committing, the mock plugin, running the real plugin headless, and managing dependencies.
 
 ## Star History
 

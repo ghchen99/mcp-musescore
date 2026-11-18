@@ -66,6 +66,8 @@ MuseScore {
 
             // Notes & Music
             case "addNote":                 return addNote(command.params);
+            case "addTie":                  return addTie(command.params);
+            case "addTiedNote":             return addTiedNote(command.params);
             case "addRest":                 return addRest(command.params);
             case "addTuplet":               return addTuplet(command.params);
             case "addLyrics":               return addLyrics(command.params);
@@ -88,6 +90,8 @@ MuseScore {
             case "addVolta":                return addVolta(command.params);
             case "colorRange":              return colorRange(command.params);
             case "setStyle":                return setStyle(command.params);
+            case "getStyle":                return getStyle(command.params);
+            case "renderScore":             return renderScore(command.params);
             case "addRehearsalMark":        return addRehearsalMark(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
@@ -356,7 +360,7 @@ MuseScore {
         var base = {
             name: element.name,
             durationTicks: element.actualDuration ? element.actualDuration.ticks : 0,
-            isTie: element.tieForward ? true : false,
+            isTie: false,  // set below: true when a note of the chord is tied to the next note
             isTuplet: element.tuplet ? true : false
         };
 
@@ -388,6 +392,12 @@ MuseScore {
                     pitchName: getTpcName(note.tpc)
                 };
                 if (note.ghost) noteData.ghost = true;
+                // Ties belong to single notes, not to the chord. Like ghost, only reported when present.
+                if (note.tieForward) {
+                    noteData.tieForward = true;
+                    base.isTie = true;
+                }
+                if (note.tieBack) noteData.tieBack = true;
                 base.notes.push(noteData);
             }
             var arts = element.articulations || [];
@@ -405,11 +415,13 @@ MuseScore {
     // CORE OPERATIONS
     // ========================================
 
+    // MuseScore 4.7 calls the undo action "action://notation/undo"; the old name "undo" is not a registered action
+    // any more (cmd() only translates a few old names), so cmd("undo") did nothing. Undo is a command of its own,
+    // so it also runs outside startCmd()/endCmd().
     function undo() {
-        return executeWithUndo(function() {
-            cmd("undo");
-            return { success: true, message: "Undo successful" };
-        });
+        if (!curScore) return { error: "No score open" };
+        cmd("action://notation/undo");
+        return { success: true, message: "Undo successful" };
     }
 
     function goToBeginningOfScore() {
@@ -427,7 +439,7 @@ MuseScore {
         if (!params.sequence) return { error: "No sequence specified" };
 
         var validCommands = [
-            "getScore", "addNote", "addRest", "addTuplet", "appendMeasure", "deleteSelection",
+            "getScore", "addNote", "addTie", "addTiedNote", "addRest", "addTuplet", "appendMeasure", "deleteSelection",
             "getCursorInfo", "goToMeasure", "nextElement", "prevElement", "nextStaff", "prevStaff",
             "selectCurrentMeasure", "processSequence", "insertMeasure", "goToFinalMeasure",
             "goToBeginningOfScore", "setTimeSignature", "addLyrics", "addInstrument",
@@ -445,7 +457,16 @@ MuseScore {
                 if (!validCommands.includes(command.action)) {
                     throw new Error("Invalid command: " + command.action);
                 }
-                processCommand(command);
+                // A failing step stops the sequence, so later steps don't build on it and the
+                // reply doesn't claim success. Each step is its own undo command, so earlier ones stay.
+                var result = processCommand(command);
+                if (result && typeof result === "object" && result.error !== undefined) {
+                    return {
+                        error: "Step " + (i + 1) + " of " + params.sequence.length + " (" + command.action +
+                               ") failed: " + result.error + ". " +
+                               (i ? "Steps 1-" + i + " were applied." : "No step was applied.")
+                    };
+                }
             }
             return { success: true, message: "Sequence processed", currentSelection: selectionState };
         } catch (e) {
@@ -540,29 +561,32 @@ MuseScore {
         };
     }
 
+    // Select one whole measure on every staff and move the cursor state to its first beat
+    // (staff 0), where the next cursor action (addNote, setTimeSignature, addLyrics...) acts.
+    // Selecting is not a score edit, so this runs outside startCmd()/endCmd(): inside a
+    // command the new selection has no segments yet, syncStateToSelection() fell back to
+    // the previous cursor position (often bar 1), and the following actions landed there.
+    // The state is also set from the measure's own ticks in case the sync still disagrees.
+    function selectWholeMeasure(range) {
+        selectMeasureRange(range);
+        var res = syncStateToSelection();
+        if (res.error || selectionState.startTick !== range.startTick) {
+            selectMeasureRange(range);
+        }
+        return { success: true, currentSelection: selectionState };
+    }
+
     function goToMeasure(params) {
         var validation = validateParams(params, ["measure"]);
         if (!validation.valid) return validation;
+        if (!curScore) return { error: "No score open" };
+        if (params.measure < 1 || params.measure > curScore.nmeasures) {
+            return { error: "Invalid measure number" };
+        }
 
-        return executeWithUndo(function() {
-            var score = getScoreSummary({ includeElements: false });
-            if (params.measure < 1 || params.measure > score.measures.length) {
-                return { error: "Invalid measure number" };
-            }
-            var measureIdx = params.measure - 1;
-            var measure = score.measures[measureIdx];
-            var startTick = measure.startTick;
-            
-            var endTick = (measureIdx + 1 < score.measures.length) ? score.measures[measureIdx + 1].startTick : curScore.lastSegment.tick;
-            
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, endTick, 0, curScore.nstaves);
-            
-            var res = syncStateToSelection();
-            if (res.error) return res;
-            
-            return { success: true, currentSelection: selectionState };
-        });
+        var range = measureRange({ startMeasure: params.measure });
+        if (!range.valid) return range;
+        return selectWholeMeasure(range);
     }
 
     function nextElement(params) {
@@ -759,34 +783,22 @@ MuseScore {
     // SELECTION FUNCTIONS
     // ========================================
 
+    // Same stale-selection issue as goToMeasure, so it shares selectWholeMeasure().
     function selectCurrentMeasure() {
-        return executeWithUndo(function() {
-            var cursor = createCursor({ 
-                startTick: selectionState.startTick || 0, 
-                startStaff: selectionState.startStaff || 0 
-            });
+        if (!curScore) return { error: "No score open" };
 
-            var currTick = cursor.tick;
-            var scoreSummary = getScoreSummary({ includeElements: false });
+        var tick = selectionState.startTick || 0;
+        var number = 1;
+        var m = curScore.firstMeasure;
+        while (m && tick >= measureEndTick(m)) {
+            m = m.nextMeasure;
+            number++;
+        }
+        if (!m) return { error: "Invalid cursor position" };
 
-            var measureIdx = scoreSummary.measures.filter(function(m) { 
-                return m.startTick <= currTick; 
-            }).length - 1;
-            
-            if (measureIdx < 0) return { error: "Invalid cursor position" };
-            
-            var measure = scoreSummary.measures[measureIdx];
-            var startTick = measure.startTick;
-            var endTick = (measureIdx + 1 < scoreSummary.measures.length) ? scoreSummary.measures[measureIdx + 1].startTick : curScore.lastSegment.tick;
-
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, endTick, 0, curScore.nstaves);
-
-            var res = syncStateToSelection();
-            if (res.error) return res;
-            
-            return { success: true, message: `Selected measure ${measureIdx + 1}`, currentSelection: selectionState };
-        });
+        var result = selectWholeMeasure(measureRange({ startMeasure: number }));
+        result.message = "Selected measure " + number;
+        return result;
     }
 
     function selectCustomRange(params) {
@@ -899,6 +911,215 @@ MuseScore {
                 success: true, 
                 message: "Note added with pitch " + params.pitch,
                 currentSelection: selectionState
+            };
+        });
+    }
+
+    function chordPitches(chord) {
+        var pitches = [];
+        var notes = chord.notes || [];
+        for (var i = 0; i < notes.length; i++) pitches.push(notes[i].pitch);
+        return pitches;
+    }
+
+    function noteWithPitch(chord, pitch) {
+        var notes = chord.notes || [];
+        for (var i = 0; i < notes.length; i++) {
+            if (notes[i].pitch === pitch) return notes[i];
+        }
+        return null;
+    }
+
+    // Tie notes of `first` to the same pitches in `second` (the next chord in the same staff and voice).
+    // MuseScore's tie command does not refuse a note without a matching pitch in the next chord: it inserts
+    // a new tied note and overwrites the music after it. So only notes whose pitch is in both chords are
+    // selected. Returns { error } when nothing can be tied, else the tied, already tied and skipped pitches.
+    // Throws when MuseScore did not make a tie, which rolls the whole action back.
+    function tieMatchingNotes(first, second, firstTick, staffIdx, requested) {
+        var firstPitches = chordPitches(first);
+        var secondPitches = chordPitches(second);
+        var candidates = requested || firstPitches;
+        var toTie = [];
+        var alreadyTied = [];
+        var skipped = [];
+        var seen = [];
+        for (var i = 0; i < candidates.length; i++) {
+            var pitch = candidates[i];
+            if (seen.indexOf(pitch) >= 0) continue;
+            seen.push(pitch);
+            var note = noteWithPitch(first, pitch);
+            if (!note || secondPitches.indexOf(pitch) < 0) {
+                skipped.push(pitch);
+            } else if (note.tieForward) {
+                alreadyTied.push(pitch);
+            } else {
+                toTie.push(note);
+            }
+        }
+        if (toTie.length === 0 && alreadyTied.length === 0) {
+            return {
+                error: "No pitch to tie: the chord at the cursor has [" + firstPitches.join(", ") +
+                    "], the next chord has [" + secondPitches.join(", ") + "]" +
+                    (requested ? ", requested [" + requested.join(", ") + "]" : "")
+            };
+        }
+
+        if (toTie.length > 0) {
+            curScore.selection.clear();
+            for (var t = 0; t < toTie.length; t++) curScore.selection.select(toTie[t], t > 0);
+            cmd("tie");
+        }
+
+        // Check the result on a fresh cursor
+        var check = createCursor({ startTick: firstTick, startStaff: staffIdx });
+        var tied = [];
+        for (var n = 0; n < toTie.length; n++) {
+            var tiedNote = noteWithPitch(check.element, toTie[n].pitch);
+            if (!tiedNote || !tiedNote.tieForward) {
+                throw new Error("MuseScore did not tie pitch " + toTie[n].pitch);
+            }
+            tied.push(toTie[n].pitch);
+        }
+        return { tied: tied, alreadyTied: alreadyTied, skipped: skipped };
+    }
+
+    // Put the cursor on the element at `tick` and return the new cursor state. MuseScore applies a new
+    // selection only when the command ends, so reading it back here (syncStateToSelection) would still give
+    // the old one. The state is built directly instead, as nextElement does.
+    function moveCursorTo(tick, staffIdx) {
+        var element = processElement(createCursor({ startTick: tick, startStaff: staffIdx }).element);
+        var ticks = element ? element.durationTicks : 0;
+        curScore.selection.clear();
+        if (ticks > 0) curScore.selection.selectRange(tick, tick + ticks, staffIdx, staffIdx + 1);
+        if (element) element.startTick = tick;
+        var staffMap = {};
+        staffMap["staff" + staffIdx] = element ? [element] : [];
+        selectionState = {
+            startStaff: staffIdx,
+            endStaff: staffIdx + 1,
+            startTick: tick,
+            elements: staffMap,
+            totalDuration: ticks
+        };
+        return selectionState;
+    }
+
+    function tieMessage(result) {
+        return "Tied " + (result.tied.length ? "pitch " + result.tied.join(", ") : "nothing new") +
+            (result.alreadyTied.length ? " (already tied: " + result.alreadyTied.join(", ") + ")" : "");
+    }
+
+    // Tie notes of the chord at the cursor to the same pitches in the next chord (same staff and voice).
+    // Afterwards the cursor is on the second chord, so another addTie continues a tie chain.
+    function addTie(params) {
+        params = params || {};
+
+        return executeWithUndo(function() {
+            syncStateToSelection();
+
+            var cursor = createCursor({ startTick: selectionState.startTick, startStaff: selectionState.startStaff });
+            var first = cursor.element;
+            var firstTick = cursor.tick;
+            if (!first || first.name !== "Chord") {
+                return { error: "No note or chord at the cursor to tie from" };
+            }
+            if (!cursor.next() || !cursor.element) {
+                return { error: "No note or chord after the cursor to tie to" };
+            }
+            var second = cursor.element;
+            var secondTick = cursor.tick;
+            var staffIdx = cursor.staffIdx;
+            if (second.name !== "Chord") {
+                return { error: "The element after the cursor is a rest: a tie needs a note of the same pitch" };
+            }
+
+            var requested = params.pitches && params.pitches.length ? params.pitches : null;
+            var result = tieMatchingNotes(first, second, firstTick, staffIdx, requested);
+            if (result.error) return result;
+
+            return {
+                success: true,
+                message: tieMessage(result),
+                tiedPitches: result.tied,
+                alreadyTied: result.alreadyTied,
+                skippedPitches: result.skipped,
+                currentSelection: moveCursorTo(secondTick, staffIdx)
+            };
+        });
+    }
+
+    // Write the next note or chord at the cursor, tied to the chord before the cursor: like "+" in
+    // MuseScore's note input. The new chord gets the given duration and the pitches of the chord before,
+    // or only the given ones, plus extraPitches without a tie. The whole chord is written before tying:
+    // MuseScore treats tied chords as one, so a pitch added to the second chord after the tie would also be
+    // added (and tied) to the first. Writing and tying are one undo step; a failed tie removes the note again.
+    function addTiedNote(params) {
+        var validation = validateParams(params, ["duration", "advanceCursorAfterAction"]);
+        if (!validation.valid) return validation;
+        if (!params.duration.numerator || !params.duration.denominator) {
+            return { error: "Duration must be specified as { numerator: int, denominator: int }" };
+        }
+
+        return executeWithUndo(function() {
+            syncStateToSelection();
+
+            var cursor = createCursor({ startTick: selectionState.startTick, startStaff: selectionState.startStaff });
+            var tick = cursor.tick;
+            var staffIdx = cursor.staffIdx;
+            if (!cursor.prev() || !cursor.element || cursor.element.name !== "Chord") {
+                return { error: "No note or chord before the cursor to tie from" };
+            }
+            var previousTick = cursor.tick;
+            var previousPitches = chordPitches(cursor.element);
+
+            var pitches = [];
+            var missing = [];
+            var requested = params.pitches && params.pitches.length ? params.pitches : previousPitches;
+            for (var i = 0; i < requested.length; i++) {
+                if (pitches.indexOf(requested[i]) >= 0) continue;
+                if (previousPitches.indexOf(requested[i]) < 0) missing.push(requested[i]);
+                else pitches.push(requested[i]);
+            }
+            if (missing.length > 0) {
+                return {
+                    error: "Pitch " + missing.join(", ") + " is not in the chord before the cursor [" +
+                        previousPitches.join(", ") + "]: a tie needs the same pitch"
+                };
+            }
+
+            var chordPitchList = pitches.slice();
+            var extra = params.extraPitches || [];
+            for (var x = 0; x < extra.length; x++) {
+                if (chordPitchList.indexOf(extra[x]) < 0) chordPitchList.push(extra[x]);
+            }
+
+            // Write the whole new chord first, as addNote does
+            var writer = createCursor({ startTick: tick, startStaff: staffIdx });
+            writer.setDuration(params.duration.numerator, params.duration.denominator);
+            writer.addNote(chordPitchList[0], false);
+            for (var p = 1; p < chordPitchList.length; p++) {
+                writer.rewindToTick(tick);
+                writer.addNote(chordPitchList[p], true);
+            }
+
+            var previous = createCursor({ startTick: previousTick, startStaff: staffIdx }).element;
+            var written = createCursor({ startTick: tick, startStaff: staffIdx }).element;
+            var result = tieMatchingNotes(previous, written, previousTick, staffIdx, pitches);
+            if (result.error) throw new Error(result.error);  // rolls the written chord back as well
+
+            // Advancing skips the whole written duration: a note longer than the rest of the bar is split by
+            // MuseScore into tied notes, and the cursor must not land on the second part
+            var target = tick;
+            if (params.advanceCursorAfterAction) {
+                target = tick + 1920 * params.duration.numerator / params.duration.denominator;
+            }
+
+            return {
+                success: true,
+                message: "Added tied " + (chordPitchList.length > 1 ? "chord " : "note ") + chordPitchList.join(", ") +
+                    (chordPitchList.length > pitches.length ? " (tied: " + pitches.join(", ") + ")" : ""),
+                tiedPitches: result.tied,
+                currentSelection: moveCursorTo(target, staffIdx)
             };
         });
     }
@@ -1433,10 +1654,104 @@ MuseScore {
         var validation = validateParams(params, ["key", "value"]);
         if (!validation.valid) return validation;
 
+        // setValue ignores a key MuseScore doesn't have (e.g. a removed one), so check it first and
+        // report the value read back rather than the one asked for.
+        if (curScore.style.value(params.key) === undefined) return { error: "Unknown style key: " + params.key };
+
         return executeWithUndo(function() {
             curScore.style.setValue(params.key, params.value);
-            return { success: true, message: "Style " + params.key + " set to " + params.value };
+            var value = curScore.style.value(params.key);
+            return { success: true, key: params.key, value: value, message: "Style " + params.key + " is " + value };
         });
+    }
+
+    // Engraved pages for the render tool: the score as <path>.pdf, and each measure's box on its page
+    // in staff spaces (the unit of pagePos and bbox), which the server uses to crop bars. A PDF, not
+    // PNG: the PNG export writes every page at the preferences' resolution (1200 DPI by default).
+    // A measure inside a multi-measure rest is not laid out and gets null.
+    function renderScore(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["path"]);
+        if (!validation.valid) return validation;
+
+        if (!writeScore(curScore, params.path + ".pdf", "pdf")) return { error: "MuseScore could not write the score as PDF" };
+        var measures = [];
+        var pageSize = null;
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) {
+            var system = m.parent;
+            var page = system && system.name === "System" ? system.parent : null;
+            if (!page || page.name !== "Page" || !m.bbox || m.bbox.width <= 0) {
+                measures.push(null);
+                continue;
+            }
+            if (!pageSize) pageSize = page.bbox;
+            var box = {
+                page: page.pagenumber,
+                x: m.pagePos.x + m.bbox.x,
+                y: m.pagePos.y + m.bbox.y,
+                width: m.bbox.width,
+                height: m.bbox.height
+            };
+            box.content = contentBoxOf(m, box, true);
+            box.notes = contentBoxOf(m, box, false);
+            measures.push(box);
+        }
+        return {
+            success: true,
+            pages: curScore.npages,
+            pageWidth: pageSize ? pageSize.width : null,
+            pageHeight: pageSize ? pageSize.height : null,
+            measures: measures,
+            numbers: displayedNumbers()
+        };
+    }
+
+    // The box, in staff spaces on the page, around the measure and everything attached to it that
+    // may stick out of it: markers and jumps (a To Coda sign past the barline), chord symbols, texts
+    // and other annotations, notes on ledger lines, lyrics. The render tool crops to it. Without
+    // attachments, only the staves, notes, rests and stems: where the neighbouring systems stop a crop.
+    function contentBoxOf(measure, box, attachments) {
+        var r = { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height };
+        function add(e) {
+            if (!e || !e.bbox || !e.pagePos || (e.bbox.width <= 0 && e.bbox.height <= 0)) return;
+            var x = e.pagePos.x + e.bbox.x, y = e.pagePos.y + e.bbox.y;
+            r.x0 = Math.min(r.x0, x); r.y0 = Math.min(r.y0, y);
+            r.x1 = Math.max(r.x1, x + e.bbox.width); r.y1 = Math.max(r.y1, y + e.bbox.height);
+        }
+        var els = attachments ? (measure.elements || []) : [];
+        for (var i = 0; i < els.length; i++) {
+            if (els[i].type !== Element.LAYOUT_BREAK) add(els[i]);
+        }
+        var end = measureEndTick(measure);
+        for (var seg = measure.firstSegment; seg && seg.tick < end; seg = seg.next) {
+            var annotations = attachments ? (seg.annotations || []) : [];
+            for (var a = 0; a < annotations.length; a++) add(annotations[a]);
+            for (var t = 0; t < curScore.ntracks; t++) {
+                var el = seg.elementAt(t);
+                if (!el) continue;
+                add(el);
+                var notes = el.notes || [];
+                for (var n = 0; n < notes.length; n++) add(notes[n]);
+                var lyrics = attachments ? (el.lyrics || []) : [];
+                for (var l = 0; l < lyrics.length; l++) add(lyrics[l]);
+            }
+        }
+        return { x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0 };
+    }
+
+    function getStyle(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["keys"]);
+        if (!validation.valid) return validation;
+
+        var styles = {};
+        var unknown = [];
+        for (var i = 0; i < params.keys.length; i++) {
+            var value = curScore.style.value(params.keys[i]);
+            if (value === undefined) unknown.push(params.keys[i]);
+            else styles[params.keys[i]] = value;
+        }
+        return { success: true, styles: styles, unknown: unknown };
     }
 
     // Highlighter band: a thick, semi-transparent text line behind one staff's notes over a range of
@@ -2568,6 +2883,22 @@ MuseScore {
         }
     }
 
+    // The measure's own elements: markers (Segno, Coda, To Coda, Fine), jumps (D.S. al Coda…) and
+    // line, page and section breaks. They hang on the measure, not on a segment, so the annotation
+    // loop never sees them. A marker's text is a symbol (<sym>coda</sym>), so the type's name is used.
+    function measureElementsOf(measure) {
+        var found = [];
+        var els = measure.elements || [];
+        for (var i = 0; i < els.length; i++) {
+            var e = els[i];
+            if (e.type !== Element.MARKER && e.type !== Element.JUMP && e.type !== Element.LAYOUT_BREAK) continue;
+            var text = String(e.text || "").replace(/<[^>]*>/g, "");
+            var name = typeof e.subtypeName === "function" ? e.subtypeName() : "";
+            found.push({ name: e.name, text: e.type === Element.JUMP && text ? text : (name || text) });
+        }
+        return found;
+    }
+
     // opts: startMeasure / endMeasure (1-based, inclusive), staves (list of staff indices),
     // includeElements (false returns only measure positions, which navigation uses).
     function getScoreSummary(opts) {
@@ -2661,6 +2992,7 @@ MuseScore {
                     }
                     seg = seg.next;
                 }
+                entry.measureElements = measureElementsOf(m);
             }
             score.measures.push(entry);
         }

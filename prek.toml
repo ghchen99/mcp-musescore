@@ -1,0 +1,57 @@
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "requirements"
+name = "generate requirements.txt from uv.lock"
+entry = "uv export --no-dev --no-hashes -o requirements.txt"
+language = "system"
+files = '^(uv\.lock|pyproject\.toml)$'
+pass_filenames = false
+
+[[repos.hooks]]
+id = "deptry"
+name = "deptry dependency check"
+entry = "uv run deptry ."
+language = "system"
+pass_filenames = false
+always_run = true
+
+[[repos.hooks]]
+id = "ruff-lint"
+name = "ruff lint"
+entry = "uv run ruff check --fix --force-exclude"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
+id = "ruff-format"
+name = "ruff format"
+entry = "uv run ruff format --force-exclude"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
+id = "docstring-tailor"
+name = "docstring-tailor docstring format"
+entry = "uv run docstring_tailor format"
+language = "system"
+types = ["python"]
+
+[[repos.hooks]]
+id = "ty"
+name = "ty type check"
+entry = "uv run ty check"
+language = "system"
+types = ["python"]
+pass_filenames = false
+
+[[repos.hooks]]
+id = "plugin-js-syntax"
+name = "plugin JavaScript syntax check"
+entry = "node dev/check_plugin_js_syntax.js"
+language = "system"
+files = '\.qml$'
+pass_filenames = false
