@@ -155,34 +155,6 @@ def test_plugin_errors_surface_in_result():
     run_with_mock(scenario)
 
 
-def test_show_score_returns_structured_score_for_the_viewer():
-    async def scenario(c, mock):
-        result = await c.call_tool(
-            "show_score", {"first_measure": 2, "last_measure": 3}
-        )
-        score = result.structured_content
-        assert [m["measure"] for m in score["measures"]] == [2, 3]
-        assert score["measureTicks"] == 1920
-        assert score["title"] == "Twinkle Twinkle (demo)"
-        assert "2 of 4" in result.content[0].text
-
-    run_with_mock(scenario, demo_score())
-
-
-def test_show_score_declares_its_ui_resource_and_serves_it():
-    async def scenario(c, mock):
-        tools = {t.name: t for t in await c.list_tools()}
-        assert (
-            tools["show_score"].meta["ui"]["resourceUri"]
-            == "ui://musescore/score-viewer.html"
-        )
-        (page,) = await c.read_resource("ui://musescore/score-viewer.html")
-        assert page.mime_type == "text/html;profile=mcp-app"
-        assert "Vex.Flow" in page.text
-
-    run_with_mock(scenario)
-
-
 def test_get_score_returns_lilypond_in_windows():
     async def scenario(c, mock):
         first = (await c.call_tool("get_score", {})).content[0].text

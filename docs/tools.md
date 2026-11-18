@@ -9,7 +9,6 @@ Repeats, drum charts and drum notation have [their own page](drum-charts.md).
 ## Reading the Score
 - `get_score(start_measure, end_measure, staves, format)` - Read the score as LilyPond (`format="json"` for the raw analysis), 16 measures at a time by default, optionally only some staves. Each staff is reported with its instrument name, and markings such as dynamics and chord symbols are listed per measure, along with the measure's own markers (Segno, Coda, To Coda, Fine), jumps (D.S. al Coda…) and line, page and section breaks. A chord symbol imported from MusicXML shows as `Harmony (name not readable: save and reopen the score)` until the score has been saved and reopened
 - `render(page, measures)` - Show the score as MuseScore engraves it, as an image, to check layout that the text can't show: overlapping chord symbols, marker placement, system breaks, spacing. `page=N` gives a whole page (default page 1), fitted to 1568 px; `measures="5-8"` crops those bars at 25 px per staff space, with everything attached to them (chord symbols, texts, lyrics, markers such as a To Coda past the barline) and a small margin, as they stand on their systems: the systems are cut in one piece per page (what stands between them shows once, and nothing of the systems above and below), and their other bars are left blank. Bars inside a multi-measure rest can't be cropped; render their page instead. Like every tool, `measures` counts bars by position; the caption adds the printed bar numbers when they differ (e.g. after a pickup bar)
-- `show_score(first_measure, last_measure)` - Render the score as sheet music in an interactive viewer (see [Score viewer](#score-viewer-mcp-apps))
 - `ping_musescore()` - Test connection to MuseScore
 - `connect_to_musescore()` - Establish WebSocket connection
 
@@ -85,15 +84,6 @@ Everything these tools add can be taken off again, so a chart can be refined ste
 
 ## Batch Operations
 - `processSequence(sequence)` - Execute multiple plugin commands in one call (camelCase action names, see the tool description). The first step that fails stops the sequence and is reported as an error naming the step; the steps before it stay applied
-
-## Score viewer (MCP Apps)
-
-`show_score` is an [MCP App](https://gofastmcp.com/apps/overview): the tool result is rendered as notation by a small [VexFlow](https://www.vexflow.com/) page (`src/ui/score_viewer.html`) inside hosts that support MCP Apps. Hosts without that support only get a one-line text summary, so use `get_score` there.
-
-- Rendering was verified in a regular browser against the mock plugin. It has not been verified inside Claude or Claude Desktop.
-- The page loads VexFlow and the MCP Apps SDK from `unpkg.com`, so the host needs internet access (the server declares that domain in the app's CSP).
-- Not drawn: tuplet brackets and ties. Tuplet notes use their written value.
-- Long scores: pass `first_measure` and `last_measure` to show a section.
 
 ## Version requirements
 

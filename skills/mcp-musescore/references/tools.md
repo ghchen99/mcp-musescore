@@ -2,7 +2,7 @@
 
 This reference describes the tools currently registered by `server.py` and the JSON actions sent to the MuseScore QML plugin. Use the Python function names when calling MCP. Use the camelCase action names only inside `processSequence`.
 
-The server currently registers 66 public tools.
+The server currently registers 65 public tools.
 
 ## Connection and score inspection
 
@@ -11,7 +11,6 @@ The server currently registers 66 public tools.
 | `connect_to_musescore` | none | Opens the WebSocket client connection to `ws://localhost:8765`. Returns `{success: bool}`. |
 | `ping_musescore` | none | Sends the `ping` action. A healthy plugin returns `pong`. |
 | `get_score` | `start_measure: int = 1`, `end_measure: int \| None = None`, `staves: list[int] \| None = None`, `format: "lilypond" \| "json" = "lilypond"` | Reads a window of the score (16 measures by default) as LilyPond with a `% m.N` comment at every barline, or as the raw JSON analysis. The header gives the total number of measures; page through long scores with `start_measure`, and read only some staves of large scores with `staves`. |
-| `show_score` | `first_measure: int = 1`, `last_measure: int \| None = None` | Read-only. Renders the score as sheet music in MCP Apps hosts (VexFlow viewer). Other hosts get only a text summary; use `get_score` for data. |
 | `render` | `page: int \| None = None`, `measures: str \| None = None` (e.g. `"5-8"`) | The score as MuseScore engraves it, as a PNG image: what `get_score` cannot show, such as overlapping chord symbols, marker placement, breaks and spacing. `page` gives a whole page; `measures` crops those bars from their page at higher detail, with everything attached to them, as they stand on their systems (the other bars of those systems are left blank). Bars inside a multi-measure rest are refused. Render again after a change to check it. |
 
 `get_score` lists each measure's markers (Segno, Coda, Fine), jumps (D.S. al Coda) and line, page and section breaks under `[Markings]`, with the dynamics and other markings.

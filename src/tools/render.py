@@ -63,7 +63,7 @@ def setup_render_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "pickup bar, printed bar 49 is measure 50. The caption gives the printed numbers when they differ. "
             "Render again after a change to check it."
         ),
-        tags={"viewer", "layout"},
+        tags={"score", "layout"},
     )
     async def render(
         page: Annotated[

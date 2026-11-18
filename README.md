@@ -81,7 +81,7 @@ How the [drum-chart skill](docs/skills.md) is used day to day, from a song on [S
 | Page | What's in it |
 |---|---|
 | [Setup and running](docs/setup.md) | Prerequisites, installing the plugin, registering the server with Claude Desktop (with `uv` or a virtual environment), Ubuntu notes, starting order, updating, sample scores |
-| [Tool reference](docs/tools.md) | Reading, rendering and navigating the score, notes, measures, tempo, instruments, highlighting and coloring, batch operations, the score viewer, version requirements, examples |
+| [Tool reference](docs/tools.md) | Reading, rendering and navigating the score, notes, measures, tempo, instruments, highlighting and coloring, batch operations, version requirements, examples |
 | [Repeats and drum charts](docs/drum-charts.md) | Compressing a score with repeats, drum-chart tools, measure-repeat signs and how they are written, drum notation, chart examples |
 | [Agent skills](docs/skills.md) | The bundled skills and how to install them in Claude Desktop or Claude Code |
 | [Development and testing](docs/development.md) | Tests, the mock plugin, running the real plugin headless, console output, file structure |

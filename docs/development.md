@@ -185,8 +185,7 @@ mcp-musescore/
     │   ├── score_file.py               # Measure-repeat signs and backups (file edits)
     │   ├── formatting.py               # Coloring, highlights and labels
     │   ├── style.py                    # Score style settings (get_style, set_style)
-    │   ├── render.py                   # render: the engraved score as an image
-    │   └── viewer.py                   # show_score MCP App tool
+    │   └── render.py                   # render: the engraved score as an image
     ├── render.py                       # Rasterising and cropping the score's PDF
     ├── mscz/                           # Reading and editing .mscz/.mscx files
     │   ├── score_file.py
@@ -195,8 +194,6 @@ mcp-musescore/
     │   ├── parts.py                    # Part scores from a full score
     │   ├── rolls.py                    # Cymbal rolls
     │   └── locate.py                   # Finding the open score's file, backups
-    ├── ui/
-    │   └── score_viewer.html           # VexFlow notation viewer
     ├── utils/
     │   ├── lilypond_converter.py       # Score JSON to LilyPond
     │   ├── repetition.py               # Repeated-measure analysis

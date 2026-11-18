@@ -1721,7 +1721,7 @@ async def running_mock(
 
 
 def demo_score() -> MockScore:
-    """Twinkle Twinkle on two staves, for previewing the viewer."""
+    """Twinkle Twinkle on two staves, for trying the tools against the mock."""
     mock = MockMuseScore(
         MockScore(staves=2, measures=4, title="Twinkle Twinkle (demo)")
     )
