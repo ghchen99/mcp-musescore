@@ -336,6 +336,7 @@ def test_added_texts_and_marks_can_be_removed():
         "voltas": 1,
         "markers": 0,
         "jumps": 0,
+        "chord_symbols": 0,
     }
     assert not any(
         m["markings"] for m in results[8]["result"]["analysis"]["measures"]
@@ -1537,6 +1538,142 @@ def test_markers_and_jumps_are_added_and_removed(tmp_path):
     assert replies[12]["removed"]["markers"] == 4
     assert replies[13]["removed"]["jumps"] == 6
     assert markers_and_jumps(results[14]) == [[]] * 8
+
+
+def beats_score(tmp_path):
+    """Write 3 bars of quarter rests in 4/4; bar 2 starts with a half rest."""
+    quarter = "<Rest><durationType>quarter</durationType></Rest>"
+    half = "<Rest><durationType>half</durationType></Rest>"
+    timesig = "<TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>"
+    measures = (
+        f"<Measure><voice>{timesig}{quarter * 4}</voice></Measure>"
+        f"<Measure><voice>{half}{quarter * 2}</voice></Measure>"
+        f"<Measure><voice>{quarter * 4}</voice></Measure>"
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?><museScore version="4.70"><Score>'
+        '<Part id="1"><Staff id="1"/><trackName>Piano</trackName></Part>'
+        f'<Staff id="1">{measures}</Staff></Score></museScore>'
+    )
+    path = tmp_path / "beats.mscx"
+    path.write_text(xml)
+    return path
+
+
+def chord_symbols(get_score_result):
+    return [
+        (m["measure"], mk["startTick"] - m["startTick"], mk["text"])
+        for m in get_score_result["result"]["analysis"]["measures"]
+        for mk in m["markings"]
+        if mk["name"] == "Harmony"
+    ]
+
+
+def test_chord_symbols_are_set_moved_and_removed(tmp_path):
+    def set_chord(measure, beat, chord):
+        return {
+            "action": "setChordSymbol",
+            "params": {"measure": measure, "beat": beat, "chord": chord},
+        }
+
+    get_score = {"action": "getScore", "params": {"startMeasure": 1}}
+    results = run(
+        [
+            set_chord(1, 1, "C"),
+            set_chord(1, 3, "G7"),
+            set_chord(1, 3, "G7sus4"),
+            set_chord(2, 2, "F"),
+            set_chord(2, 3, "F"),
+            {
+                "action": "moveChordSymbol",
+                "params": {
+                    "measure": 1,
+                    "beat": 3,
+                    "toMeasure": 3,
+                    "toBeat": 1,
+                },
+            },
+            get_score,
+            {
+                "action": "removeAnnotations",
+                "params": {
+                    "startMeasure": 1,
+                    "endMeasure": 3,
+                    "kinds": ["chord_symbols"],
+                    "contains": "C",
+                    "exact": True,
+                },
+            },
+            get_score,
+        ],
+        beats_score(tmp_path),
+    )
+    replies = [r.get("result", r) for r in results]
+    assert replies[1]["chord"] == "G7" and "replaced" not in replies[1]
+    assert replies[2]["replaced"] == "G7"
+    assert "No note or rest starts on beat 2 of measure 2" in str(replies[3])
+    assert "beats 1, 3, 4" in str(replies[3])
+    assert replies[5]["chord"] == "G7sus4"
+    assert chord_symbols(results[6]) == [
+        (1, 0, "C"),
+        (2, 960, "F"),
+        (3, 0, "G7sus4"),
+    ]
+    assert replies[7]["removed"]["chord_symbols"] == 1
+    assert chord_symbols(results[8]) == [(2, 960, "F"), (3, 0, "G7sus4")]
+
+
+IMPORTED_CHORD = """<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef></attributes>
+      <harmony><root><root-step>C</root-step></root><kind>major</kind></harmony>
+      <note><rest/><duration>4</duration><type>whole</type></note>
+    </measure>
+    <measure number="2">
+      <note><rest/><duration>2</duration><type>half</type></note>
+      <harmony><root><root-step>F</root-step></root><kind>major</kind><offset>-1</offset></harmony>
+      <note><rest/><duration>2</duration><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>
+"""
+
+
+def test_an_imported_chord_symbol_is_not_moved_but_can_be_set(tmp_path):
+    path = tmp_path / "imported.musicxml"
+    path.write_text(IMPORTED_CHORD)
+    results = run(
+        [
+            {
+                "action": "moveChordSymbol",
+                "params": {
+                    "measure": 1,
+                    "beat": 1,
+                    "toMeasure": 2,
+                    "toBeat": 1,
+                },
+            },
+            {
+                "action": "setChordSymbol",
+                "params": {"measure": 1, "beat": 1, "chord": "Cmaj7"},
+            },
+            # On beat 2 of bar 2 no note or rest starts: MuseScore holds the chord symbol on a segment of its own
+            {
+                "action": "setChordSymbol",
+                "params": {"measure": 2, "beat": 2, "chord": "F6"},
+            },
+            {"action": "getScore", "params": {"startMeasure": 1}},
+        ],
+        path,
+    )
+    assert "Ask the user" in str(results[0])
+    assert results[1]["result"]["replaced"] == "(name not readable)"
+    assert results[2]["result"]["replaced"] == "(name not readable)"
+    assert chord_symbols(results[3]) == [(1, 0, "Cmaj7"), (2, 480, "F6")]
 
 
 def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):

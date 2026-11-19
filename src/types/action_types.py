@@ -295,6 +295,31 @@ class addMarkerAction(TypedDict):
     params: addMarkerParams
 
 
+class setChordSymbolParams(TypedDict):
+    measure: Bar
+    chord: str
+    beat: NotRequired[float]
+    staff: NotRequired[int]
+
+
+class setChordSymbolAction(TypedDict):
+    action: Literal["setChordSymbol"]
+    params: setChordSymbolParams
+
+
+class moveChordSymbolParams(TypedDict):
+    measure: Bar
+    toMeasure: Bar
+    beat: NotRequired[float]
+    toBeat: NotRequired[float]
+    staff: NotRequired[int]
+
+
+class moveChordSymbolAction(TypedDict):
+    action: Literal["moveChordSymbol"]
+    params: moveChordSymbolParams
+
+
 class removePartsParams(TypedDict):
     keepStaves: List[int]
 
@@ -547,6 +572,8 @@ ActionSequence = List[
     | setStyleAction
     | addRehearsalMarkAction
     | addMarkerAction
+    | setChordSymbolAction
+    | moveChordSymbolAction
     | removePartsAction
     | addHighlightAction
     | addLabelAction

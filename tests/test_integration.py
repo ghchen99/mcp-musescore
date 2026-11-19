@@ -289,6 +289,117 @@ def test_add_marker_refuses_the_same_marker_twice_in_a_bar():
     run_with_mock(scenario, MockScore(staves=1, measures=4))
 
 
+def chords_of(get_score_text):
+    return [
+        line
+        for line in get_score_text.splitlines()
+        if line.split(": ")[-1].startswith("Harmony")
+    ]
+
+
+def test_set_chord_symbol_adds_one_or_changes_the_one_there():
+    async def scenario(c, mock):
+        added = await c.call_tool(
+            "set_chord_symbol", {"measure": 1, "beat": 3, "chord": "G7"}
+        )
+        assert added.structured_content["chord"] == "G7"
+        assert "replaced" not in added.structured_content
+        changed = await c.call_tool(
+            "set_chord_symbol", {"measure": 1, "beat": 3, "chord": "G7sus4"}
+        )
+        assert changed.structured_content["replaced"] == "G7"
+        await c.call_tool("set_chord_symbol", {"measure": 2, "chord": "Cm"})
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert chords_of(text) == [
+            "bar 1 beat 3, staff 0: Harmony G7sus4",
+            "bar 2 beat 1, staff 0: Harmony Cm",
+        ]
+
+    run_with_mock(scenario, patterned_score("AA"))
+
+
+def test_a_chord_symbol_needs_a_note_or_rest_on_its_beat():
+    score = patterned_score("AA")
+    # Bar 2 starts with a half note: nothing starts on beat 2
+    score.elements[0] = [
+        {**e, "durationTicks": 960} if e["startTick"] == 1920 else e
+        for e in score.elements[0]
+        if e["startTick"] != 2400
+    ]
+
+    async def scenario(c, mock):
+        result = await c.call_tool(
+            "set_chord_symbol",
+            {"measure": 2, "beat": 2, "chord": "F"},
+            raise_on_error=False,
+        )
+        assert result.is_error
+        assert "No note or rest starts on beat 2 of bar 2" in str(result)
+        assert "beats 1, 3, 4" in str(result)
+        assert not mock.score.markings
+        # One that is already there, e.g. typed in MuseScore, can be changed
+        mock.score.markings.append(
+            {"staff": 0, "startTick": 2400, "name": "Harmony", "text": "F"}
+        )
+        changed = await c.call_tool(
+            "set_chord_symbol", {"measure": 2, "beat": 2, "chord": "F6"}
+        )
+        assert changed.structured_content["replaced"] == "F"
+
+    run_with_mock(scenario, score)
+
+
+def test_move_chord_symbol_moves_it_with_its_name():
+    async def scenario(c, mock):
+        await c.call_tool(
+            "set_chord_symbol", {"measure": 1, "beat": 3, "chord": "Bb7"}
+        )
+        moved = await c.call_tool(
+            "move_chord_symbol",
+            {"measure": 1, "beat": 3, "to_measure": 2, "to_beat": 2},
+        )
+        assert moved.structured_content["chord"] == "Bb7"
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert chords_of(text) == ["bar 2 beat 2, staff 0: Harmony Bb7"]
+
+    run_with_mock(scenario, patterned_score("AA"))
+
+
+def test_move_chord_symbol_refuses_a_name_it_cannot_read():
+    score = patterned_score("AA")
+    # A chord symbol imported from MusicXML has no readable name
+    score.markings.append(
+        {"staff": 0, "startTick": 0, "name": "Harmony", "text": ""}
+    )
+
+    async def scenario(c, mock):
+        result = await c.call_tool(
+            "move_chord_symbol",
+            {"measure": 1, "beat": 1, "to_measure": 2},
+            raise_on_error=False,
+        )
+        assert result.is_error and "Ask the user" in str(result)
+        assert mock.score.markings[0]["startTick"] == 0
+
+    run_with_mock(scenario, score)
+
+
+def test_remove_annotations_removes_one_chord_symbol_by_name():
+    async def scenario(c, mock):
+        for beat, chord in [(1, "C"), (3, "Cmaj7")]:
+            await c.call_tool(
+                "set_chord_symbol", {"measure": 1, "beat": beat, "chord": chord}
+            )
+        removed = await c.call_tool(
+            "remove_annotations",
+            {"kinds": ["chord_symbols"], "contains": "C", "exact": True},
+        )
+        assert removed.structured_content["removed"]["chord_symbols"] == 1
+        assert [m["text"] for m in mock.score.markings] == ["Cmaj7"]
+
+    run_with_mock(scenario, patterned_score("AA"))
+
+
 def test_remove_annotations_removes_markers_and_jumps_apart():
     score = MockScore(staves=1, measures=4)
     score.measure_elements = {
@@ -326,8 +437,8 @@ def test_get_score_says_when_a_chord_name_is_not_readable():
         text = (await c.call_tool("get_score", {})).content[0].text
         assert "bar 1 beat 1, staff 0: Harmony Cm7\n" in text
         assert (
-            "bar 2 beat 1, staff 0: Harmony (name not readable: save and "
-            "reopen the score)"
+            "bar 2 beat 1, staff 0: Harmony (name not readable: save the "
+            "score, close it and open it again; saving alone is not enough)"
         ) in text
 
     run_with_mock(scenario, score)
@@ -1695,6 +1806,7 @@ def test_remove_annotations_and_reset_numbering():
             "voltas": 1,
             "markers": 0,
             "jumps": 0,
+            "chord_symbols": 0,
         }
         assert not (
             mock.score.texts

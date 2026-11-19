@@ -95,6 +95,8 @@ MuseScore {
             case "barNumbers":              return barNumbers();
             case "addRehearsalMark":        return addRehearsalMark(command.params);
             case "addMarker":               return addMarker(command.params);
+            case "setChordSymbol":          return setChordSymbol(command.params);
+            case "moveChordSymbol":         return moveChordSymbol(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
             case "addLabel":                return addLabel(command.params);
@@ -447,7 +449,7 @@ MuseScore {
             "goToBeginningOfScore", "setTimeSignature", "addLyrics", "addInstrument",
             "setStaffMute", "setInstrumentSound", "setTempo",
             "selectMeasures", "setRepeatBarlines", "addVolta", "colorRange", "deleteMeasures",
-            "setStyle", "addRehearsalMark", "addMarker", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
+            "setStyle", "addRehearsalMark", "addMarker", "setChordSymbol", "moveChordSymbol", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
             "highlightNotes", "highlightMarkings", "highlightSymbols",
             "setMeasureNumbering", "numberAsPlayed", "addText", "removeAnnotations",
             "addArticulation", "removeArticulations", "ghostNotes", "beamOverRests"
@@ -2121,7 +2123,8 @@ MuseScore {
 
     // Remove texts and marks in a range. kinds: "texts" (staff/expression text without a box: add_text),
     // "labels" (boxed staff text: add_label), "rehearsal_marks", "tempo", "voltas", "markers" (Segno, Coda,
-    // To Coda, Fine) and "jumps" (D.C., D.S.…); markers and jumps belong to the measure, not to a staff.
+    // To Coda, Fine), "jumps" (D.C., D.S.…) and "chord_symbols"; markers and jumps belong to the measure,
+    // not to a staff.
     // `contains` limits text-based kinds to elements whose text contains that string (e.g. "*"), or equals
     // it when `exact` is true.
     function removeAnnotations(params) {
@@ -2131,12 +2134,14 @@ MuseScore {
         var kinds = params.kinds && params.kinds.length ? params.kinds : ["texts"];
         var contains = params.contains || "";
         var exact = params.exact === true;
-        var removed = { texts: 0, labels: 0, rehearsal_marks: 0, tempo: 0, voltas: 0, markers: 0, jumps: 0 };
+        var removed = { texts: 0, labels: 0, rehearsal_marks: 0, tempo: 0, voltas: 0, markers: 0, jumps: 0,
+                        chord_symbols: 0 };
         var targets = [];
 
-        forEachMarking(range, ["StaffText", "Expression", "RehearsalMark", "Tempo", "TempoText"], function(ann) {
+        forEachMarking(range, ["StaffText", "Expression", "RehearsalMark", "Tempo", "TempoText", "Harmony"], function(ann) {
             var kind;
-            if (ann.name === "RehearsalMark") kind = "rehearsal_marks";
+            if (ann.name === "Harmony") kind = "chord_symbols";
+            else if (ann.name === "RehearsalMark") kind = "rehearsal_marks";
             else if (ann.name === "Tempo" || ann.name === "TempoText") kind = "tempo";
             else kind = ann.frameType && !isTranslucent(ann.frameBgColor) ? "labels" : "texts";
             if (kinds.indexOf(kind) === -1) return;
@@ -2586,6 +2591,118 @@ MuseScore {
             }
         }
         return result;
+    }
+
+    // Where a chord symbol at a measure and beat (1-based, fractions allowed) on a staff goes: the chord
+    // symbol already there, if any, and whether a new one can be added. MuseScore holds chord symbols on beats
+    // where no note starts (inside a half note) on segments of their own, but a plugin's cursor only stops
+    // where a note or rest starts, so a new one can only go there. noPlace says so, with the beats that have one.
+    function chordSymbolPlace(measure, beat, staff) {
+        var range = measureRange({ startMeasure: measure, startStaff: staff, endStaff: staff + 1 });
+        if (!range.valid) return range;
+        range = applyBeats(range, { startBeat: beat });
+        if (range.error) return range;
+
+        var m = range.firstMeasure;
+        var start = measureStartTick(m);
+        var end = measureEndTick(m);
+        var beatLength = beatTicks(m);
+        var beats = [], canAdd = false, harmony = null;
+        for (var seg = m.firstSegment; seg && seg.tick < end; seg = seg.next) {
+            if (seg.tick === range.startTick) {
+                var anns = seg.annotations || [];
+                for (var a = 0; a < anns.length; a++) {
+                    if (anns[a].name === "Harmony" && Math.floor(anns[a].track / 4) === staff) harmony = anns[a];
+                }
+            }
+            var hasChordRest = false;
+            for (var v = 0; v < 4; v++) {
+                var el = seg.elementAt(staff * 4 + v);
+                if (el && (el.name === "Chord" || el.name === "Rest")) hasChordRest = true;
+            }
+            if (!hasChordRest) continue;
+            var label = Math.round((1 + (seg.tick - start) / beatLength) * 100) / 100;
+            if (beats.indexOf(label) === -1) beats.push(label);
+            if (seg.tick === range.startTick) canAdd = true;
+        }
+        return {
+            valid: true, tick: range.startTick, harmony: harmony, canAdd: canAdd,
+            noPlace: "No note or rest starts on beat " + beat + " of measure " + measure + " (staff " + staff + "), and a "
+                + "plugin can only add a chord symbol where one does: notes or rests start on "
+                + (beats.length === 1 ? "beat " : "beats ") + beats.join(", ")
+                + ". The user can add it there in MuseScore by hand."
+        };
+    }
+
+    // The text is set after the chord symbol is added: setting it on a new, unattached Harmony crashes
+    // MuseScore 4.7 (it parses the name against the score's style).
+    function addChordSymbolAt(tick, staff, text) {
+        var cursor = createCursor({ startTick: tick, startStaff: staff });
+        var harmony = newElement(Element.HARMONY);
+        cursor.add(harmony);
+        harmony.text = text;
+        return harmony;
+    }
+
+    // params: measure, beat (default 1), chord, staff (default 0). Changes the chord symbol on that beat, or
+    // adds one. MuseScore parses the name as it does when typed (e.g. "Bb7", "F#m7b5", "C/E").
+    function setChordSymbol(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["measure", "chord"]);
+        if (!validation.valid) return validation;
+        var beat = params.beat || 1, staff = params.staff || 0;
+        var place = chordSymbolPlace(params.measure, beat, staff);
+        if (!place.valid) return place;
+        if (!place.harmony && !place.canAdd) return { error: place.noPlace };
+
+        return executeWithUndo(function() {
+            var where = " on beat " + beat + " of measure " + params.measure;
+            if (place.harmony) {
+                var old = String(place.harmony.text || "");
+                place.harmony.text = params.chord;
+                return { success: true, chord: place.harmony.text, replaced: old || "(name not readable)",
+                         message: "Changed " + (old || "the chord symbol") + " to " + place.harmony.text + where };
+            }
+            var harmony = addChordSymbolAt(place.tick, staff, params.chord);
+            return { success: true, chord: harmony.text, message: "Added " + harmony.text + where };
+        });
+    }
+
+    // params: measure, beat (default 1), toMeasure, toBeat (default 1), staff (default 0). There is no way
+    // to move a chord symbol to another tick, so it is deleted and added again with the same name. A chord
+    // symbol imported from MusicXML has no readable name until the score is saved, closed and opened again
+    // (MuseScore fills in the name only when it loads the file), so it is
+    // refused; so is a target beat that already has one.
+    function moveChordSymbol(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["measure", "toMeasure"]);
+        if (!validation.valid) return validation;
+        var beat = params.beat || 1, toBeat = params.toBeat || 1, staff = params.staff || 0;
+        var from = chordSymbolPlace(params.measure, beat, staff);
+        if (!from.valid) return from;
+        var where = "beat " + beat + " of measure " + params.measure;
+        if (!from.harmony) return { error: "There is no chord symbol on " + where + " (staff " + staff + ")" };
+        var text = String(from.harmony.text || "");
+        if (!text) {
+            return { error: "The chord symbol on " + where + " has no readable name: it was imported from MusicXML "
+                + "and becomes readable only after the score is saved, closed and opened again (saving alone is not "
+                + "enough). Ask the user for its name, then set it "
+                + "at the new place with set_chord_symbol and remove this one with remove_annotations." };
+        }
+        var to = chordSymbolPlace(params.toMeasure, toBeat, staff);
+        if (!to.valid) return to;
+        var toWhere = "beat " + toBeat + " of measure " + params.toMeasure;
+        if (to.harmony) {
+            return { error: "There is already a chord symbol (" + (to.harmony.text || "name not readable") + ") on "
+                + toWhere + ": change it with set_chord_symbol" };
+        }
+        if (!to.canAdd) return { error: to.noPlace };
+
+        return executeWithUndo(function() {
+            removeElement(from.harmony);
+            var harmony = addChordSymbolAt(to.tick, staff, text);
+            return { success: true, chord: harmony.text, message: "Moved " + harmony.text + " from " + where + " to " + toWhere };
+        });
     }
 
     // Bar counts of the sections, e.g. "2x4+2". mode "label" (default, the user's choice) writes the count in
