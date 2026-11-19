@@ -337,6 +337,7 @@ def test_added_texts_and_marks_can_be_removed():
         "markers": 0,
         "jumps": 0,
         "chord_symbols": 0,
+        "breaks": 0,
     }
     assert not any(
         m["markings"] for m in results[8]["result"]["analysis"]["measures"]
@@ -1674,6 +1675,99 @@ def test_an_imported_chord_symbol_is_not_moved_but_can_be_set(tmp_path):
     assert results[1]["result"]["replaced"] == "(name not readable)"
     assert results[2]["result"]["replaced"] == "(name not readable)"
     assert chord_symbols(results[3]) == [(1, 0, "Cmaj7"), (2, 480, "F6")]
+
+
+def systems_of(reply):
+    return [(s["firstMeasure"], s["lastMeasure"]) for s in reply["systems"]]
+
+
+def test_measures_per_system_with_locks_then_breaks(tmp_path):
+    def per_system(n, method="locks", start=1, end=12):
+        return {
+            "action": "setMeasuresPerSystem",
+            "params": {
+                "startMeasure": start,
+                "endMeasure": end,
+                "perSystem": n,
+                "method": method,
+            },
+        }
+
+    results = run(
+        [
+            per_system(4),
+            per_system(3, "breaks"),
+            {"action": "getScore", "params": {"startMeasure": 1}},
+            per_system(0, "breaks"),
+        ],
+        rest_score(tmp_path, 12),
+    )
+    replies = [r.get("result", r) for r in results]
+    assert systems_of(replies[0]) == [(1, 4), (5, 8), (9, 12)]
+    assert systems_of(replies[1]) == [(1, 3), (4, 6), (7, 9), (10, 12)]
+    breaks = [
+        m["measure"]
+        for m in replies[2]["analysis"]["measures"]
+        if {"name": "LayoutBreak", "text": "System break"}
+        in m["measureElements"]
+    ]
+    # No break after the score's last bar
+    assert breaks == [3, 6, 9]
+    assert replies[3]["removed_breaks"] == 3
+    # Back to MuseScore's own layout: twelve empty bars fit on fewer systems
+    assert len(replies[3]["systems"]) < 4
+
+
+def test_breaks_are_added_once_and_removed(tmp_path):
+    def add_break(measure, kind):
+        return {
+            "action": "addBreak",
+            "params": {"measure": measure, "kind": kind},
+        }
+
+    get_score = {"action": "getScore", "params": {"startMeasure": 1}}
+    results = run(
+        [
+            add_break(2, "line"),
+            add_break(4, "page"),
+            add_break(6, "section"),
+            add_break(2, "line"),
+            get_score,
+            {
+                "action": "removeAnnotations",
+                "params": {
+                    "startMeasure": 1,
+                    "endMeasure": 4,
+                    "kinds": ["breaks"],
+                },
+            },
+            get_score,
+        ],
+        rest_score(tmp_path, 8),
+    )
+    replies = [r.get("result", r) for r in results]
+    assert [r.get("added") for r in replies[:3]] == [
+        "System break",
+        "Page break",
+        "Section break",
+    ]
+    assert "Measure 2 already has a System break" in str(replies[3])
+
+    def breaks(get_score_result):
+        return [
+            (m["measure"], e["text"])
+            for m in get_score_result["result"]["analysis"]["measures"]
+            for e in m["measureElements"]
+            if e["name"] == "LayoutBreak"
+        ]
+
+    assert breaks(results[4]) == [
+        (2, "System break"),
+        (4, "Page break"),
+        (6, "Section break"),
+    ]
+    assert replies[5]["removed"]["breaks"] == 2
+    assert breaks(results[6]) == [(6, "Section break")]
 
 
 def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):

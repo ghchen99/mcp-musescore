@@ -513,8 +513,8 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "Remove texts and marks from a range of bars, e.g. to redo part of a chart. kinds: 'texts' (add_text: "
             "cues, '*' marks, legends), 'labels' (boxed add_label texts), 'rehearsal_marks', 'tempo' (tempo "
             "markings, which also changes playback), 'voltas', 'markers' (Segno, Coda, To Coda, Fine) and 'jumps' "
-            "(D.C., D.S. ...), which belong to the bar, not a staff, and 'chord_symbols' (e.g. contains='G7', "
-            "exact=True removes only G7s). `contains` limits it to texts containing that string, "
+            "(D.C., D.S. ...), which belong to the bar, not a staff, 'chord_symbols' (e.g. contains='G7', "
+            "exact=True removes only G7s) and 'breaks' (system, page and section breaks). `contains` limits it to texts containing that string, "
             "e.g. '**'. Defaults to the whole score. Highlights and note colors are removed with clear_highlights / "
             "clear_color instead."
         ),
@@ -544,6 +544,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                     "markers",
                     "jumps",
                     "chord_symbols",
+                    "breaks",
                 ]
             ],
             "What to remove",

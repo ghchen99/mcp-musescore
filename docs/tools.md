@@ -62,7 +62,7 @@ Navigation results come back as LilyPond with measure, beat and staff metadata.
 - `add_text(measure, text, staff, beat, size, italic, bold, color, placement, kind)` - Free text with its own look; by default a small, italic, light-grey cue above the staff, e.g. the first words of each section as a reminder for the player
 - `color_range(start_measure, end_measure, first_staff, last_staff, color, voices, start_beat, end_beat)` / `clear_color(...)` - Recolor the notes and rests themselves (grace notes such as flams included), or reset them to black
 - `clear_highlights(start_measure, end_measure, first_staff, last_staff, kinds)` - Remove highlight boxes and bands, marking boxes and labels (note colors are reset with `clear_color`)
-- `remove_annotations(start_measure, end_measure, first_staff, last_staff, kinds, contains, exact)` - Remove added texts, labels, rehearsal marks, tempo markings, voltas, markers (Segno, Coda, To Coda, Fine), jumps (D.C., D.S.…) or chord symbols, optionally only those containing (or equal to) a given text, e.g. the `**` marks
+- `remove_annotations(start_measure, end_measure, first_staff, last_staff, kinds, contains, exact)` - Remove added texts, labels, rehearsal marks, tempo markings, voltas, markers (Segno, Coda, To Coda, Fine), jumps (D.C., D.S.…), chord symbols or breaks, optionally only those containing (or equal to) a given text, e.g. the `**` marks
 
 Everything these tools add can be taken off again, so a chart can be refined step by step; the drum-chart skill lists how to undo each step.
 
@@ -83,6 +83,11 @@ Everything these tools add can be taken off again, so a chart can be refined ste
 - `set_chord_symbol(measure, chord, beat, staff)` - Set the chord symbol on a beat (default beat 1, staff 0): adds one, or changes the one there and returns its old name under `replaced`. MuseScore reads the name as when typed (`Bb7`, `F#m7b5`, `C/E`). On a beat that no note or rest starts on (inside a half note, say), a chord symbol already there can be changed, but a plugin can't add a new one: that is refused, with the beats that have one, and the user can add it in MuseScore by hand
 - `move_chord_symbol(measure, to_measure, beat, to_beat, staff)` - Move a chord symbol, keeping its name (MuseScore can only delete and add it again, so a moved chord symbol loses any position or font set on it by hand). Chord symbols imported from MusicXML have no readable name until the score is saved, closed and opened again (saving alone is not enough; `get_score` says so); those are refused, so ask the user for the name and use `set_chord_symbol` instead. A target beat that already has a chord symbol, or that no note or rest starts on, is refused too
 - Remove chord symbols with `remove_annotations(kinds=["chord_symbols"])`; `contains="G7", exact=True` removes only the G7s
+
+## Layout
+- `add_break(measure, kind)` - End a system (`line`, the default), page or section after a bar, as from the Breaks & spacers palette. A break of that kind the bar already has is refused. `get_score` lists breaks under `[Markings]`
+- `set_measures_per_system(per_system, start_measure, end_measure, method)` - The same number of bars on every system over a range (the whole score by default). `method="locks"` (default) works as Format → Measures per system: system locks, which keep each system's bars when bars before them change. `method="breaks"` puts a system break after every N bars instead (none after the last bar of the score). Either way the range's system breaks and locks are removed first, so the result is exactly N bars a system; `per_system=0` only removes them, back to MuseScore's own layout. Page and section breaks stay. The reply's `systems` gives each system's first and last bar as laid out afterwards
+- Remove breaks with `remove_annotations(kinds=["breaks"])`
 
 ## Score Style
 - `get_style(keys)` - Read style settings (Format → Style) by MuseScore's internal key, e.g. `createMultiMeasureRests`; keys MuseScore doesn't have are listed under `unknown`
