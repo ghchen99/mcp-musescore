@@ -92,6 +92,7 @@ MuseScore {
             case "setStyle":                return setStyle(command.params);
             case "getStyle":                return getStyle(command.params);
             case "renderScore":             return renderScore(command.params);
+            case "barNumbers":              return barNumbers();
             case "addRehearsalMark":        return addRehearsalMark(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
@@ -2785,6 +2786,15 @@ MuseScore {
             if (!m.irregular) count++;
         }
         return numbers;
+    }
+
+    // The printed numbers and which measures are left out of the count, by position: the server
+    // turns the bar numbers users give into positions with them.
+    function barNumbers() {
+        if (!curScore) return { error: "No score open" };
+        var excluded = [];
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) excluded.push(!!m.irregular);
+        return { success: true, numbers: displayedNumbers(), excluded: excluded };
     }
 
     // Set "Add to measure number" and/or "Exclude from measure count" on one measure.

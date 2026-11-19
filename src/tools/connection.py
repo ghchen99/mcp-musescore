@@ -4,6 +4,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastmcp import FastMCP
 
+from ..bars import BAR_HELP, Bar, bar_numbers
 from ..client import MuseScoreClient
 
 GET_SCORE_WINDOW = 16
@@ -53,21 +54,23 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
     @mcp.tool(
         description=(
-            "Get the notes of the current score as LilyPond (or raw JSON), a range of measures at a time. "
-            f"Without end_measure, returns at most {GET_SCORE_WINDOW} measures starting at start_measure; "
-            "the header says how many measures the score has, so page through long scores. "
-            "Use staves to read only some staves of a large score. Each bar ends with '% m.N': N is the bar's "
-            "position, which is what every tool's measure parameters mean. When the score's displayed bar numbers "
-            "differ (e.g. they count repeats), the displayed number follows as '(bar M)'; repeat barlines show as "
-            "'|:' and ':|xN'."
+            "Get the notes of the current score as LilyPond (or raw JSON), a range of bars at a time. "
+            f"Without end_measure, returns at most {GET_SCORE_WINDOW} bars starting at start_measure; "
+            "the header says which bars the score has, so page through long scores. "
+            "Use staves to read only some staves of a large score. Each bar ends with '% bar N', N being the "
+            "number printed in the score, as users and every tool's bar parameters name bars (a pickup bar is "
+            "0, a number printed twice is 12a/12b); repeat barlines show as '|:' and ':|xN'."
         ),
         tags={"connection", "score"},
     )
     async def get_score(
-        start_measure: Annotated[int, "First measure to read (1-based)"] = 1,
+        start_measure: Annotated[
+            Optional[Bar],
+            f"First bar to read, {BAR_HELP}. Defaults to the first bar.",
+        ] = None,
         end_measure: Annotated[
-            Optional[int],
-            f"Last measure to read (1-based, inclusive). Defaults to start_measure + {GET_SCORE_WINDOW - 1}.",
+            Optional[Bar],
+            f"Last bar to read, inclusive. Defaults to {GET_SCORE_WINDOW} bars from start_measure.",
         ] = None,
         staves: Annotated[
             Optional[List[int]],
@@ -78,12 +81,13 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             '"lilypond" for compact notation text, "json" for the raw analysis',
         ] = "lilypond",
     ):
+        bars = await bar_numbers(client)
+        first = 1 if start_measure is None else bars.position(start_measure)
         if end_measure is None:
-            end_measure = start_measure + GET_SCORE_WINDOW - 1
-        params: Dict[str, Any] = {
-            "startMeasure": start_measure,
-            "endMeasure": end_measure,
-        }
+            last = min(first + GET_SCORE_WINDOW - 1, len(bars.labels))
+        else:
+            last = bars.position(end_measure)
+        params: Dict[str, Any] = {"startMeasure": first, "endMeasure": last}
         if staves:
             params["staves"] = staves
 
@@ -97,6 +101,8 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             return res
 
         analysis = result["analysis"]
+        for m in analysis.get("measures", []):
+            m["label"] = bars.label(m["measure"])
         if format == "json":
             return analysis
 
@@ -104,15 +110,15 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
         lily_str = score_to_lilypond(analysis)
 
-        total = analysis.get("numMeasures")
+        total = len(bars.labels)
         shown = [m.get("measure") for m in analysis.get("measures", [])]
         meta = []
         if analysis.get("title"):
             meta.append(f"Title: {analysis['title']}")
-        if total is not None:
-            meta.append(f"Total measures: {total}")
+        if total:
+            meta.append(f"Bars: {bars.describe()}")
         if shown:
-            meta.append(f"Measures shown: {shown[0]}-{shown[-1]}")
+            meta.append(f"Bars shown: {bars.describe(shown[0], shown[-1])}")
         num_staves = len(analysis.get("staves", []))
         if num_staves > 0:
             meta.append(f"Staves: {num_staves}")
@@ -122,17 +128,20 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         markings = []
         for m in analysis.get("measures", []):
             markings += [
-                f"m.{m['measure']}: {el['name']} {el.get('text', '')}".rstrip()
+                f"bar {m['label']}: {el['name']} {el.get('text', '')}".rstrip()
                 for el in m.get("measureElements", [])
             ]
             markings += [
-                f"m.{m['measure']} beat {(mk['startTick'] - m['startTick']) / 480 + 1:g}, "
+                f"bar {m['label']} beat {(mk['startTick'] - m['startTick']) / 480 + 1:g}, "
                 f"staff {mk['staff']}: {mk['name']} {marking_text(mk)}".rstrip()
                 + (" (highlighted)" if mk.get("highlighted") else "")
                 for mk in m.get("markings", [])
             ]
         if markings:
             text += "\n[Markings]\n" + "\n".join(markings)
-        if shown and total is not None and shown[-1] < total:
-            text += f"\n[More measures: call get_score(start_measure={shown[-1] + 1}) to continue]"
+        if shown and shown[-1] < total:
+            following = bars.label(shown[-1] + 1)
+            if not following.lstrip("-").isdigit():
+                following = f'"{following}"'
+            text += f"\n[More bars: call get_score(start_measure={following}) to continue]"
         return text

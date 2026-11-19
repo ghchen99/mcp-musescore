@@ -169,8 +169,10 @@ def test_append_measure_and_get_score():
 
 def test_plugin_errors_surface_in_result():
     async def scenario(c, mock):
-        result = await c.call_tool("go_to_measure", {"measure": 99})
-        assert "Invalid measure number" in str(result)
+        result = await c.call_tool(
+            "go_to_measure", {"measure": 99}, raise_on_error=False
+        )
+        assert result.is_error and "There is no bar 99" in str(result)
 
     run_with_mock(scenario)
 
@@ -178,18 +180,19 @@ def test_plugin_errors_surface_in_result():
 def test_get_score_returns_lilypond_in_windows():
     async def scenario(c, mock):
         first = (await c.call_tool("get_score", {})).content[0].text
-        assert "Measures shown: 1-16" in first and "Total measures: 20" in first
-        assert "% m.1" in first and "% m.16" in first and "% m.17" not in first
+        assert "Bars shown: 1-16" in first and "Bars: 1-20" in first
+        assert "% bar 1\n" in first and "% bar 16" in first
+        assert "% bar 17" not in first
         assert "get_score(start_measure=17)" in first
         rest = (
             (await c.call_tool("get_score", {"start_measure": 17}))
             .content[0]
             .text
         )
-        assert "Measures shown: 17-20" in rest and "More measures" not in rest
+        assert "Bars shown: 17-20" in rest and "More bars" not in rest
         assert mock.commands[-1]["params"] == {
             "startMeasure": 17,
-            "endMeasure": 32,
+            "endMeasure": 20,
         }
 
     run_with_mock(scenario, patterned_score("ABCD" * 5))
@@ -228,8 +231,8 @@ def test_get_score_lists_markers_jumps_and_breaks():
     async def scenario(c, mock):
         text = (await c.call_tool("get_score", {})).content[0].text
         assert (
-            "[Markings]\nm.2: Marker Coda\nm.4: Jump D.S. al Coda\n"
-            "m.4: LayoutBreak line"
+            "[Markings]\nbar 2: Marker Coda\nbar 4: Jump D.S. al Coda\n"
+            "bar 4: LayoutBreak line"
         ) in text
 
     run_with_mock(scenario, score)
@@ -244,9 +247,9 @@ def test_get_score_says_when_a_chord_name_is_not_readable():
 
     async def scenario(c, mock):
         text = (await c.call_tool("get_score", {})).content[0].text
-        assert "m.1 beat 1, staff 0: Harmony Cm7\n" in text
+        assert "bar 1 beat 1, staff 0: Harmony Cm7\n" in text
         assert (
-            "m.2 beat 1, staff 0: Harmony (name not readable: save and "
+            "bar 2 beat 1, staff 0: Harmony (name not readable: save and "
             "reopen the score)"
         ) in text
 
@@ -337,7 +340,7 @@ def test_navigation_returns_lilypond_for_the_selection():
         text = (
             (await c.call_tool("go_to_measure", {"measure": 1})).content[0].text
         )
-        assert "[Score]" in text and "Measure: 1, Beat: 1" in text
+        assert "[Score]" in text and "Bar: 1, Beat: 1" in text
         assert "c'4" in text and "c2 g2" in text
 
     run_with_mock(scenario, demo_score())
@@ -352,7 +355,7 @@ def test_get_score_shows_ties():
 
     async def scenario(c, mock):
         text = (await c.call_tool("get_score", {})).content[0].text
-        assert "c'4 c'4 c'4 c'4~ | % m.1" in text
+        assert "c'4 c'4 c'4 c'4~ | % bar 1" in text
         analysis = (await c.call_tool("get_score", {"format": "json"})).data
         bar_1, bar_2 = (m["elements"]["staff0"] for m in analysis["measures"])
         assert bar_1[3]["isTie"] and bar_1[3]["notes"][0]["tieForward"]
@@ -733,7 +736,7 @@ def test_invalid_range_is_a_tool_error():
             "color_range", {"start_measure": 9}, raise_on_error=False
         )
         assert result.is_error
-        assert "Invalid measure range" in result.content[0].text
+        assert "There is no bar 9" in result.content[0].text
 
     run_with_mock(scenario)
 
@@ -773,7 +776,7 @@ def test_find_repeated_measures_reads_in_chunks_and_highlights():
             passage["start"],
             passage["end"],
             passage["duplicate_measures"],
-        ) == (3, 10, [11, 18])
+        ) == ("3", "10", ["11", "18"])
         assert passage["apply"] == [
             "delete_measures(11, 18)",
             "set_repeat_barlines(3, 10, play_count=2)",
@@ -784,7 +787,7 @@ def test_find_repeated_measures_reads_in_chunks_and_highlights():
             min(colored_ticks) == 10 * 1920 and max(colored_ticks) < 18 * 1920
         )
         assert result["highlight_legend"][-1]["meaning"].startswith(
-            "duplicate of measures 3-10"
+            "duplicate of bars 3-10"
         )
 
     run_with_mock(scenario, patterned_score(pattern, pattern))
@@ -866,7 +869,7 @@ def test_apply_measure_repeats_edits_file_and_reloads(tmp_path, monkeypatch):
                 },
             )
         ).data
-        assert [g["start"] for g in result["applied"]] == [2, 3]
+        assert [g["start"] for g in result["applied"]] == ["2", "3"]
         assert result["reopened"] is True
         actions = [cmd["action"] for cmd in mock.commands]
         assert (
@@ -932,8 +935,8 @@ def test_apply_measure_repeats_finds_the_open_file(tmp_path, monkeypatch):
         ).data
         assert result["file"] == str(path)
         assert [(g["start"], g["bars"]) for g in result["applied"]] == [
-            (3, 2),
-            (5, 2),
+            ("3", 2),
+            ("5", 2),
         ]
         assert bass_staff_repeat(path, 3) == "2"
 
@@ -978,7 +981,7 @@ def test_find_groove_sections_defaults_to_drums():
         )
         assert staff["apply_exact_copies"] == {
             "staff": 0,
-            "groups": [{"start": 2, "end": 4, "bars": 1}],
+            "groups": [{"start": "2", "end": "4", "bars": 1}],
         }
         assert staff["sections"][0]["runs"][0]["play_count"] == 4
 
@@ -1015,7 +1018,7 @@ def test_collapse_to_repeat_refuses_when_other_staves_differ():
         )
         assert (
             result.is_error
-            and "Part 2 (staff 1): bars [2, 3, 4]" in result.content[0].text
+            and "Part 2 (staff 1): bars 2, 3, 4" in result.content[0].text
         )
         assert mock.score.num_measures == 4
         forced = (
@@ -1023,7 +1026,7 @@ def test_collapse_to_repeat_refuses_when_other_staves_differ():
                 "collapse_to_repeat", {"start": 1, "end": 4, "force": True}
             )
         ).data
-        assert forced["differences_dropped"][0]["bars"] == [2, 3, 4]
+        assert forced["differences_dropped"][0]["bars"] == ["2", "3", "4"]
         assert mock.score.num_measures == 1
 
     run_with_mock(scenario, drum_score("AAAA", "CDEF"))
@@ -1299,7 +1302,7 @@ def test_beats_outside_the_bar_are_errors():
             {"start_measure": 1, "start_beat": 5},
             raise_on_error=False,
         )
-        assert result.is_error and "outside measure 1" in result.content[0].text
+        assert result.is_error and "outside bar 1" in result.content[0].text
         result = await c.call_tool(
             "color_range",
             {"start_measure": 1, "start_beat": 3, "end_beat": 2},
@@ -1379,7 +1382,7 @@ def test_dynamics_are_listed_highlighted_and_cleared():
     async def scenario(c, mock):
         text = (await c.call_tool("get_score", {})).content[0].text
         assert (
-            "[Markings]\nm.1 beat 1, staff 0: Dynamic f\nm.2 beat 1, staff 0: Dynamic mf"
+            "[Markings]\nbar 1 beat 1, staff 0: Dynamic f\nbar 2 beat 1, staff 0: Dynamic mf"
             in text
         )
 
@@ -1454,7 +1457,7 @@ def test_bars_are_numbered_as_played():
         result = (await c.call_tool("number_bars_as_played", {})).data
         assert [
             (o["measure"], o["addToNumber"]) for o in result["offsets"]
-        ] == [(3, 2), (6, 2)]
+        ] == [("5", 2), ("10", 2)]  # bars as printed after the renumbering
         assert mock.score.displayed_numbers() == [1, 2, 5, 6, 7, 10]
         assert result["lastMeasureNumber"] == 10
 
@@ -1471,16 +1474,16 @@ def test_bars_are_numbered_as_played():
         text = (
             (
                 await c.call_tool(
-                    "get_score", {"start_measure": 1, "end_measure": 6}
+                    "get_score", {"start_measure": 0, "end_measure": 9}
                 )
             )
             .content[0]
             .text
         )
-        assert "% m.2 (bar 1) |: :|x3" in text and "% m.3 (bar 4)" in text
+        assert "% bar 1 |: :|x3" in text and "% bar 4" in text
 
         await c.call_tool(
-            "set_measure_number", {"measure": 3, "add_to_number": 0}
+            "set_measure_number", {"measure": 4, "add_to_number": 0}
         )
         assert mock.score.displayed_numbers()[2] == 2
         bad = await c.call_tool(
@@ -1698,7 +1701,7 @@ def test_collapse_to_repeat_refuses_phrases_that_differ():
             {"start": 1, "end": 4, "phrase_bars": 2},
             raise_on_error=False,
         )
-        assert result.is_error and "bars [4]" in result.content[0].text
+        assert result.is_error and "bar 4." in result.content[0].text
         bad = await c.call_tool(
             "collapse_to_repeat",
             {"start": 1, "end": 5, "phrase_bars": 2},
@@ -1722,8 +1725,8 @@ def test_articulations_and_ghost_notes():
     async def scenario(c, mock):
         listed = (await c.call_tool("ghost_notes", {})).data
         assert listed["ghostNotes"] == 2 and listed["bars"] == [
-            {"measure": 1, "ghostNotes": 1},
-            {"measure": 2, "ghostNotes": 1},
+            {"measure": "1", "ghostNotes": 1},
+            {"measure": "2", "ghostNotes": 1},
         ]
         removed = (await c.call_tool("ghost_notes", {"mode": "remove"})).data
         assert (
@@ -1940,16 +1943,16 @@ def test_section_counts_from_the_song_structure():
             intro["lead_in_bars"],
             intro["count"],
             intro["not_counted"],
-        ) == (6, 2, "2+4", [1])
+        ) == (6, 2, "2+4", ["0"])
         assert (verse["bars_played"], verse["count"]) == (7, "4+3") and outline[
             "total_bars_played"
         ] == 13
         assert outline["suggested_rows"][0]["count"] == "2+4"
 
         result = (await c.call_tool("label_section_counts", {})).data
-        assert result["counts"] == [
-            {"measure": 1, "text": "2+4"},
-            {"measure": 8, "text": "4+3"},
+        assert result["counts"] == [  # bar 0 is the count-in
+            {"measure": "0", "text": "2+4"},
+            {"measure": "7", "text": "4+3"},
         ]
         assert [
             c["params"]["mode"]
@@ -1980,7 +1983,7 @@ def test_section_counts_from_the_song_structure():
         ] == ["Intro", "Verse"]
         await c.call_tool(
             "label_section_counts",
-            {"counts": [{"measure": 8, "text": "(2x4)"}]},
+            {"counts": [{"measure": 7, "text": "(2x4)"}]},
         )
         assert [mk["text"] for mk in mock.score.markings] == [
             "Intro (2+4)",
@@ -1997,7 +2000,7 @@ def test_section_counts_from_the_song_structure():
         # beside the label instead: the count in the label goes
         await c.call_tool(
             "label_section_counts",
-            {"counts": [{"measure": 8, "text": "2x4"}], "placement": "beside"},
+            {"counts": [{"measure": 7, "text": "2x4"}], "placement": "beside"},
         )
         assert mock.score.markings[1]["text"] == "Verse"
         assert [

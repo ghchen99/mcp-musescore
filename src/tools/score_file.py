@@ -26,6 +26,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
+from ..bars import BAR_HELP, Bar, BarNumbers, bar_numbers
 from ..client import MuseScoreClient
 from ..mscz import ScoreFile, ScoreFileError
 from ..mscz import apply_measure_repeats as write_measure_repeats
@@ -240,12 +241,12 @@ async def reopen_in_place(
 
 
 class RepeatGroup(BaseModel):
-    start: int = Field(
-        description="First measure to turn into repeat signs (1-based)"
+    start: Bar = Field(
+        description=f"First bar to turn into repeat signs, {BAR_HELP}"
     )
-    end: Optional[int] = Field(
+    end: Optional[Bar] = Field(
         None,
-        description="Last measure (1-based, inclusive). Defaults to start + bars - 1.",
+        description="Last bar, inclusive. Defaults to one sign's worth of bars from start.",
     )
     bars: Literal[1, 2, 4] = Field(
         1,
@@ -253,28 +254,89 @@ class RepeatGroup(BaseModel):
     )
 
 
-def split_groups(groups: List[RepeatGroup]) -> List[tuple]:
+def split_groups(groups: List[RepeatGroup], bars: BarNumbers) -> List[tuple]:
     """Split the requested runs of bars into single measure-repeat signs.
 
     Args:
-        groups (List[RepeatGroup]): The requested runs.
+        groups (List[RepeatGroup]): The requested runs, bars as printed.
+        bars (BarNumbers): The score's printed bar numbers.
 
     Returns:
-        pairs (List[tuple]): The (first measure, size) of every sign.
+        pairs (List[tuple]): The (first measure's position, size) of every sign.
 
     Raises:
-        ToolError: If a run cannot be split into signs of its size.
+        ToolError: If a bar is not printed so, or a run cannot be split into
+            signs of its size.
     """
     pairs = []
     for g in groups:
-        end = g.end if g.end is not None else g.start + g.bars - 1
-        length = end - g.start + 1
+        first = bars.position(g.start)
+        last = bars.position(g.end) if g.end is not None else first + g.bars - 1
+        length = last - first + 1
         if length < 1 or length % g.bars:
             raise ToolError(
-                f"Measures {g.start}-{end} cannot be split into {g.bars}-bar repeat signs"
+                f"Bars {g.start if g.end is None else f'{g.start}-{g.end}'} cannot be split into "
+                f"{g.bars}-bar repeat signs"
             )
-        pairs += [(start, g.bars) for start in range(g.start, end + 1, g.bars)]
+        pairs += [(start, g.bars) for start in range(first, last + 1, g.bars)]
     return pairs
+
+
+BARS_IN_TEXT = re.compile(r"\b([Bb])ar(s?) (\d+)(?:-(\d+))?\b")
+"""A bar (or range) named by position in a file edit's report."""
+
+
+def printed_report(report: Dict, bars: BarNumbers) -> Dict:
+    """Rename the measures in a file edit's report as printed.
+
+    Args:
+        report (Dict): The report of apply_measure_repeats or simplify_roll in
+            src.mscz, measures by position.
+        bars (BarNumbers): The score's printed bar numbers.
+
+    Returns:
+        report (Dict): The same report, bars as printed.
+    """
+
+    def text(value: str) -> str:
+        def bar(match: re.Match) -> str:
+            first = int(match.group(3))
+            last = int(match.group(4) or first)
+            if not 1 <= first <= last <= len(bars.labels):
+                return match.group(0)
+            return (
+                f"{match.group(1)}ar{match.group(2)} {bars.span(first, last)}"
+            )
+
+        return bars.relabel_text(BARS_IN_TEXT.sub(bar, value))
+
+    out = dict(report)
+    for key in ("applied", "unchanged", "skipped"):
+        if key in out:
+            out[key] = [
+                {
+                    **entry,
+                    "start": bars.label(entry["start"]),
+                    "end": bars.label(entry["end"])
+                    if 1 <= entry["end"] <= len(bars.labels)
+                    else entry["end"],
+                    **(
+                        {"reason": text(entry["reason"])}
+                        if "reason" in entry
+                        else {}
+                    ),
+                }
+                if 1 <= entry["start"] <= len(bars.labels)
+                else entry
+                for entry in out[key]
+            ]
+    for key in ("kept_layout_breaks", "measures"):
+        if key in out:
+            out[key] = [bars.label(m) for m in out[key]]
+    for key in ("dropped", "start_moved_back"):
+        if key in out:
+            out[key] = bars.relabel(out[key])
+    return out
 
 
 def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
@@ -300,6 +362,7 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     async def edit_file(
         score_path: Optional[str],
         edit: Callable[[ScoreFile], Tuple[bool, Dict]],
+        bars: Optional[BarNumbers] = None,
     ) -> Dict:
         """Apply an edit to the open score's file, then back up and reload.
 
@@ -311,6 +374,8 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 to the open score's own file.
             edit (Callable[[ScoreFile], Tuple[bool, Dict]]): The edit; it
                 returns whether it changed the score, and its report.
+            bars (Optional[BarNumbers]): The score's printed bar numbers, to
+                name the measures in the edit's errors as printed.
 
         Returns:
             result (Dict): The edit's report, with "file", and if changed
@@ -328,7 +393,7 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         except ScoreFileError as e:
             if path in PART_SOURCES:
                 await reopen(path)
-            raise ToolError(str(e))
+            raise ToolError(bars.relabel_text(str(e)) if bars else str(e))
         result = {"file": str(path), **report}
         if not changed:
             if path in PART_SOURCES:
@@ -358,14 +423,15 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         staff: Annotated[int, "Staff index (0-based)"],
         groups: Annotated[
             List[RepeatGroup],
-            'Runs of bars to replace, e.g. [{"start": 7, "end": 12, "bars": 1}]',
+            f'Runs of bars to replace, {BAR_HELP}, e.g. [{{"start": 7, "end": 12, "bars": 1}}]',
         ],
         score_path: Annotated[
             Optional[str],
             "Path of the score file. Defaults to the file of the score open in MuseScore.",
         ] = None,
     ):
-        pairs = split_groups(groups)
+        bars = await bar_numbers(client)
+        pairs = split_groups(groups, bars)
 
         def edit(score: ScoreFile):
             """Write the measure-repeat signs into the score.
@@ -378,9 +444,9 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                     the report.
             """
             report = write_measure_repeats(score, staff, pairs)
-            return bool(report["applied"]), report
+            return bool(report["applied"]), printed_report(report, bars)
 
-        return await edit_file(score_path, edit)
+        return await edit_file(score_path, edit, bars)
 
     @mcp.tool(
         description=(
@@ -396,8 +462,8 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     )
     async def simplify_roll(
         staff: Annotated[int, "Staff index (0-based)"],
-        start_measure: Annotated[int, "Bar the roll starts in"],
-        end_measure: Annotated[int, "Bar the roll ends in"],
+        start_measure: Annotated[Bar, f"Bar the roll starts in, {BAR_HELP}"],
+        end_measure: Annotated[Bar, "Bar the roll ends in"],
         end_beat: Annotated[
             Optional[float],
             "Last beat of the roll in end_measure, inclusive (a beat is the time signature's denominator, e.g. an "
@@ -421,6 +487,8 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         ] = None,
     ):
         roll_pitches = pitches or drum_pitches(drums)
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure)
 
         def edit(score: ScoreFile):
             """Rewrite the roll in the score.
@@ -439,16 +507,16 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             signatures = measure_lengths(
                 score.staves()[staff], score.staves()[0]
             )
-            if not 1 <= start_measure <= end_measure <= len(signatures):
+            if not 1 <= first <= last <= len(signatures):
                 raise ToolError(
-                    f"Invalid measure range {start_measure}-{end_measure}"
+                    f"Bars {start_measure}-{end_measure} are not in staff {staff}"
                 )
 
             def beat_ticks(measure: int):
                 """Return the length of a beat in a measure, in ticks.
 
                 Args:
-                    measure (int): The measure, 1-based.
+                    measure (int): The measure's position, 1-based.
 
                 Returns:
                     ticks (float): The ticks of one beat (the time signature's
@@ -457,23 +525,24 @@ def setup_score_file_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 return 1920 / int(signatures[measure - 1].split("/")[1])
 
             end_ticks = (
-                round(end_beat * beat_ticks(end_measure))
+                round(end_beat * beat_ticks(last))
                 if end_beat is not None
                 else None
             )
-            start_ticks = round((start_beat - 1) * beat_ticks(start_measure))
-            return True, write_roll(
+            start_ticks = round((start_beat - 1) * beat_ticks(first))
+            report = write_roll(
                 score,
                 staff,
-                start_measure,
-                end_measure,
+                first,
+                last,
                 end_ticks,
                 roll_pitches,
                 slashes,
                 start_ticks,
             )
+            return True, printed_report(report, bars)
 
-        return await edit_file(score_path, edit)
+        return await edit_file(score_path, edit, bars)
 
     @mcp.tool(
         description=(

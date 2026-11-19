@@ -78,7 +78,7 @@ def test_measures_are_cropped_in_place_with_the_rest_of_their_system_blank():
             "grey",
             "white",
         ]
-        assert "Measures 2-3 (page 1 of 1)" in text_of(result)
+        assert "Bars 2-3 (page 1 of 1)" in text_of(result)
 
     run_with_mock(scenario, two_systems_score())
 
@@ -164,19 +164,24 @@ def test_measures_hidden_in_a_multi_measure_rest_are_refused():
             "render", {"measures": "2-3"}, raise_on_error=False
         )
         assert result.is_error
-        assert "Measure 3 is inside a multi-measure rest" in (
+        assert "Bar 3 is inside a multi-measure rest" in (
             result.content[0].text
         )
 
     run_with_mock(scenario, score)
 
 
-def test_the_caption_gives_printed_bar_numbers_when_they_differ():
+def test_bars_are_named_as_printed():
     score = two_systems_score()
-    score.irregular = {1}  # a pickup bar: bar 2 is printed as bar 1
+    score.irregular = {1}  # a pickup: the bars are printed 0-7
 
     async def scenario(c, mock):
-        result = await c.call_tool("render", {"measures": "3-6"})
-        assert "Measures 3-6 (printed bars 2-5, page 1 of 1)" in text_of(result)
+        result = await c.call_tool("render", {"measures": "1-2"})
+        # Printed bars 1-2 are the second and third measures.
+        assert [
+            colour_at(image_of(result), x, 20, top=8) for x in (20, 40, 60, 80)
+        ] == ["white", "grey", "grey", "white"]
+        assert "Bars 1-2 (page 1 of 1)" in text_of(result)
+        assert "position" not in text_of(result)
 
     run_with_mock(scenario, score)

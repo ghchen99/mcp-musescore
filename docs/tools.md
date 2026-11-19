@@ -2,13 +2,13 @@
 
 [Overview](../README.md) · [Setup](setup.md) · [Tools](tools.md) · [Repeats & drum charts](drum-charts.md) · [Skills](skills.md) · [Development](development.md) · [Troubleshooting](troubleshooting.md)
 
-Measure numbers are 1-based and staff indices 0-based throughout. Ranges are inclusive (`start_measure`..`end_measure`, `first_staff`..`last_staff`). Tools address bars by their position in the score; when the displayed bar numbers differ (for example after `number_bars_as_played`), `get_score` shows both.
+Bars are named as printed in the score, the way the user names them, and staff indices are 0-based throughout. Ranges are inclusive (`start_measure`..`end_measure`, `first_staff`..`last_staff`). A pickup bar is bar 0. A number printed on two bars (a split bar, or a section that counts from 1 again) is `12a` and `12b`; a bare `12` is then refused with a question. A bar that isn't printed (e.g. 10 after `number_bars_as_played` jumps from 8 to 17) is refused with the score's numbering. Tools reply in printed bars too; positions in the score stay inside the server.
 
 Repeats, drum charts and drum notation have [their own page](drum-charts.md).
 
 ## Reading the Score
 - `get_score(start_measure, end_measure, staves, format)` - Read the score as LilyPond (`format="json"` for the raw analysis), 16 measures at a time by default, optionally only some staves. Each staff is reported with its instrument name, and markings such as dynamics and chord symbols are listed per measure, along with the measure's own markers (Segno, Coda, To Coda, Fine), jumps (D.S. al Coda…) and line, page and section breaks. A chord symbol imported from MusicXML shows as `Harmony (name not readable: save and reopen the score)` until the score has been saved and reopened
-- `render(page, measures)` - Show the score as MuseScore engraves it, as an image, to check layout that the text can't show: overlapping chord symbols, marker placement, system breaks, spacing. `page=N` gives a whole page (default page 1), fitted to 1568 px; `measures="5-8"` crops those bars at 25 px per staff space, with everything attached to them (chord symbols, texts, lyrics, markers such as a To Coda past the barline) and a small margin, as they stand on their systems: the systems are cut in one piece per page (what stands between them shows once, and nothing of the systems above and below), and their other bars are left blank. Bars inside a multi-measure rest can't be cropped; render their page instead. Like every tool, `measures` counts bars by position; the caption adds the printed bar numbers when they differ (e.g. after a pickup bar)
+- `render(page, measures)` - Show the score as MuseScore engraves it, as an image, to check layout that the text can't show: overlapping chord symbols, marker placement, system breaks, spacing. `page=N` gives a whole page (default page 1), fitted to 1568 px; `measures="5-8"` crops those bars at 25 px per staff space, with everything attached to them (chord symbols, texts, lyrics, markers such as a To Coda past the barline) and a small margin, as they stand on their systems: the systems are cut in one piece per page (what stands between them shows once, and nothing of the systems above and below), and their other bars are left blank. Bars inside a multi-measure rest can't be cropped; render their page instead. `measures` names bars as printed in the score, and so does the caption
 - `ping_musescore()` - Test connection to MuseScore
 - `connect_to_musescore()` - Establish WebSocket connection
 
@@ -26,7 +26,7 @@ Navigation results come back as LilyPond with measure, beat and staff metadata.
 ## Polyphony & LilyPond Integration
 - **Temporal Rhythm Padding**: Voices with gaps or rests automatically receive LilyPond spacer sequences (`s4.`) to hold their mathematical place accurately.
 - **Concurrent Voice Rendering**: Full 4-voice (`\voiceOne`, `\voiceTwo`, etc.) arrays correctly structured and sharded per staff for advanced Agent processing.
-- **Bar markers**: every measure ends with a bar check and a `% m.N` comment, so bars are easy to compare.
+- **Bar markers**: every bar ends with a bar check and a `% bar N` comment, N as printed in the score, so bars are easy to compare.
 
 ## Note & Rest Creation
 - `add_note(pitch, duration, advance_cursor_after_action, add_to_chord)` - Add notes with MIDI pitch. Sequential notes write a melody; set `add_to_chord=True` to stack a pitch on the current chord.

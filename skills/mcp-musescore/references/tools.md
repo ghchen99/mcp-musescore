@@ -4,14 +4,16 @@ This reference describes the tools currently registered by `server.py` and the J
 
 The server currently registers 65 public tools.
 
+Bars are named as printed in the score, the way the user names them: pass the number the user says, as an int or a string. A pickup bar is bar 0. A number printed on two bars (a split bar, or a section that counts from 1 again) is `"12a"` and `"12b"`; a bare `12` is then refused with a question to ask the user. A bar that isn't printed (e.g. 10 after `number_bars_as_played` jumps from 8 to 17) is refused with the score's numbering. Replies, errors and suggested tool calls use printed bars too. The `int` measure parameters below take such a bar.
+
 ## Connection and score inspection
 
 | MCP tool | Parameters | What it does |
 |---|---|---|
 | `connect_to_musescore` | none | Opens the WebSocket client connection to `ws://localhost:8765`. Returns `{success: bool}`. |
 | `ping_musescore` | none | Sends the `ping` action. A healthy plugin returns `pong`. |
-| `get_score` | `start_measure: int = 1`, `end_measure: int \| None = None`, `staves: list[int] \| None = None`, `format: "lilypond" \| "json" = "lilypond"` | Reads a window of the score (16 measures by default) as LilyPond with a `% m.N` comment at every barline, or as the raw JSON analysis. The header gives the total number of measures; page through long scores with `start_measure`, and read only some staves of large scores with `staves`. |
-| `render` | `page: int \| None = None`, `measures: str \| None = None` (e.g. `"5-8"`) | The score as MuseScore engraves it, as a PNG image: what `get_score` cannot show, such as overlapping chord symbols, marker placement, breaks and spacing. `page` gives a whole page; `measures` crops those bars from their page at higher detail, with everything attached to them, as they stand on their systems (the other bars of those systems are left blank). Bars inside a multi-measure rest are refused. Render again after a change to check it. |
+| `get_score` | `start_measure` (default: the first bar), `end_measure: int \| None = None`, `staves: list[int] \| None = None`, `format: "lilypond" \| "json" = "lilypond"` | Reads a window of the score (16 bars by default) as LilyPond with a `% bar N` comment (the bar as printed) at every barline, or as the raw JSON analysis. The header lists the score's bars, e.g. `Bars: 0-64`; page through long scores with `start_measure`, and read only some staves of large scores with `staves`. |
+| `render` | `page: int \| None = None`, `measures: str \| None = None` (e.g. `"49-62"`, as printed) | The score as MuseScore engraves it, as a PNG image: what `get_score` cannot show, such as overlapping chord symbols, marker placement, breaks and spacing. `page` gives a whole page; `measures` crops those bars from their page at higher detail, with everything attached to them, as they stand on their systems (the other bars of those systems are left blank). Bars inside a multi-measure rest are refused. Render again after a change to check it. |
 
 `get_score` lists each measure's markers (Segno, Coda, Fine), jumps (D.S. al Coda) and line, page and section breaks under `[Markings]`, with the dynamics and other markings.
 
@@ -22,7 +24,7 @@ Call `ping_musescore` before a mutation. Call `get_score` before and after a com
 | MCP tool | Parameters | What it does |
 |---|---|---|
 | `get_cursor_info` | none | Reads the current cursor/selection state and the related score context. |
-| `go_to_measure` | `measure: int` | Moves the cursor to a zero-based measure index in the plugin's cursor implementation. Verify the result because the UI displays human-facing measure numbers. |
+| `go_to_measure` | `measure: int` | Moves the cursor to the start of a bar, as printed. |
 | `go_to_final_measure` | none | Moves to the final measure. |
 | `go_to_beginning_of_score` | none | Resets the plugin cursor/selection to the beginning of the score. |
 | `next_element` | none | Moves the cursor to the next score element. |
@@ -66,7 +68,7 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 
 ## Repeat structure and coloring
 
-Measure ranges are 1-based and inclusive. Staff ranges in these tools are 0-based and inclusive (`first_staff`, `last_staff`).
+Bar ranges are as printed and inclusive. Staff ranges in these tools are 0-based and inclusive (`first_staff`, `last_staff`).
 
 | MCP tool | Parameters | What it does |
 |---|---|---|
@@ -114,7 +116,7 @@ To compress a score: call `find_repeated_measures`, then run each passage's `app
 | `number_bars_as_played` | `exclude_from_count: list[int] \| None = None`, `reset: bool = false` (plain 1..N numbering) | Sets every bar's "Add to measure number" so displayed numbers count repeats as played (after a passage between repeat barlines played N times, the next bar jumps by (N-1) x its length). Recomputes all bars, so it is safe to re-run. Voltas are not taken into account. MuseScore 4.6+. |
 | `set_measure_number` | `measure: int`, `add_to_number: int \| None`, `exclude_from_count: bool \| None` | One bar's "Add to measure number" / "Exclude from measure count". |
 
-Bar positions vs. displayed numbers: every tool's measure parameters are positions in the score (`% m.N` in `get_score`). When displayed numbers differ, `get_score` adds `(bar M)`, and shows repeat barlines as `|:` and `:|xN`. Convert displayed numbers the user mentions to positions before calling tools.
+Printed bar numbers: `number_bars_as_played` and `set_measure_number` change the numbers printed in the score, and so the names the tools take afterwards. `get_score` shows repeat barlines as `|:` and `:|xN`.
 
 File edits (`apply_measure_repeats`, `restore_backup`, `set_score_header`, `set_end_notes`, `set_song_structure`, `simplify_roll`) save the open score and only touch a file that carries its score ID (`mcpScoreId` meta tag) and has its number of staves and bars; otherwise they refuse and change nothing. Leave `score_path` out unless the user gives it. MuseScore 4 opens other scores in a new window out of the plugin's reach, so tools that switch scores close the current one first.
 
@@ -144,7 +146,7 @@ setMeasureNumbering, numberAsPlayed, addText, removeAnnotations, addArticulation
 removeArticulations, ghostNotes
 ```
 
-The range actions take `startMeasure`/`endMeasure` (1-based, inclusive) and `startStaff`/`endStaff` (0-based, `endStaff` exclusive).
+The range actions take `measure` and `startMeasure`/`endMeasure` as printed in the score before the sequence (inclusive) and `startStaff`/`endStaff` (0-based, `endStaff` exclusive).
 
 Each action uses a `params` object. Examples:
 
