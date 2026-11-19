@@ -14,10 +14,10 @@ def test_musescore_bin_none_means_no_musescore(monkeypatch, tmp_path):
         "MUSESCORE_BIN", raising=False
     )  # also when pytest runs with --no-musescore
     monkeypatch.setenv("PATH", str(tmp_path))
+    found = find_musescore()  # found on the PATH
     # normcase: Windows may give the extension in capitals (.EXE)
-    assert os.path.normcase(find_musescore()) == os.path.normcase(
-        str(musescore)
-    )  # found on the PATH
+    assert found is not None
+    assert os.path.normcase(found) == os.path.normcase(str(musescore))
     monkeypatch.setenv("MUSESCORE_BIN", "none")
     assert find_musescore() is None
 
