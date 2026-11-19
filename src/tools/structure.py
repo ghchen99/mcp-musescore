@@ -547,7 +547,7 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     @mcp.tool(
         description=(
             "Add a repeat marker or jump to a bar, as from MuseScore's Repeats & jumps palette: 'segno', 'coda', "
-            "'to_coda', 'fine', or a jump: 'dc', 'dc_al_fine', 'dc_al_coda', 'ds', 'ds_al_fine', 'ds_al_coda'. "
+            "'to_coda' (the words To Coda), 'to_coda_symbol' (To and the coda sign), 'fine', or a jump: 'dc', 'dc_al_fine', 'dc_al_coda', 'ds', 'ds_al_fine', 'ds_al_coda'. "
             "Segno and Coda go on the bar they start; To Coda, Fine and the jumps on the bar they end. A jump's "
             "reply lists under `missing` the markers it needs that the score doesn't have yet (D.S. al Coda needs "
             "a Segno, a To Coda and a Coda): add them too, or ask the user where they go. A marker the bar "
@@ -562,6 +562,7 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 "segno",
                 "coda",
                 "to_coda",
+                "to_coda_symbol",
                 "fine",
                 "dc",
                 "dc_al_fine",

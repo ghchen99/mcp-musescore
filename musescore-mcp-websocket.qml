@@ -203,6 +203,12 @@ MuseScore {
     }
 
     // Length of one beat in ticks: the time signature's denominator (a quarter in 4/4, an eighth in 6/8).
+    // The beat (1-based, to two decimals) a segment starts on in its measure, as findElements gives it.
+    function beatOfSegment(seg) {
+        var m = seg.parent;
+        return Math.round((1 + (seg.tick - measureStartTick(m)) / beatTicks(m)) * 100) / 100;
+    }
+
     function beatTicks(m) {
         var sig = m.timesigActual;
         return sig && sig.denominator ? 1920 / sig.denominator : 480;
@@ -2139,23 +2145,26 @@ MuseScore {
         var kinds = params.kinds && params.kinds.length ? params.kinds : ["texts"];
         var contains = params.contains || "";
         var exact = params.exact === true;
+        // beat: only what is on this beat of each measure; markers, jumps, voltas and breaks have none
+        var beat = params.beat !== undefined && params.beat !== null ? params.beat : null;
         var removed = { texts: 0, labels: 0, rehearsal_marks: 0, tempo: 0, voltas: 0, markers: 0, jumps: 0,
                         chord_symbols: 0, breaks: 0 };
         var targets = [];
 
-        forEachMarking(range, ["StaffText", "Expression", "RehearsalMark", "Tempo", "TempoText", "Harmony"], function(ann) {
+        forEachMarking(range, ["StaffText", "Expression", "RehearsalMark", "Tempo", "TempoText", "Harmony"], function(ann, seg) {
             var kind;
             if (ann.name === "Harmony") kind = "chord_symbols";
             else if (ann.name === "RehearsalMark") kind = "rehearsal_marks";
             else if (ann.name === "Tempo" || ann.name === "TempoText") kind = "tempo";
             else kind = ann.frameType && !isTranslucent(ann.frameBgColor) ? "labels" : "texts";
             if (kinds.indexOf(kind) === -1) return;
+            if (beat !== null && beatOfSegment(seg) !== beat) return;
             var plain = String(ann.text || "").replace(/<[^>]*>/g, "");
             if (contains && (exact ? plain !== contains : plain.indexOf(contains) === -1)) return;
             targets.push(ann);
             removed[kind]++;
         });
-        if (kinds.indexOf("voltas") !== -1) {
+        if (kinds.indexOf("voltas") !== -1 && beat === null) {
             var spanners = curScore.spanners || [];
             for (var i = 0; i < spanners.length; i++) {
                 var sp = spanners[i];
@@ -2167,7 +2176,8 @@ MuseScore {
             }
         }
         // Markers and jumps hang on the measure, not on a staff
-        if (kinds.indexOf("markers") !== -1 || kinds.indexOf("jumps") !== -1 || kinds.indexOf("breaks") !== -1) {
+        if (beat === null && (kinds.indexOf("markers") !== -1 || kinds.indexOf("jumps") !== -1
+                || kinds.indexOf("breaks") !== -1)) {
             for (var m = range.firstMeasure; m; m = m.nextMeasure) {
                 var els = m.elements || [];
                 for (var e = 0; e < els.length; e++) {
@@ -2513,6 +2523,7 @@ MuseScore {
             segno: { marker: MarkerType.SEGNO, name: "Segno" },
             coda: { marker: MarkerType.CODA, name: "Coda" },
             to_coda: { marker: MarkerType.TOCODA, name: "To Coda" },
+            to_coda_symbol: { marker: MarkerType.TOCODASYM, name: "To Coda (symbol)" },
             fine: { marker: MarkerType.FINE, name: "Fine" },
             dc: { text: "D.C.", jumpTo: "start", playUntil: "end", continueAt: "" },
             dc_al_fine: { text: "D.C. al Fine", jumpTo: "start", playUntil: "fine", continueAt: "" },
@@ -2693,7 +2704,8 @@ MuseScore {
             return { error: "The chord symbol on " + where + " has no readable name: it was imported from MusicXML "
                 + "and becomes readable only after the score is saved, closed and opened again (saving alone is not "
                 + "enough). Ask the user for its name, then set it "
-                + "at the new place with set_chord_symbol and remove this one with remove_annotations." };
+                + "at the new place with set_chord_symbol and remove this one with remove_annotations "
+                + "(kinds chord_symbols, this measure and beat " + beat + ")." };
         }
         var to = chordSymbolPlace(params.toMeasure, toBeat, staff);
         if (!to.valid) return to;

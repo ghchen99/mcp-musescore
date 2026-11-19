@@ -280,6 +280,7 @@ class addMarkerParams(TypedDict):
         "segno",
         "coda",
         "to_coda",
+        "to_coda_symbol",
         "fine",
         "dc",
         "dc_al_fine",

@@ -9,6 +9,7 @@ from fastmcp.exceptions import ToolError
 from ..bars import BAR_HELP, Bar, BarNumbers, bar_numbers, send
 from ..client import MuseScoreClient
 from ..types.action_types import ElementKind
+from .connection import marking_text
 
 
 async def bar_range(
@@ -586,7 +587,13 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             contains,
             exact,
         )
-        return await send(client, bars, "findElements", params)
+        result = await send(client, bars, "findElements", params)
+        for element in result.get("elements", []):
+            if element.get("kind") == "chord_symbols" and not element.get(
+                "text"
+            ):
+                element["text"] = marking_text({"name": "Harmony", "text": ""})
+        return result
 
     @mcp.tool(
         description=(
@@ -688,7 +695,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "markings, which also changes playback), 'voltas', 'markers' (Segno, Coda, To Coda, Fine) and 'jumps' "
             "(D.C., D.S. ...), which belong to the bar, not a staff, 'chord_symbols' (e.g. contains='G7', "
             "exact=True removes only G7s) and 'breaks' (system, page and section breaks). `contains` limits it to texts containing that string, "
-            "e.g. '**'. Defaults to the whole score. Highlights and note colors are removed with clear_highlights / "
+            "e.g. '**'; `beat` to one beat of each bar. Defaults to the whole score. Highlights and note colors are removed with clear_highlights / "
             "clear_color instead."
         ),
         tags={"formatting"},
@@ -730,6 +737,11 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             bool,
             'Only remove texts equal to `contains` (e.g. "*" but not "**" or a legend)',
         ] = False,
+        beat: Annotated[
+            Optional[float],
+            "Only remove what is on this beat (1-based; 3.5 is the 'and' of 3) of each bar, e.g. one chord "
+            "symbol whose name can't be read. Markers, jumps, voltas and breaks have no beat and are left alone",
+        ] = None,
     ):
         bars, params = await bar_range(
             client,
@@ -743,6 +755,8 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         if contains:
             params["contains"] = contains
             params["exact"] = exact
+        if beat is not None:
+            params["beat"] = beat
         return await send(client, bars, "removeAnnotations", params)
 
     @mcp.tool(

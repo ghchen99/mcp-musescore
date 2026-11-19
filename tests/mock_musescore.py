@@ -1151,6 +1151,7 @@ class MockMuseScore:
         "segno": "Segno",
         "coda": "Coda",
         "to_coda": "To coda",
+        "to_coda_symbol": "To coda (symbol)",
         "fine": "Fine",
     }
     """add_marker's markers, by MuseScore's name for them."""
@@ -1201,6 +1202,8 @@ class MockMuseScore:
                 for el in els
                 if el["name"] == "Marker"
             }
+            if "To coda (symbol)" in present:
+                present.add("To coda")
             missing = [
                 "To Coda" if n == "To coda" else n
                 for n in needs
@@ -1888,7 +1891,9 @@ class MockMuseScore:
         kinds = params.get("kinds") or ["texts"]
         contains = params.get("contains") or ""
         exact = params.get("exact") is True
+        beat = params.get("beat")
         score = self.score
+        beat_ticks = WHOLE_NOTE_TICKS // score.time_signature[1]
         removed = dict.fromkeys(
             [
                 "texts",
@@ -1910,9 +1915,14 @@ class MockMuseScore:
                 and rng["startTick"] <= tick < rng["endTick"]
             )
 
+        def on_beat(tick):
+            start = tick - tick % score.measure_ticks
+            return beat is None or 1 + (tick - start) / beat_ticks == beat
+
         def keep(kind, staff, tick, text):
             if (
                 kind in kinds
+                and on_beat(tick)
                 and inside(staff, tick)
                 and (
                     text == contains if exact and contains else contains in text
@@ -1944,7 +1954,8 @@ class MockMuseScore:
         score.voltas = [
             v
             for v in score.voltas
-            if keep("voltas", 0, (v["startMeasure"] - 1) * ticks, "")
+            if beat is not None
+            or keep("voltas", 0, (v["startMeasure"] - 1) * ticks, "")
         ]
         score.markings = [
             mk
@@ -1964,7 +1975,7 @@ class MockMuseScore:
             kept = []
             for el in elements:
                 kind = kind_of.get(el["name"])
-                if kind is not None and kind in kinds:
+                if kind is not None and kind in kinds and beat is None:
                     removed[kind] += 1
                 else:
                     kept.append(el)

@@ -1541,6 +1541,23 @@ def test_markers_and_jumps_are_added_and_removed(tmp_path):
     assert markers_and_jumps(results[14]) == [[]] * 8
 
 
+def test_to_coda_is_added_as_a_symbol_and_counts_for_jumps(tmp_path):
+    results = run(
+        [
+            add_marker(1, "segno"),
+            add_marker(2, "to_coda_symbol"),
+            add_marker(3, "coda"),
+            add_marker(4, "ds_al_coda"),
+            {"action": "getScore", "params": {"startMeasure": 1}},
+        ],
+        rest_score(tmp_path, 4),
+    )
+    replies = [r.get("result", r) for r in results]
+    assert replies[1]["added"] == "To coda (symbol)"
+    assert replies[3]["missing"] == []
+    assert markers_and_jumps(results[4])[1] == ["To coda (symbol)"]
+
+
 def beats_score(tmp_path):
     """Write 3 bars of quarter rests in 4/4; bar 2 starts with a half rest."""
     quarter = "<Rest><durationType>quarter</durationType></Rest>"
@@ -1675,6 +1692,29 @@ def test_an_imported_chord_symbol_is_not_moved_but_can_be_set(tmp_path):
     assert results[1]["result"]["replaced"] == "(name not readable)"
     assert results[2]["result"]["replaced"] == "(name not readable)"
     assert chord_symbols(results[3]) == [(1, 0, "Cmaj7"), (2, 480, "F6")]
+
+
+def test_an_imported_chord_symbol_is_removed_by_its_beat(tmp_path):
+    path = tmp_path / "imported.musicxml"
+    path.write_text(IMPORTED_CHORD)
+    results = run(
+        [
+            # Bar 2's chord symbol is on beat 2, inside a half rest, on a segment of its own
+            {
+                "action": "removeAnnotations",
+                "params": {
+                    "startMeasure": 1,
+                    "endMeasure": 2,
+                    "kinds": ["chord_symbols"],
+                    "beat": 2,
+                },
+            },
+            {"action": "getScore", "params": {"startMeasure": 1}},
+        ],
+        path,
+    )
+    assert results[0]["result"]["removed"]["chord_symbols"] == 1
+    assert chord_symbols(results[1]) == [(1, 0, "")]
 
 
 def systems_of(reply):

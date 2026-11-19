@@ -400,6 +400,53 @@ def test_remove_annotations_removes_one_chord_symbol_by_name():
     run_with_mock(scenario, patterned_score("AA"))
 
 
+def test_add_marker_adds_the_to_coda_symbol():
+    async def scenario(c, mock):
+        added = await c.call_tool(
+            "add_marker", {"measure": 2, "marker": "to_coda_symbol"}
+        )
+        assert added.structured_content["added"] == "To coda (symbol)"
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert "bar 2: Marker To coda (symbol)" in text
+
+    run_with_mock(scenario, MockScore(staves=1, measures=2))
+
+
+def test_remove_annotations_removes_the_chord_symbol_on_one_beat():
+    score = patterned_score("AA")
+    # Imported chord symbols: no readable name to pick them by
+    score.markings += [
+        {"staff": 0, "startTick": 0, "name": "Harmony", "text": ""},
+        {"staff": 0, "startTick": 960, "name": "Harmony", "text": ""},
+    ]
+
+    async def scenario(c, mock):
+        removed = await c.call_tool(
+            "remove_annotations",
+            {"kinds": ["chord_symbols"], "start_measure": 1, "beat": 3},
+        )
+        assert removed.structured_content["removed"]["chord_symbols"] == 1
+        assert [m["startTick"] for m in mock.score.markings] == [0]
+
+    run_with_mock(scenario, score)
+
+
+def test_find_elements_says_when_a_chord_name_is_not_readable():
+    score = patterned_score("AA")
+    score.markings.append(
+        {"staff": 0, "startTick": 0, "name": "Harmony", "text": ""}
+    )
+
+    async def scenario(c, mock):
+        found = await c.call_tool("find_elements", {"kinds": ["chord_symbols"]})
+        assert found.structured_content["elements"][0]["text"] == (
+            "(name not readable: save the score, close it and open it again; "
+            "saving alone is not enough)"
+        )
+
+    run_with_mock(scenario, score)
+
+
 def test_add_break_ends_a_system_or_page_and_can_be_removed():
     async def scenario(c, mock):
         line = await c.call_tool("add_break", {"measure": 2})
