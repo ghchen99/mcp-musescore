@@ -129,6 +129,7 @@ When the user wants to change part of the result, remove only what that step add
 | Cues and other `add_text` texts | `remove_annotations(kinds=["texts"], contains=...)` |
 | Boxed labels, rehearsal marks, voltas | `remove_annotations(kinds=["labels"])`, `["rehearsal_marks"]`, `["voltas"]` |
 | Segno, Coda, To Coda, Fine; D.C./D.S. jumps | `remove_annotations(kinds=["markers"])`, `["jumps"]` |
+| Chord symbols | `remove_annotations(kinds=["chord_symbols"])` |
 | Bar numbers as played | `number_bars_as_played(reset=True)` (then exclusions must be set again) |
 | Style changes | `setStyle` back to the defaults: `createMultiMeasureRests false`, `repeatPlayCountFontSize 10`, `repeatPlayCountFontStyle 0`, `rehearsalMarkFontSize 14`, `rehearsalMarkMinDistance 0.5` |
 | Repeat barlines / play count | `set_repeat_barlines(start, end, clear=True)` |

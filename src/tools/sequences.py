@@ -72,7 +72,7 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "selectCurrentMeasure, insertMeasure, goToFinalMeasure, goToBeginningOfScore, "
             "setTimeSignature, addLyrics, addInstrument, setStaffMute, setInstrumentSound, setTempo, "
             "selectMeasures, deleteMeasures, setRepeatBarlines, addVolta, colorRange, setStyle, "
-            "addRehearsalMark, addMarker, removeParts, addHighlight, addLabel, clearHighlights, highlightNotes, "
+            "addRehearsalMark, addMarker, setChordSymbol, moveChordSymbol, removeParts, addHighlight, addLabel, clearHighlights, highlightNotes, "
             "highlightMarkings, highlightSymbols, setMeasureNumbering, numberAsPlayed, addText, removeAnnotations, "
             "addArticulation, removeArticulations, ghostNotes, beamOverRests, addSectionCounts. "
             "Bars (measure, startMeasure/endMeasure, inclusive) are as printed in the score before the sequence "

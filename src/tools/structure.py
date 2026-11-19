@@ -583,6 +583,70 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
     @mcp.tool(
         description=(
+            "Set the chord symbol on a beat: adds one, or changes the one there (the reply's `replaced` gives the old "
+            "name). MuseScore reads the name as when typed, e.g. 'Bb7', 'F#m7b5', 'C/E'. A chord symbol sits on a note "
+            "or rest: on a beat that none starts on (e.g. inside a half note) one already there can be changed, but a new "
+            "one can't be added (a plugin limit): that is refused, with the beats that have one, and the user can add it "
+            "by hand. "
+            "Remove with remove_annotations(kinds=['chord_symbols'])."
+        ),
+        tags={"notation"},
+    )
+    async def set_chord_symbol(
+        measure: Annotated[Bar, f"The bar, {BAR_HELP}"],
+        chord: Annotated[str, "The chord's name, e.g. 'Cm7' or 'G7/B'"],
+        beat: Annotated[
+            float,
+            "Beat (1-based) by the time signature's denominator; 3.5 is the 'and' of beat 3",
+        ] = 1,
+        staff: Annotated[int, "Staff (0-based)"] = 0,
+    ):
+        bars = await bar_numbers(client)
+        return await send(
+            client,
+            bars,
+            "setChordSymbol",
+            {
+                "measure": bars.position(measure),
+                "chord": chord,
+                "beat": beat,
+                "staff": staff,
+            },
+        )
+
+    @mcp.tool(
+        description=(
+            "Move a chord symbol to another beat or bar, keeping its name. Refused when its name isn't readable (a "
+            "chord symbol imported from MusicXML, until the score is saved, closed and opened again; saving alone is "
+            "not enough): ask the user for the name, "
+            "then set_chord_symbol at the new place and remove the old one. A target beat that already has a chord "
+            "symbol, or that no note or rest starts on (a plugin can't add one there), is refused too."
+        ),
+        tags={"notation"},
+    )
+    async def move_chord_symbol(
+        measure: Annotated[Bar, f"The chord symbol's bar, {BAR_HELP}"],
+        to_measure: Annotated[Bar, "The bar to move it to"],
+        beat: Annotated[float, "Its beat (1-based)"] = 1,
+        to_beat: Annotated[float, "The beat to move it to (1-based)"] = 1,
+        staff: Annotated[int, "Staff (0-based)"] = 0,
+    ):
+        bars = await bar_numbers(client)
+        return await send(
+            client,
+            bars,
+            "moveChordSymbol",
+            {
+                "measure": bars.position(measure),
+                "toMeasure": bars.position(to_measure),
+                "beat": beat,
+                "toBeat": to_beat,
+                "staff": staff,
+            },
+        )
+
+    @mcp.tool(
+        description=(
             "Prepare measure-repeat signs: selects the measures that should become repeat signs, on the given staves, "
             "and returns what to click in MuseScore. The plugin API cannot place measure-repeat signs itself."
         ),

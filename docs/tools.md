@@ -7,7 +7,7 @@ Bars are named as printed in the score, the way the user names them, and staff i
 Repeats, drum charts and drum notation have [their own page](drum-charts.md).
 
 ## Reading the Score
-- `get_score(start_measure, end_measure, staves, format)` - Read the score as LilyPond (`format="json"` for the raw analysis), 16 measures at a time by default, optionally only some staves. Each staff is reported with its instrument name, and markings such as dynamics and chord symbols are listed per measure, along with the measure's own markers (Segno, Coda, To Coda, Fine), jumps (D.S. al Coda…) and line, page and section breaks. A chord symbol imported from MusicXML shows as `Harmony (name not readable: save and reopen the score)` until the score has been saved and reopened
+- `get_score(start_measure, end_measure, staves, format)` - Read the score as LilyPond (`format="json"` for the raw analysis), 16 measures at a time by default, optionally only some staves. Each staff is reported with its instrument name, and markings such as dynamics and chord symbols are listed per measure, along with the measure's own markers (Segno, Coda, To Coda, Fine), jumps (D.S. al Coda…) and line, page and section breaks. A chord symbol imported from MusicXML shows as `Harmony (name not readable: save the score, close it and open it again; saving alone is not enough)` until the score has been saved, closed and opened again: MuseScore fills in the name only when it loads the file
 - `render(page, measures)` - Show the score as MuseScore engraves it, as an image, to check layout that the text can't show: overlapping chord symbols, marker placement, system breaks, spacing. `page=N` gives a whole page (default page 1), fitted to 1568 px; `measures="5-8"` crops those bars at 25 px per staff space, with everything attached to them (chord symbols, texts, lyrics, markers such as a To Coda past the barline) and a small margin, as they stand on their systems: the systems are cut in one piece per page (what stands between them shows once, and nothing of the systems above and below), and their other bars are left blank. Bars inside a multi-measure rest can't be cropped; render their page instead. `measures` names bars as printed in the score, and so does the caption
 - `ping_musescore()` - Test connection to MuseScore
 - `connect_to_musescore()` - Establish WebSocket connection
@@ -62,7 +62,7 @@ Navigation results come back as LilyPond with measure, beat and staff metadata.
 - `add_text(measure, text, staff, beat, size, italic, bold, color, placement, kind)` - Free text with its own look; by default a small, italic, light-grey cue above the staff, e.g. the first words of each section as a reminder for the player
 - `color_range(start_measure, end_measure, first_staff, last_staff, color, voices, start_beat, end_beat)` / `clear_color(...)` - Recolor the notes and rests themselves (grace notes such as flams included), or reset them to black
 - `clear_highlights(start_measure, end_measure, first_staff, last_staff, kinds)` - Remove highlight boxes and bands, marking boxes and labels (note colors are reset with `clear_color`)
-- `remove_annotations(start_measure, end_measure, first_staff, last_staff, kinds, contains, exact)` - Remove added texts, labels, rehearsal marks, tempo markings, voltas, markers (Segno, Coda, To Coda, Fine) or jumps (D.C., D.S.…), optionally only those containing (or equal to) a given text, e.g. the `**` marks
+- `remove_annotations(start_measure, end_measure, first_staff, last_staff, kinds, contains, exact)` - Remove added texts, labels, rehearsal marks, tempo markings, voltas, markers (Segno, Coda, To Coda, Fine), jumps (D.C., D.S.…) or chord symbols, optionally only those containing (or equal to) a given text, e.g. the `**` marks
 
 Everything these tools add can be taken off again, so a chart can be refined step by step; the drum-chart skill lists how to undo each step.
 
@@ -78,6 +78,11 @@ Everything these tools add can be taken off again, so a chart can be refined ste
 | The notes' own color | `color_range` |
 
 `start_beat`/`end_beat` limit coloring and highlighting to part of a bar: `start_beat=3, end_beat=4` covers beats 3 and 4, and `3.5` means the "and" of beat 3. A beat follows the time signature's denominator (a quarter in 4/4, an eighth in 6/8). Highlight boxes are sized to the layout at the moment they are drawn; after big layout changes, clear them and highlight again.
+
+## Chord Symbols
+- `set_chord_symbol(measure, chord, beat, staff)` - Set the chord symbol on a beat (default beat 1, staff 0): adds one, or changes the one there and returns its old name under `replaced`. MuseScore reads the name as when typed (`Bb7`, `F#m7b5`, `C/E`). On a beat that no note or rest starts on (inside a half note, say), a chord symbol already there can be changed, but a plugin can't add a new one: that is refused, with the beats that have one, and the user can add it in MuseScore by hand
+- `move_chord_symbol(measure, to_measure, beat, to_beat, staff)` - Move a chord symbol, keeping its name (MuseScore can only delete and add it again, so a moved chord symbol loses any position or font set on it by hand). Chord symbols imported from MusicXML have no readable name until the score is saved, closed and opened again (saving alone is not enough; `get_score` says so); those are refused, so ask the user for the name and use `set_chord_symbol` instead. A target beat that already has a chord symbol, or that no note or rest starts on, is refused too
+- Remove chord symbols with `remove_annotations(kinds=["chord_symbols"])`; `contains="G7", exact=True` removes only the G7s
 
 ## Score Style
 - `get_style(keys)` - Read style settings (Format → Style) by MuseScore's internal key, e.g. `createMultiMeasureRests`; keys MuseScore doesn't have are listed under `unknown`

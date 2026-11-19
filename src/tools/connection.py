@@ -14,7 +14,9 @@ def marking_text(marking: Dict[str, Any]) -> str:
     """Return a marking's text as get_score shows it.
 
     The plugin cannot read the name of a chord symbol imported from MusicXML
-    until the score has been saved and reopened, so its text arrives empty.
+    until the score has been saved, closed and opened again, so its text arrives
+    empty. Saving alone does not fill it in: MuseScore copies the name into the
+    text only when it loads the file.
 
     Args:
         marking (Dict[str, Any]): A marking from the getScore analysis.
@@ -24,7 +26,7 @@ def marking_text(marking: Dict[str, Any]) -> str:
     """
     text = marking.get("text", "")
     if marking.get("name") == "Harmony" and not text:
-        return "(name not readable: save and reopen the score)"
+        return "(name not readable: save the score, close it and open it again; saving alone is not enough)"
     return text
 
 

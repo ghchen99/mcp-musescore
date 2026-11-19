@@ -66,6 +66,8 @@ SEQUENCE_ACTIONS = {
     "setStyle",
     "addRehearsalMark",
     "addMarker",
+    "setChordSymbol",
+    "moveChordSymbol",
     "removeParts",
     "addHighlight",
     "addLabel",
@@ -1203,6 +1205,119 @@ class MockMuseScore:
                 )
         return result
 
+    def _chord_symbol_place(self, measure, beat, staff):
+        """Find where a chord symbol goes, as the plugin's chordSymbolPlace().
+
+        Returns {"tick", "harmony"} (the chord symbol there, or None), or an
+        error when no note or rest starts on the beat.
+        """
+        rng = self._range(
+            {
+                "startMeasure": measure,
+                "startStaff": staff,
+                "endStaff": staff + 1,
+            }
+        )
+        if "error" in rng:
+            return rng
+        rng = self._apply_beats(rng, {"startBeat": beat})
+        if "error" in rng:
+            return rng
+        start = (measure - 1) * self.score.measure_ticks
+        end = start + self.score.measure_ticks
+        beat_ticks = WHOLE_NOTE_TICKS // self.score.time_signature[1]
+        # An empty bar holds a whole-bar rest
+        ticks = sorted(
+            {
+                e["startTick"]
+                for e in self.score.elements[staff]
+                if start <= e["startTick"] < end
+            }
+        ) or [start]
+        beats = [f"{1 + (t - start) / beat_ticks:g}" for t in ticks]
+        no_place = (
+            f"No note or rest starts on beat {beat:g} of measure {measure} (staff {staff}), and a plugin can only "
+            f"add a chord symbol where one does: notes or rests start on {'beat' if len(beats) == 1 else 'beats'} "
+            + ", ".join(beats)
+            + ". The user can add it there in MuseScore by hand."
+        )
+        harmony = next(
+            (
+                mk
+                for mk in self.score.markings
+                if mk["name"] == "Harmony"
+                and mk["staff"] == staff
+                and mk["startTick"] == rng["startTick"]
+            ),
+            None,
+        )
+        return {
+            "tick": rng["startTick"],
+            "harmony": harmony,
+            "can_add": rng["startTick"] in ticks,
+            "no_place": no_place,
+        }
+
+    def _do_setChordSymbol(self, params):
+        if err := self._missing(params, ["measure", "chord"]):
+            return err
+        beat, staff = params.get("beat") or 1, params.get("staff") or 0
+        place = self._chord_symbol_place(params["measure"], beat, staff)
+        if "error" in place:
+            return place
+        if place["harmony"] is None and not place["can_add"]:
+            return {"error": place["no_place"]}
+        self._mutating()
+        chord = params["chord"]
+        harmony = place["harmony"]
+        if harmony is not None:
+            old = harmony["text"]
+            harmony["text"] = chord
+            return {
+                "success": True,
+                "chord": chord,
+                "replaced": old or "(name not readable)",
+            }
+        self.score.markings.append(
+            {
+                "staff": staff,
+                "startTick": place["tick"],
+                "name": "Harmony",
+                "text": chord,
+            }
+        )
+        return {"success": True, "chord": chord}
+
+    def _do_moveChordSymbol(self, params):
+        if err := self._missing(params, ["measure", "toMeasure"]):
+            return err
+        beat, staff = params.get("beat") or 1, params.get("staff") or 0
+        source = self._chord_symbol_place(params["measure"], beat, staff)
+        if "error" in source:
+            return source
+        harmony = source["harmony"]
+        where = f"beat {beat:g} of measure {params['measure']}"
+        if harmony is None:
+            return {
+                "error": f"There is no chord symbol on {where} (staff {staff})"
+            }
+        if not harmony["text"]:
+            return {
+                "error": f"The chord symbol on {where} has no readable name. Ask the user for its name."
+            }
+        target = self._chord_symbol_place(
+            params["toMeasure"], params.get("toBeat") or 1, staff
+        )
+        if "error" in target:
+            return target
+        if target["harmony"] is not None:
+            return {"error": "There is already a chord symbol there"}
+        if not target["can_add"]:
+            return {"error": target["no_place"]}
+        self._mutating()
+        harmony["startTick"] = target["tick"]
+        return {"success": True, "chord": harmony["text"]}
+
     def _do_addHighlight(self, params):
         rng = self._range(params)
         if "error" in rng:
@@ -1551,6 +1666,7 @@ class MockMuseScore:
                 "voltas",
                 "markers",
                 "jumps",
+                "chord_symbols",
             ],
             0,
         )
@@ -1596,6 +1712,12 @@ class MockMuseScore:
             v
             for v in score.voltas
             if keep("voltas", 0, (v["startMeasure"] - 1) * ticks, "")
+        ]
+        score.markings = [
+            mk
+            for mk in score.markings
+            if mk["name"] != "Harmony"
+            or keep("chord_symbols", mk["staff"], mk["startTick"], mk["text"])
         ]
         # Markers and jumps belong to the measure, not to a staff
         kind_of = {"Marker": "markers", "Jump": "jumps"}
