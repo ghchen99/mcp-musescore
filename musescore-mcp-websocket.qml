@@ -94,6 +94,7 @@ MuseScore {
             case "renderScore":             return renderScore(command.params);
             case "barNumbers":              return barNumbers();
             case "addRehearsalMark":        return addRehearsalMark(command.params);
+            case "addMarker":               return addMarker(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
             case "addLabel":                return addLabel(command.params);
@@ -446,7 +447,7 @@ MuseScore {
             "goToBeginningOfScore", "setTimeSignature", "addLyrics", "addInstrument",
             "setStaffMute", "setInstrumentSound", "setTempo",
             "selectMeasures", "setRepeatBarlines", "addVolta", "colorRange", "deleteMeasures",
-            "setStyle", "addRehearsalMark", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
+            "setStyle", "addRehearsalMark", "addMarker", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
             "highlightNotes", "highlightMarkings", "highlightSymbols",
             "setMeasureNumbering", "numberAsPlayed", "addText", "removeAnnotations",
             "addArticulation", "removeArticulations", "ghostNotes", "beamOverRests"
@@ -2119,8 +2120,10 @@ MuseScore {
     }
 
     // Remove texts and marks in a range. kinds: "texts" (staff/expression text without a box: add_text),
-    // "labels" (boxed staff text: add_label), "rehearsal_marks", "tempo", "voltas". `contains` limits text-based
-    // kinds to elements whose text contains that string (e.g. "*"), or equals it when `exact` is true.
+    // "labels" (boxed staff text: add_label), "rehearsal_marks", "tempo", "voltas", "markers" (Segno, Coda,
+    // To Coda, Fine) and "jumps" (D.C., D.S.…); markers and jumps belong to the measure, not to a staff.
+    // `contains` limits text-based kinds to elements whose text contains that string (e.g. "*"), or equals
+    // it when `exact` is true.
     function removeAnnotations(params) {
         if (!curScore) return { error: "No score open" };
         var range = measureRange(params);
@@ -2128,7 +2131,7 @@ MuseScore {
         var kinds = params.kinds && params.kinds.length ? params.kinds : ["texts"];
         var contains = params.contains || "";
         var exact = params.exact === true;
-        var removed = { texts: 0, labels: 0, rehearsal_marks: 0, tempo: 0, voltas: 0 };
+        var removed = { texts: 0, labels: 0, rehearsal_marks: 0, tempo: 0, voltas: 0, markers: 0, jumps: 0 };
         var targets = [];
 
         forEachMarking(range, ["StaffText", "Expression", "RehearsalMark", "Tempo", "TempoText"], function(ann) {
@@ -2151,6 +2154,20 @@ MuseScore {
                     targets.push(sp);
                     removed.voltas++;
                 }
+            }
+        }
+        // Markers and jumps hang on the measure, not on a staff
+        if (kinds.indexOf("markers") !== -1 || kinds.indexOf("jumps") !== -1) {
+            for (var m = range.firstMeasure; m; m = m.nextMeasure) {
+                var els = m.elements || [];
+                for (var e = 0; e < els.length; e++) {
+                    var mk = els[e].type === Element.MARKER ? "markers" : els[e].type === Element.JUMP ? "jumps" : "";
+                    if (mk && kinds.indexOf(mk) !== -1) {
+                        targets.push(els[e]);
+                        removed[mk]++;
+                    }
+                }
+                if (measureStartTick(m) >= measureStartTick(range.lastMeasure)) break;
             }
         }
         if (!targets.length) return { success: true, removed: removed, message: "Nothing to remove" };
@@ -2475,6 +2492,100 @@ MuseScore {
             cursor.add(mark);
             return { success: true, experimental: true, message: "Rehearsal mark '" + params.text + "' added at measure " + params.measure };
         });
+    }
+
+    // Repeat markers and jumps, by the names add_marker takes. A jump's type can't be set from a plugin:
+    // MuseScore derives it from jumpTo, playUntil and continueAt, which name the markers' labels (Segno
+    // "segno", To Coda "coda", Coda "codab", Fine "fine"), so they are set as MuseScore's palette does.
+    function markerKinds() {
+        return {
+            segno: { marker: MarkerType.SEGNO, name: "Segno" },
+            coda: { marker: MarkerType.CODA, name: "Coda" },
+            to_coda: { marker: MarkerType.TOCODA, name: "To Coda" },
+            fine: { marker: MarkerType.FINE, name: "Fine" },
+            dc: { text: "D.C.", jumpTo: "start", playUntil: "end", continueAt: "" },
+            dc_al_fine: { text: "D.C. al Fine", jumpTo: "start", playUntil: "fine", continueAt: "" },
+            dc_al_coda: { text: "D.C. al Coda", jumpTo: "start", playUntil: "coda", continueAt: "codab" },
+            ds: { text: "D.S.", jumpTo: "segno", playUntil: "end", continueAt: "" },
+            ds_al_fine: { text: "D.S. al Fine", jumpTo: "segno", playUntil: "fine", continueAt: "" },
+            ds_al_coda: { text: "D.S. al Coda", jumpTo: "segno", playUntil: "coda", continueAt: "codab" }
+        };
+    }
+
+    // The markers a jump needs that the score doesn't have yet, by name.
+    function missingMarkers(kind) {
+        var needs = [];
+        if (kind.jumpTo === "segno") needs.push({ name: "Segno", types: [MarkerType.SEGNO, MarkerType.VARSEGNO] });
+        if (kind.playUntil === "coda") needs.push({ name: "To Coda", types: [MarkerType.TOCODA, MarkerType.TOCODASYM] });
+        if (kind.continueAt === "codab") needs.push({ name: "Coda", types: [MarkerType.CODA, MarkerType.VARCODA] });
+        if (kind.playUntil === "fine") needs.push({ name: "Fine", types: [MarkerType.FINE] });
+        var present = [];
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) {
+            var els = m.elements || [];
+            for (var i = 0; i < els.length; i++) {
+                if (els[i].type === Element.MARKER) present.push(els[i].markerType);
+            }
+        }
+        var missing = [];
+        for (var n = 0; n < needs.length; n++) {
+            var found = false;
+            for (var t = 0; t < needs[n].types.length; t++) {
+                if (present.indexOf(needs[n].types[t]) !== -1) found = true;
+            }
+            if (!found) missing.push(needs[n].name);
+        }
+        return missing;
+    }
+
+    // params: measure (1-based), marker (a markerKinds name). Segno and Coda belong at the start of the bar,
+    // To Coda, Fine and the jumps at its end; MuseScore places each by its type. A marker the bar already has
+    // is refused. A jump's reply lists the markers it needs that the score doesn't have yet.
+    function addMarker(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["measure", "marker"]);
+        if (!validation.valid) return validation;
+        var kind = markerKinds()[params.marker];
+        if (!kind) return { error: "Unknown marker '" + params.marker + "'" };
+        var range = measureRange({ startMeasure: params.measure, startStaff: 0, endStaff: 1 });
+        if (!range.valid) return range;
+
+        var isJump = kind.marker === undefined;
+        var els = range.firstMeasure.elements || [];
+        for (var i = 0; i < els.length; i++) {
+            var same = isJump
+                ? els[i].type === Element.JUMP && els[i].jumpTo === kind.jumpTo && els[i].playUntil === kind.playUntil
+                  && els[i].continueAt === kind.continueAt
+                : els[i].type === Element.MARKER && els[i].markerType === kind.marker;
+            if (same) return { error: "Measure " + params.measure + " already has a " + (isJump ? kind.text : kind.name) };
+        }
+
+        var result = executeWithUndo(function() {
+            var cursor = createCursor({ startTick: range.startTick, startStaff: 0 });
+            cursor.track = 0;
+            var e;
+            if (isJump) {
+                e = newElement(Element.JUMP);
+                e.text = kind.text;
+                e.jumpTo = kind.jumpTo;
+                e.playUntil = kind.playUntil;
+                e.continueAt = kind.continueAt;
+            } else {
+                e = newElement(Element.MARKER);
+                e.markerType = kind.marker;
+            }
+            cursor.add(e);
+            return { success: true, added: e.subtypeName() };
+        });
+        if (!result || result.error) return result;
+        result.message = "Added " + result.added + " at measure " + params.measure;
+        if (isJump) {
+            result.missing = missingMarkers(kind);
+            if (result.missing.length) {
+                result.warning = kind.text + " needs " + result.missing.join(", ")
+                    + ", which the score doesn't have yet: add them with add_marker, or ask the user where they go.";
+            }
+        }
+        return result;
     }
 
     // Bar counts of the sections, e.g. "2x4+2". mode "label" (default, the user's choice) writes the count in

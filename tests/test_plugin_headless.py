@@ -334,6 +334,8 @@ def test_added_texts_and_marks_can_be_removed():
         "rehearsal_marks": 1,
         "tempo": 1,
         "voltas": 1,
+        "markers": 0,
+        "jumps": 0,
     }
     assert not any(
         m["markings"] for m in results[8]["result"]["analysis"]["measures"]
@@ -1430,6 +1432,111 @@ def test_score_reading_lists_markers_jumps_and_breaks(tmp_path):
         ],
         [{"name": "Marker", "text": "Coda"}],
     ]
+
+
+def rest_score(tmp_path, bars):
+    """Write a score of `bars` whole-bar rests in 4/4, on one staff."""
+    rest = "<Rest><durationType>measure</durationType><duration>4/4</duration></Rest>"
+    timesig = "<TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>"
+    measures = f"<Measure><voice>{timesig}{rest}</voice></Measure>" + (
+        f"<Measure><voice>{rest}</voice></Measure>" * (bars - 1)
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?><museScore version="4.70"><Score>'
+        '<Part id="1"><Staff id="1"/><trackName>Piano</trackName></Part>'
+        f'<Staff id="1">{measures}</Staff></Score></museScore>'
+    )
+    path = tmp_path / "rests.mscx"
+    path.write_text(xml)
+    return path
+
+
+def add_marker(measure, marker):
+    return {
+        "action": "addMarker",
+        "params": {"measure": measure, "marker": marker},
+    }
+
+
+def markers_and_jumps(get_score_result):
+    return [
+        [
+            e["text"]
+            for e in m["measureElements"]
+            if e["name"] in ("Marker", "Jump")
+        ]
+        for m in get_score_result["result"]["analysis"]["measures"]
+    ]
+
+
+def test_markers_and_jumps_are_added_and_removed(tmp_path):
+    get_score = {"action": "getScore", "params": {"startMeasure": 1}}
+    results = run(
+        [
+            add_marker(2, "ds_al_coda"),
+            add_marker(1, "segno"),
+            add_marker(2, "to_coda"),
+            add_marker(3, "coda"),
+            add_marker(3, "coda"),
+            add_marker(4, "dc_al_fine"),
+            add_marker(4, "fine"),
+            add_marker(5, "dc"),
+            add_marker(6, "dc_al_coda"),
+            add_marker(7, "ds"),
+            add_marker(8, "ds_al_fine"),
+            get_score,
+            {
+                "action": "removeAnnotations",
+                "params": {
+                    "startMeasure": 1,
+                    "endMeasure": 4,
+                    "kinds": ["markers"],
+                },
+            },
+            {
+                "action": "removeAnnotations",
+                "params": {
+                    "startMeasure": 1,
+                    "endMeasure": 8,
+                    "kinds": ["jumps"],
+                },
+            },
+            get_score,
+        ],
+        rest_score(tmp_path, 8),
+    )
+    replies = [r.get("result", r) for r in results]
+    # MuseScore's name for the jump's type, which it derives from jumpTo, playUntil and continueAt
+    assert [r.get("added") for r in replies[:11]] == [
+        "D.S. al Coda",
+        "Segno",
+        "To coda",
+        "Coda",
+        None,
+        "Da Capo al Fine",
+        "Fine",
+        "Da Capo",
+        "Da Capo al Coda",
+        "D.S.",
+        "D.S. al Fine",
+    ]
+    assert replies[0]["missing"] == ["Segno", "To Coda", "Coda"]
+    assert "Measure 3 already has a Coda" in str(replies[4])
+    assert replies[5]["missing"] == ["Fine"]
+    assert replies[8]["missing"] == []
+    assert markers_and_jumps(results[11]) == [
+        ["Segno"],
+        ["D.S. al Coda", "To coda"],
+        ["Coda"],
+        ["D.C. al Fine", "Fine"],
+        ["D.C."],
+        ["D.C. al Coda"],
+        ["D.S."],
+        ["D.S. al Fine"],
+    ]
+    assert replies[12]["removed"]["markers"] == 4
+    assert replies[13]["removed"]["jumps"] == 6
+    assert markers_and_jumps(results[14]) == [[]] * 8
 
 
 def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):

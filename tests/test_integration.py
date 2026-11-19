@@ -238,6 +238,83 @@ def test_get_score_lists_markers_jumps_and_breaks():
     run_with_mock(scenario, score)
 
 
+def test_add_marker_places_markers_and_jumps():
+    async def scenario(c, mock):
+        coda = await c.call_tool("add_marker", {"measure": 3, "marker": "coda"})
+        assert coda.structured_content["added"] == "Coda"
+        await c.call_tool("add_marker", {"measure": 4, "marker": "dc"})
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert "bar 3: Marker Coda\nbar 4: Jump D.C." in text
+
+    run_with_mock(scenario, MockScore(staves=1, measures=4))
+
+
+def test_a_jump_names_the_markers_it_still_needs():
+    async def scenario(c, mock):
+        jump = await c.call_tool(
+            "add_marker", {"measure": 2, "marker": "ds_al_coda"}
+        )
+        assert jump.structured_content["missing"] == [
+            "Segno",
+            "To Coda",
+            "Coda",
+        ]
+        assert "Segno, To Coda, Coda" in jump.structured_content["warning"]
+        for measure, marker in [(1, "segno"), (2, "to_coda"), (3, "coda")]:
+            await c.call_tool(
+                "add_marker", {"measure": measure, "marker": marker}
+            )
+        again = await c.call_tool(
+            "add_marker", {"measure": 4, "marker": "ds_al_coda"}
+        )
+        assert again.structured_content["missing"] == []
+        assert "warning" not in again.structured_content
+
+    run_with_mock(scenario, MockScore(staves=1, measures=4))
+
+
+def test_add_marker_refuses_the_same_marker_twice_in_a_bar():
+    async def scenario(c, mock):
+        await c.call_tool("add_marker", {"measure": 2, "marker": "fine"})
+        result = await c.call_tool(
+            "add_marker",
+            {"measure": 2, "marker": "fine"},
+            raise_on_error=False,
+        )
+        assert result.is_error and "Bar 2 already has a Fine" in str(result)
+        assert mock.score.measure_elements[2] == [
+            {"name": "Marker", "text": "Fine"}
+        ]
+
+    run_with_mock(scenario, MockScore(staves=1, measures=4))
+
+
+def test_remove_annotations_removes_markers_and_jumps_apart():
+    score = MockScore(staves=1, measures=4)
+    score.measure_elements = {
+        1: [{"name": "Marker", "text": "Segno"}],
+        4: [
+            {"name": "Jump", "text": "D.S."},
+            {"name": "LayoutBreak", "text": "line"},
+        ],
+    }
+
+    async def scenario(c, mock):
+        markers = await c.call_tool(
+            "remove_annotations", {"kinds": ["markers"]}
+        )
+        assert markers.structured_content["removed"]["markers"] == 1
+        assert mock.score.measure_elements[4][0]["name"] == "Jump"
+        jumps = await c.call_tool("remove_annotations", {"kinds": ["jumps"]})
+        assert jumps.structured_content["removed"]["jumps"] == 1
+        assert mock.score.measure_elements == {
+            1: [],
+            4: [{"name": "LayoutBreak", "text": "line"}],
+        }
+
+    run_with_mock(scenario, score)
+
+
 def test_get_score_says_when_a_chord_name_is_not_readable():
     score = MockScore(staves=1, measures=2)
     score.markings = [
@@ -1616,6 +1693,8 @@ def test_remove_annotations_and_reset_numbering():
             "rehearsal_marks": 1,
             "tempo": 0,
             "voltas": 1,
+            "markers": 0,
+            "jumps": 0,
         }
         assert not (
             mock.score.texts
