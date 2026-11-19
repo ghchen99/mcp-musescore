@@ -714,6 +714,31 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
     @mcp.tool(
         description=(
+            "Make bars wider or narrower, as Format > Stretch does: 1 is MuseScore's own width, 1.5 half as wide "
+            "again, 0.8 narrower. Wider bars can push the next bars onto the next system; render to check."
+        ),
+        tags={"layout"},
+    )
+    async def set_measure_stretch(
+        stretch: Annotated[float, "1 is MuseScore's own width; more than 0"],
+        start_measure: Annotated[Bar, f"First bar, {BAR_HELP}"],
+        end_measure: Annotated[
+            Optional[Bar], "Last bar, inclusive. Defaults to start_measure."
+        ] = None,
+    ):
+        if stretch <= 0:
+            raise ToolError("stretch must be more than 0")
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure)
+        return await send(
+            client,
+            bars,
+            "setMeasureStretch",
+            {"startMeasure": first, "endMeasure": last, "stretch": stretch},
+        )
+
+    @mcp.tool(
+        description=(
             "Prepare measure-repeat signs: selects the measures that should become repeat signs, on the given staves, "
             "and returns what to click in MuseScore. The plugin API cannot place measure-repeat signs itself."
         ),

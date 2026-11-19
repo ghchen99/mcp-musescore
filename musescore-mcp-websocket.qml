@@ -99,6 +99,9 @@ MuseScore {
             case "moveChordSymbol":         return moveChordSymbol(command.params);
             case "addBreak":                return addBreak(command.params);
             case "setMeasuresPerSystem":    return setMeasuresPerSystem(command.params);
+            case "findElements":            return findElements(command.params);
+            case "setProperties":           return setProperties(command.params);
+            case "setMeasureStretch":       return setMeasureStretch(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
             case "addLabel":                return addLabel(command.params);
@@ -451,7 +454,7 @@ MuseScore {
             "goToBeginningOfScore", "setTimeSignature", "addLyrics", "addInstrument",
             "setStaffMute", "setInstrumentSound", "setTempo",
             "selectMeasures", "setRepeatBarlines", "addVolta", "colorRange", "deleteMeasures",
-            "setStyle", "addRehearsalMark", "addMarker", "setChordSymbol", "moveChordSymbol", "addBreak", "setMeasuresPerSystem", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
+            "setStyle", "addRehearsalMark", "addMarker", "setChordSymbol", "moveChordSymbol", "addBreak", "setMeasuresPerSystem", "findElements", "setProperties", "setMeasureStretch", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
             "highlightNotes", "highlightMarkings", "highlightSymbols",
             "setMeasureNumbering", "numberAsPlayed", "addText", "removeAnnotations",
             "addArticulation", "removeArticulations", "ghostNotes", "beamOverRests"
@@ -2830,6 +2833,174 @@ MuseScore {
         if (!result || result.error) return result;
         result.systems = systemsOf(range);
         return result;
+    }
+
+    // The kind of an element, by the names find_elements and remove_annotations use; "" for other elements.
+    // Texts and labels are staff or expression texts, labels being the boxed ones (add_label).
+    function elementKind(e) {
+        if (e.type === Element.MARKER) return "markers";
+        if (e.type === Element.JUMP) return "jumps";
+        switch (e.name) {
+            case "Harmony": return "chord_symbols";
+            case "RehearsalMark": return "rehearsal_marks";
+            case "Tempo": case "TempoText": return "tempo";
+            case "StaffText": case "Expression":
+                return e.frameType && !isTranslucent(e.frameBgColor) ? "labels" : "texts";
+        }
+        return "";
+    }
+
+    function elementText(e) {
+        if (e.type === Element.MARKER) return e.subtypeName();
+        return String(e.text || "").replace(/<[^>]*>/g, "");
+    }
+
+    // The elements of the given kinds in a range of measures and staves, optionally only on one beat or with a
+    // text containing (or, with exact, equal to) `contains`: [{element, measure (position), beat, staff, kind,
+    // text}]. Markers and jumps belong to the measure; they are found on every staff range that holds staff 0
+    // and have no beat.
+    function matchingElements(params) {
+        var range = measureRange(params);
+        if (!range.valid) return range;
+        var kinds = params.kinds && params.kinds.length ? params.kinds
+            : ["chord_symbols", "markers", "jumps", "texts", "labels", "rehearsal_marks", "tempo"];
+        var contains = params.contains || "";
+        var exact = params.exact === true;
+        var found = [];
+        function keep(e, kind, text) {
+            if (kinds.indexOf(kind) === -1) return false;
+            if (contains && (exact ? text !== contains : text.indexOf(contains) === -1)) return false;
+            return true;
+        }
+        var position = params.startMeasure;
+        for (var m = range.firstMeasure; m; m = m.nextMeasure, position++) {
+            var start = measureStartTick(m), end = measureEndTick(m), beatLength = beatTicks(m);
+            var els = m.elements || [];
+            if (range.startStaff === 0) {
+                for (var i = 0; i < els.length; i++) {
+                    var kind = elementKind(els[i]);
+                    if (kind && keep(els[i], kind, elementText(els[i]))) {
+                        found.push({ element: els[i], measure: position, staff: 0, kind: kind, text: elementText(els[i]) });
+                    }
+                }
+            }
+            for (var seg = m.firstSegment; seg && seg.tick < end; seg = seg.next) {
+                var beat = Math.round((1 + (seg.tick - start) / beatLength) * 100) / 100;
+                if (params.beat && beat !== params.beat) continue;
+                var anns = seg.annotations || [];
+                for (var a = 0; a < anns.length; a++) {
+                    var staff = Math.floor(anns[a].track / 4);
+                    if (staff < range.startStaff || staff >= range.endStaff) continue;
+                    var k = elementKind(anns[a]);
+                    var text = elementText(anns[a]);
+                    if (k && keep(anns[a], k, text)) {
+                        found.push({ element: anns[a], measure: position, beat: beat, staff: staff, kind: k, text: text });
+                    }
+                }
+            }
+            if (measureStartTick(m) >= measureStartTick(range.lastMeasure)) break;
+        }
+        return found;
+    }
+
+    // What find_elements reports about an element: where it is and the properties set_properties changes, as
+    // the element has them now (its own value, or its style's).
+    function describeElement(f) {
+        var e = f.element;
+        var d = { measure: f.measure, staff: f.staff, kind: f.kind, text: f.text };
+        if (f.beat !== undefined) d.beat = f.beat;
+        d.placement = e.placement === Placement.BELOW ? "below" : "above";
+        var align = e.align;
+        d.align = align && align.length ? (["left", "right", "center"][align[0]] || String(align[0])) : null;
+        d.fontSize = e.fontSize;
+        d.offset = e.offset ? [Math.round(e.offset.x * 100) / 100, Math.round(e.offset.y * 100) / 100] : null;
+        d.autoplace = e.autoplace;
+        return d;
+    }
+
+    // params: startMeasure, endMeasure, startStaff, endStaff, kinds, beat, contains, exact
+    function findElements(params) {
+        if (!curScore) return { error: "No score open" };
+        var found = matchingElements(params);
+        if (found.error) return found;
+        var elements = [];
+        for (var i = 0; i < found.length; i++) elements.push(describeElement(found[i]));
+        return { success: true, count: elements.length, elements: elements };
+    }
+
+    // params: the selection findElements takes, and what to change: placement ("above"/"below"), align
+    // ("left"/"center"/"right"), fontSize (points), offset ([x, y] in staff spaces, replacing the current one),
+    // moveBy ([dx, dy] in staff spaces, added to the current offset; y grows downwards) and reset (names of
+    // these properties to put back to the style's value). The reply lists the elements as they are afterwards.
+    function setProperties(params) {
+        if (!curScore) return { error: "No score open" };
+        var changes = ["placement", "align", "fontSize", "offset", "moveBy", "reset"];
+        var any = false;
+        for (var c = 0; c < changes.length; c++) if (params[changes[c]] !== undefined && params[changes[c]] !== null) any = true;
+        if (!any) return { error: "Nothing to change: give placement, align, fontSize, offset, moveBy or reset" };
+        if (params.align && ["left", "center", "right"].indexOf(params.align) === -1) {
+            return { error: "Unknown align '" + params.align + "' (left, center or right)" };
+        }
+        var found = matchingElements(params);
+        if (found.error) return found;
+        if (!found.length) return { error: "No elements match; check them with find_elements" };
+
+        // The plugin reads align as [h, v] (internal values) but writes it as an Align bitmask
+        var hAlign = { left: Align.LEFT, right: Align.RIGHT, center: Align.HCENTER };
+        var vAlign = [Align.TOP, Align.VCENTER, Align.BOTTOM, Align.BASELINE];
+        var reset = params.reset || [];
+        var result = executeWithUndo(function() {
+            for (var i = 0; i < found.length; i++) {
+                var e = found[i].element;
+                if (params.placement) e.placement = params.placement === "below" ? Placement.BELOW : Placement.ABOVE;
+                if (params.align) {
+                    var current = e.align;
+                    var v = current && current.length > 1 ? vAlign[current[1]] : Align.BASELINE;
+                    e.align = hAlign[params.align] | v;
+                }
+                if (params.fontSize) e.fontSize = params.fontSize;
+                if (params.offset) e.offset = Qt.point(params.offset[0], params.offset[1]);
+                if (params.moveBy) {
+                    var o = e.offset || { x: 0, y: 0 };
+                    e.offset = Qt.point(o.x + params.moveBy[0], o.y + params.moveBy[1]);
+                }
+                for (var r = 0; r < reset.length; r++) {
+                    var name = reset[r] === "moveBy" ? "offset" : reset[r];
+                    if (["placement", "align", "fontSize", "offset"].indexOf(name) !== -1) e[name] = undefined;
+                }
+            }
+            return { success: true };
+        });
+        if (!result || result.error) return result;
+        var elements = [];
+        for (var j = 0; j < found.length; j++) elements.push(describeElement(found[j]));
+        return { success: true, count: elements.length, elements: elements };
+    }
+
+    // params: startMeasure, endMeasure (inclusive), stretch (1 is MuseScore's own width, 1.5 half as wide again;
+    // more than 0). Sets each measure's layout stretch, as Format > Stretch does.
+    function setMeasureStretch(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["startMeasure", "stretch"]);
+        if (!validation.valid) return validation;
+        if (!(params.stretch > 0)) return { error: "stretch must be more than 0" };
+        var range = measureRange(params);
+        if (!range.valid) return range;
+
+        var result = executeWithUndo(function() {
+            for (var m = range.firstMeasure; m; m = m.nextMeasure) {
+                m.userStretch = params.stretch;
+                if (measureStartTick(m) >= measureStartTick(range.lastMeasure)) break;
+            }
+            return { success: true };
+        });
+        if (!result || result.error) return result;
+        var measures = [], position = range.startMeasure;
+        for (var mm = range.firstMeasure; mm; mm = mm.nextMeasure, position++) {
+            measures.push({ measure: position, stretch: mm.userStretch });
+            if (measureStartTick(mm) >= measureStartTick(range.lastMeasure)) break;
+        }
+        return { success: true, measures: measures };
     }
 
     // Bar counts of the sections, e.g. "2x4+2". mode "label" (default, the user's choice) writes the count in

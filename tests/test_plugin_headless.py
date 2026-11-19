@@ -1770,6 +1770,115 @@ def test_breaks_are_added_once_and_removed(tmp_path):
     assert breaks(results[6]) == [(6, "Section break")]
 
 
+def test_elements_are_found_and_their_properties_set(tmp_path):
+    def set_props(**params):
+        return {
+            "action": "setProperties",
+            "params": {
+                "startMeasure": 1,
+                "endMeasure": 1,
+                "kinds": ["chord_symbols"],
+                **params,
+            },
+        }
+
+    results = run(
+        [
+            {
+                "action": "setChordSymbol",
+                "params": {"measure": 1, "chord": "C"},
+            },
+            {
+                "action": "setChordSymbol",
+                "params": {"measure": 1, "beat": 3, "chord": "G7"},
+            },
+            {
+                "action": "addMarker",
+                "params": {"measure": 2, "marker": "to_coda"},
+            },
+            {"action": "addText", "params": {"measure": 3, "text": "cue"}},
+            {
+                "action": "findElements",
+                "params": {"startMeasure": 1, "endMeasure": 3},
+            },
+            set_props(
+                placement="below", align="left", fontSize=12, moveBy=[0.5, 1]
+            ),
+            set_props(
+                contains="G7",
+                exact=True,
+                reset=["placement", "align", "fontSize", "offset"],
+            ),
+            set_props(contains="nothing like this", fontSize=9),
+        ],
+        beats_score(tmp_path),
+    )
+    found = results[4]["result"]["elements"]
+    assert [
+        (e["measure"], e.get("beat"), e["kind"], e["text"]) for e in found
+    ] == [
+        (1, 1, "chord_symbols", "C"),
+        (1, 3, "chord_symbols", "G7"),
+        (2, None, "markers", "To coda"),
+        (3, 1, "texts", "cue"),
+    ]
+    # MuseScore 4.7's styles: chord symbols centred, To Coda right-aligned, staff text left-aligned
+    assert [e["align"] for e in found] == ["center", "center", "right", "left"]
+    assert found[0]["offset"] == [0, -2.5] and found[0]["fontSize"] == 10
+
+    changed = results[5]["result"]["elements"]
+    # Below the staff, MuseScore takes the style's offset for below, then moveBy is added to it
+    assert [
+        (e["placement"], e["align"], e["fontSize"], e["offset"])
+        for e in changed
+    ] == [
+        ("below", "left", 12, [0.5, 4.5]),
+        ("below", "left", 12, [0.5, 4.5]),
+    ]
+    (reset,) = results[6]["result"]["elements"]
+    assert (
+        reset["text"],
+        reset["placement"],
+        reset["align"],
+        reset["fontSize"],
+        reset["offset"],
+    ) == (
+        "G7",
+        "above",
+        "center",
+        10,
+        [0, -2.5],
+    )
+    assert "No elements match" in str(results[7])
+
+
+def test_measure_stretch_widens_the_measure(tmp_path):
+    def widths(render_result):
+        boxes = render_result["result"]["measures"]
+        return [b["width"] for b in boxes]
+
+    results = run(
+        [
+            {
+                "action": "renderScore",
+                "params": {"path": str(tmp_path / "before")},
+            },
+            {
+                "action": "setMeasureStretch",
+                "params": {"startMeasure": 2, "endMeasure": 2, "stretch": 1.5},
+            },
+            {
+                "action": "renderScore",
+                "params": {"path": str(tmp_path / "after")},
+            },
+        ],
+        beats_score(tmp_path),
+    )
+    assert results[1]["result"]["measures"] == [{"measure": 2, "stretch": 1.5}]
+    before, after = widths(results[0]), widths(results[2])
+    assert after[1] / after[0] > 1.2 * before[1] / before[0]
+
+
 def test_rendered_score_and_measure_boxes_can_be_cropped(tmp_path):
     from src.render import boxes_from, crops, render_measures, render_whole_page
 
