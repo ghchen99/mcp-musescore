@@ -274,6 +274,27 @@ class addRehearsalMarkAction(TypedDict):
     params: addRehearsalMarkParams
 
 
+class addMarkerParams(TypedDict):
+    measure: Bar
+    marker: Literal[
+        "segno",
+        "coda",
+        "to_coda",
+        "fine",
+        "dc",
+        "dc_al_fine",
+        "dc_al_coda",
+        "ds",
+        "ds_al_fine",
+        "ds_al_coda",
+    ]
+
+
+class addMarkerAction(TypedDict):
+    action: Literal["addMarker"]
+    params: addMarkerParams
+
+
 class removePartsParams(TypedDict):
     keepStaves: List[int]
 
@@ -525,6 +546,7 @@ ActionSequence = List[
     | colorRangeAction
     | setStyleAction
     | addRehearsalMarkAction
+    | addMarkerAction
     | removePartsAction
     | addHighlightAction
     | addLabelAction

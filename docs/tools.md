@@ -62,7 +62,7 @@ Navigation results come back as LilyPond with measure, beat and staff metadata.
 - `add_text(measure, text, staff, beat, size, italic, bold, color, placement, kind)` - Free text with its own look; by default a small, italic, light-grey cue above the staff, e.g. the first words of each section as a reminder for the player
 - `color_range(start_measure, end_measure, first_staff, last_staff, color, voices, start_beat, end_beat)` / `clear_color(...)` - Recolor the notes and rests themselves (grace notes such as flams included), or reset them to black
 - `clear_highlights(start_measure, end_measure, first_staff, last_staff, kinds)` - Remove highlight boxes and bands, marking boxes and labels (note colors are reset with `clear_color`)
-- `remove_annotations(start_measure, end_measure, first_staff, last_staff, kinds, contains, exact)` - Remove added texts, labels, rehearsal marks, tempo markings or voltas, optionally only those containing (or equal to) a given text, e.g. the `**` marks
+- `remove_annotations(start_measure, end_measure, first_staff, last_staff, kinds, contains, exact)` - Remove added texts, labels, rehearsal marks, tempo markings, voltas, markers (Segno, Coda, To Coda, Fine) or jumps (D.C., D.S.…), optionally only those containing (or equal to) a given text, e.g. the `**` marks
 
 Everything these tools add can be taken off again, so a chart can be refined step by step; the drum-chart skill lists how to undo each step.
 
@@ -73,6 +73,7 @@ Everything these tools add can be taken off again, so a chart can be refined ste
 | Dynamics and other markings | `highlight_markings` |
 | Whole bars | `highlight_bars` |
 | A named section | `add_label` or `add_rehearsal_mark` |
+| Segno, Coda, To Coda, Fine, D.C., D.S. | `add_marker` |
 | A cue or note to the player | `add_text` |
 | The notes' own color | `color_range` |
 

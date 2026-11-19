@@ -546,6 +546,43 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
     @mcp.tool(
         description=(
+            "Add a repeat marker or jump to a bar, as from MuseScore's Repeats & jumps palette: 'segno', 'coda', "
+            "'to_coda', 'fine', or a jump: 'dc', 'dc_al_fine', 'dc_al_coda', 'ds', 'ds_al_fine', 'ds_al_coda'. "
+            "Segno and Coda go on the bar they start; To Coda, Fine and the jumps on the bar they end. A jump's "
+            "reply lists under `missing` the markers it needs that the score doesn't have yet (D.S. al Coda needs "
+            "a Segno, a To Coda and a Coda): add them too, or ask the user where they go. A marker the bar "
+            "already has is refused. Remove with remove_annotations (kinds 'markers', 'jumps')."
+        ),
+        tags={"structure"},
+    )
+    async def add_marker(
+        measure: Annotated[Bar, f"The bar, {BAR_HELP}"],
+        marker: Annotated[
+            Literal[
+                "segno",
+                "coda",
+                "to_coda",
+                "fine",
+                "dc",
+                "dc_al_fine",
+                "dc_al_coda",
+                "ds",
+                "ds_al_fine",
+                "ds_al_coda",
+            ],
+            "The marker or jump",
+        ],
+    ):
+        bars = await bar_numbers(client)
+        return await send(
+            client,
+            bars,
+            "addMarker",
+            {"measure": bars.position(measure), "marker": marker},
+        )
+
+    @mcp.tool(
+        description=(
             "Prepare measure-repeat signs: selects the measures that should become repeat signs, on the given staves, "
             "and returns what to click in MuseScore. The plugin API cannot place measure-repeat signs itself."
         ),

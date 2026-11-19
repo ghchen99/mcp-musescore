@@ -65,6 +65,7 @@ SEQUENCE_ACTIONS = {
     "deleteMeasures",
     "setStyle",
     "addRehearsalMark",
+    "addMarker",
     "removeParts",
     "addHighlight",
     "addLabel",
@@ -1135,6 +1136,73 @@ class MockMuseScore:
         )
         return {"success": True, "experimental": True}
 
+    MARKERS = {
+        "segno": "Segno",
+        "coda": "Coda",
+        "to_coda": "To coda",
+        "fine": "Fine",
+    }
+    """add_marker's markers, by MuseScore's name for them."""
+    JUMPS = {
+        "dc": ("D.C.", "Da Capo", []),
+        "dc_al_fine": ("D.C. al Fine", "Da Capo al Fine", ["Fine"]),
+        "dc_al_coda": ("D.C. al Coda", "Da Capo al Coda", ["To coda", "Coda"]),
+        "ds": ("D.S.", "D.S.", ["Segno"]),
+        "ds_al_fine": ("D.S. al Fine", "D.S. al Fine", ["Segno", "Fine"]),
+        "ds_al_coda": (
+            "D.S. al Coda",
+            "D.S. al Coda",
+            ["Segno", "To coda", "Coda"],
+        ),
+    }
+    """add_marker's jumps: their text, MuseScore's name, the markers they need."""
+
+    def _do_addMarker(self, params):
+        if err := self._missing(params, ["measure", "marker"]):
+            return err
+        marker, measure = params["marker"], params["measure"]
+        if marker not in self.MARKERS and marker not in self.JUMPS:
+            return {"error": f"Unknown marker '{marker}'"}
+        rng = self._range({"startMeasure": measure})
+        if "error" in rng:
+            return rng
+        needs: List[str] = []
+        if marker in self.MARKERS:
+            text = added = self.MARKERS[marker]
+            element = {"name": "Marker", "text": text}
+        else:
+            text, added, needs = self.JUMPS[marker]
+            element = {"name": "Jump", "text": text}
+        elements = self.score.measure_elements.setdefault(measure, [])
+        if element in elements:
+            return {"error": f"Measure {measure} already has a {text}"}
+        self._mutating()
+        elements.append(element)
+        result: Dict[str, Any] = {
+            "success": True,
+            "added": added,
+            "message": f"Added {added} at measure {measure}",
+        }
+        if element["name"] == "Jump":
+            present = {
+                el["text"]
+                for els in self.score.measure_elements.values()
+                for el in els
+                if el["name"] == "Marker"
+            }
+            missing = [
+                "To Coda" if n == "To coda" else n
+                for n in needs
+                if n not in present
+            ]
+            result["missing"] = missing
+            if missing:
+                result["warning"] = (
+                    f"{text} needs {', '.join(missing)}, which the score doesn't have yet: "
+                    "add them with add_marker, or ask the user where they go."
+                )
+        return result
+
     def _do_addHighlight(self, params):
         rng = self._range(params)
         if "error" in rng:
@@ -1475,7 +1543,16 @@ class MockMuseScore:
         exact = params.get("exact") is True
         score = self.score
         removed = dict.fromkeys(
-            ["texts", "labels", "rehearsal_marks", "tempo", "voltas"], 0
+            [
+                "texts",
+                "labels",
+                "rehearsal_marks",
+                "tempo",
+                "voltas",
+                "markers",
+                "jumps",
+            ],
+            0,
         )
 
         def inside(staff, tick):
@@ -1520,6 +1597,19 @@ class MockMuseScore:
             for v in score.voltas
             if keep("voltas", 0, (v["startMeasure"] - 1) * ticks, "")
         ]
+        # Markers and jumps belong to the measure, not to a staff
+        kind_of = {"Marker": "markers", "Jump": "jumps"}
+        for measure, elements in score.measure_elements.items():
+            if not rng["startMeasure"] <= measure <= rng["endMeasure"]:
+                continue
+            kept = []
+            for el in elements:
+                kind = kind_of.get(el["name"])
+                if kind is not None and kind in kinds:
+                    removed[kind] += 1
+                else:
+                    kept.append(el)
+            score.measure_elements[measure] = kept
         return {"success": True, "removed": removed}
 
     def _do_clearHighlights(self, params):
