@@ -107,6 +107,9 @@ def test_invalid_staves_are_refused(quartet):
         keep_parts(quartet, [])
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="Windows has no POSIX permission bits"
+)
 def test_saved_files_keep_normal_permissions(tmp_path, quartet):
     keep_parts(quartet, [3])
     target = tmp_path / "copy.mscz"

@@ -6,14 +6,18 @@ from dev.plugin_harness import find_musescore, refused_actions
 
 
 def test_musescore_bin_none_means_no_musescore(monkeypatch, tmp_path):
-    musescore = tmp_path / "mscore"
+    # On Windows the PATH only finds programs with an extension such as .exe
+    musescore = tmp_path / ("mscore.exe" if os.name == "nt" else "mscore")
     musescore.write_text("#!/bin/sh\n")
     musescore.chmod(0o755)
     monkeypatch.delenv(
         "MUSESCORE_BIN", raising=False
     )  # also when pytest runs with --no-musescore
     monkeypatch.setenv("PATH", str(tmp_path))
-    assert find_musescore() == str(musescore)  # found on the PATH
+    # normcase: Windows may give the extension in capitals (.EXE)
+    assert os.path.normcase(find_musescore()) == os.path.normcase(
+        str(musescore)
+    )  # found on the PATH
     monkeypatch.setenv("MUSESCORE_BIN", "none")
     assert find_musescore() is None
 
