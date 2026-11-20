@@ -320,6 +320,28 @@ class moveChordSymbolAction(TypedDict):
     params: moveChordSymbolParams
 
 
+class addBreakParams(TypedDict):
+    measure: Bar
+    kind: NotRequired[Literal["line", "page", "section"]]
+
+
+class addBreakAction(TypedDict):
+    action: Literal["addBreak"]
+    params: addBreakParams
+
+
+class setMeasuresPerSystemParams(TypedDict):
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
+    perSystem: int
+    method: NotRequired[Literal["locks", "breaks"]]
+
+
+class setMeasuresPerSystemAction(TypedDict):
+    action: Literal["setMeasuresPerSystem"]
+    params: setMeasuresPerSystemParams
+
+
 class removePartsParams(TypedDict):
     keepStaves: List[int]
 
@@ -574,6 +596,8 @@ ActionSequence = List[
     | addMarkerAction
     | setChordSymbolAction
     | moveChordSymbolAction
+    | addBreakAction
+    | setMeasuresPerSystemAction
     | removePartsAction
     | addHighlightAction
     | addLabelAction

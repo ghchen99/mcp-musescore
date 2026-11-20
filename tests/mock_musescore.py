@@ -68,6 +68,8 @@ SEQUENCE_ACTIONS = {
     "addMarker",
     "setChordSymbol",
     "moveChordSymbol",
+    "addBreak",
+    "setMeasuresPerSystem",
     "removeParts",
     "addHighlight",
     "addLabel",
@@ -153,6 +155,9 @@ class MockScore:
         self.measure_elements: Dict[
             int, List[Dict[str, Any]]
         ] = {}  # measure -> [{"name", "text"}]: markers, jumps, breaks
+        self.system_locks: List[
+            tuple
+        ] = []  # (first, last) measure of each locked system
         self.symbol_requests: List[
             Dict[str, Any]
         ] = []  # highlightSymbols calls (the mock has no symbols to find)
@@ -1288,6 +1293,89 @@ class MockMuseScore:
         )
         return {"success": True, "chord": chord}
 
+    BREAKS = {
+        "line": "System break",
+        "page": "Page break",
+        "section": "Section break",
+    }
+    """add_break's kinds, by MuseScore's name for them."""
+
+    def _do_addBreak(self, params):
+        if err := self._missing(params, ["measure"]):
+            return err
+        measure, kind = params["measure"], params.get("kind") or "line"
+        if kind not in self.BREAKS:
+            return {"error": f"Unknown break '{kind}'"}
+        rng = self._range({"startMeasure": measure})
+        if "error" in rng:
+            return rng
+        element = {"name": "LayoutBreak", "text": self.BREAKS[kind]}
+        elements = self.score.measure_elements.setdefault(measure, [])
+        if element in elements:
+            return {
+                "error": f"Measure {measure} already has a {element['text']}"
+            }
+        self._mutating()
+        elements.append(element)
+        return {"success": True, "added": element["text"]}
+
+    def _systems(self, first, last):
+        """Group measures into systems by the breaks and locks.
+
+        The mock has no layout: a system ends only at a break or at the end of a
+        lock, or at `last`.
+        """
+        ends = {lock_last for _, lock_last in self.score.system_locks}
+        ends |= {
+            m
+            for m, els in self.score.measure_elements.items()
+            if any(e["name"] == "LayoutBreak" for e in els)
+        }
+        systems, start = [], first
+        for m in range(first, last + 1):
+            if m in ends or m == last:
+                systems.append({"firstMeasure": start, "lastMeasure": m})
+                start = m + 1
+        return systems
+
+    def _do_setMeasuresPerSystem(self, params):
+        if err := self._missing(params, ["startMeasure", "perSystem"]):
+            return err
+        rng = self._range(params)
+        if "error" in rng:
+            return rng
+        n, method = params["perSystem"], params.get("method") or "locks"
+        if method not in ("locks", "breaks"):
+            return {"error": f"Unknown method '{method}'"}
+        first, last = rng["startMeasure"], rng["endMeasure"]
+        self._mutating()
+        score = self.score
+        removed = 0
+        for m in range(first, last + 1):
+            elements = score.measure_elements.get(m, [])
+            kept = [e for e in elements if e["text"] != "System break"]
+            removed += len(elements) - len(kept)
+            if m in score.measure_elements:
+                score.measure_elements[m] = kept
+        score.system_locks = [
+            lock for lock in score.system_locks if not first <= lock[0] <= last
+        ]
+        if n > 0:
+            for start in range(first, last + 1, n):
+                end = min(start + n - 1, last)
+                if method == "locks":
+                    score.system_locks.append((start, end))
+                elif end == start + n - 1 and end < score.num_measures:
+                    score.measure_elements.setdefault(end, []).append(
+                        {"name": "LayoutBreak", "text": "System break"}
+                    )
+            score.system_locks.sort()
+        return {
+            "success": True,
+            "removed_breaks": removed,
+            "systems": self._systems(first, last),
+        }
+
     def _do_moveChordSymbol(self, params):
         if err := self._missing(params, ["measure", "toMeasure"]):
             return err
@@ -1667,6 +1755,7 @@ class MockMuseScore:
                 "markers",
                 "jumps",
                 "chord_symbols",
+                "breaks",
             ],
             0,
         )
@@ -1720,7 +1809,11 @@ class MockMuseScore:
             or keep("chord_symbols", mk["staff"], mk["startTick"], mk["text"])
         ]
         # Markers and jumps belong to the measure, not to a staff
-        kind_of = {"Marker": "markers", "Jump": "jumps"}
+        kind_of = {
+            "Marker": "markers",
+            "Jump": "jumps",
+            "LayoutBreak": "breaks",
+        }
         for measure, elements in score.measure_elements.items():
             if not rng["startMeasure"] <= measure <= rng["endMeasure"]:
                 continue

@@ -400,6 +400,67 @@ def test_remove_annotations_removes_one_chord_symbol_by_name():
     run_with_mock(scenario, patterned_score("AA"))
 
 
+def test_add_break_ends_a_system_or_page_and_can_be_removed():
+    async def scenario(c, mock):
+        line = await c.call_tool("add_break", {"measure": 2})
+        assert line.structured_content["added"] == "System break"
+        await c.call_tool("add_break", {"measure": 3, "kind": "page"})
+        again = await c.call_tool(
+            "add_break", {"measure": 2, "kind": "line"}, raise_on_error=False
+        )
+        assert again.is_error and "Bar 2 already has a System break" in str(
+            again
+        )
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert "bar 2: LayoutBreak System break" in text
+        assert "bar 3: LayoutBreak Page break" in text
+        removed = await c.call_tool("remove_annotations", {"kinds": ["breaks"]})
+        assert removed.structured_content["removed"]["breaks"] == 2
+        assert not any(mock.score.measure_elements.values())
+
+    run_with_mock(scenario, MockScore(staves=1, measures=4))
+
+
+def test_set_measures_per_system_with_locks_or_breaks():
+    async def scenario(c, mock):
+        locked = await c.call_tool("set_measures_per_system", {"per_system": 4})
+        assert locked.structured_content["systems"] == [
+            {"firstMeasure": "1", "lastMeasure": "4"},
+            {"firstMeasure": "5", "lastMeasure": "8"},
+            {"firstMeasure": "9", "lastMeasure": "10"},
+        ]
+        broken = await c.call_tool(
+            "set_measures_per_system",
+            {
+                "per_system": 3,
+                "start_measure": 1,
+                "end_measure": 6,
+                "method": "breaks",
+            },
+        )
+        assert broken.structured_content["systems"][:2] == [
+            {"firstMeasure": "1", "lastMeasure": "3"},
+            {"firstMeasure": "4", "lastMeasure": "6"},
+        ]
+        breaks = {
+            m: [e["text"] for e in els]
+            for m, els in mock.score.measure_elements.items()
+            if els
+        }
+        assert breaks == {3: ["System break"], 6: ["System break"]}
+        # The locks that started in those bars are gone
+        assert mock.score.system_locks == [(9, 10)]
+        cleared = await c.call_tool(
+            "set_measures_per_system",
+            {"per_system": 0, "method": "breaks"},
+        )
+        assert cleared.structured_content["removed_breaks"] == 2
+        assert not any(mock.score.measure_elements.values())
+        assert mock.score.system_locks == []
+
+    run_with_mock(scenario, MockScore(staves=1, measures=10))
+
+
 def test_remove_annotations_removes_markers_and_jumps_apart():
     score = MockScore(staves=1, measures=4)
     score.measure_elements = {
@@ -1807,6 +1868,7 @@ def test_remove_annotations_and_reset_numbering():
             "markers": 0,
             "jumps": 0,
             "chord_symbols": 0,
+            "breaks": 0,
         }
         assert not (
             mock.score.texts

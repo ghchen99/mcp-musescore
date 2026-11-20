@@ -97,6 +97,8 @@ MuseScore {
             case "addMarker":               return addMarker(command.params);
             case "setChordSymbol":          return setChordSymbol(command.params);
             case "moveChordSymbol":         return moveChordSymbol(command.params);
+            case "addBreak":                return addBreak(command.params);
+            case "setMeasuresPerSystem":    return setMeasuresPerSystem(command.params);
             case "addSectionCounts":        return addSectionCounts(command.params);
             case "addHighlight":            return addHighlight(command.params);
             case "addLabel":                return addLabel(command.params);
@@ -449,7 +451,7 @@ MuseScore {
             "goToBeginningOfScore", "setTimeSignature", "addLyrics", "addInstrument",
             "setStaffMute", "setInstrumentSound", "setTempo",
             "selectMeasures", "setRepeatBarlines", "addVolta", "colorRange", "deleteMeasures",
-            "setStyle", "addRehearsalMark", "addMarker", "setChordSymbol", "moveChordSymbol", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
+            "setStyle", "addRehearsalMark", "addMarker", "setChordSymbol", "moveChordSymbol", "addBreak", "setMeasuresPerSystem", "addSectionCounts", "removeParts", "addHighlight", "addLabel", "clearHighlights",
             "highlightNotes", "highlightMarkings", "highlightSymbols",
             "setMeasureNumbering", "numberAsPlayed", "addText", "removeAnnotations",
             "addArticulation", "removeArticulations", "ghostNotes", "beamOverRests"
@@ -2123,8 +2125,8 @@ MuseScore {
 
     // Remove texts and marks in a range. kinds: "texts" (staff/expression text without a box: add_text),
     // "labels" (boxed staff text: add_label), "rehearsal_marks", "tempo", "voltas", "markers" (Segno, Coda,
-    // To Coda, Fine), "jumps" (D.C., D.S.…) and "chord_symbols"; markers and jumps belong to the measure,
-    // not to a staff.
+    // To Coda, Fine), "jumps" (D.C., D.S.…), "chord_symbols" and "breaks" (system, page and section breaks);
+    // markers, jumps and breaks belong to the measure, not to a staff.
     // `contains` limits text-based kinds to elements whose text contains that string (e.g. "*"), or equals
     // it when `exact` is true.
     function removeAnnotations(params) {
@@ -2135,7 +2137,7 @@ MuseScore {
         var contains = params.contains || "";
         var exact = params.exact === true;
         var removed = { texts: 0, labels: 0, rehearsal_marks: 0, tempo: 0, voltas: 0, markers: 0, jumps: 0,
-                        chord_symbols: 0 };
+                        chord_symbols: 0, breaks: 0 };
         var targets = [];
 
         forEachMarking(range, ["StaffText", "Expression", "RehearsalMark", "Tempo", "TempoText", "Harmony"], function(ann) {
@@ -2162,11 +2164,12 @@ MuseScore {
             }
         }
         // Markers and jumps hang on the measure, not on a staff
-        if (kinds.indexOf("markers") !== -1 || kinds.indexOf("jumps") !== -1) {
+        if (kinds.indexOf("markers") !== -1 || kinds.indexOf("jumps") !== -1 || kinds.indexOf("breaks") !== -1) {
             for (var m = range.firstMeasure; m; m = m.nextMeasure) {
                 var els = m.elements || [];
                 for (var e = 0; e < els.length; e++) {
-                    var mk = els[e].type === Element.MARKER ? "markers" : els[e].type === Element.JUMP ? "jumps" : "";
+                    var mk = els[e].type === Element.MARKER ? "markers" : els[e].type === Element.JUMP ? "jumps"
+                        : els[e].type === Element.LAYOUT_BREAK ? "breaks" : "";
                     if (mk && kinds.indexOf(mk) !== -1) {
                         targets.push(els[e]);
                         removed[mk]++;
@@ -2703,6 +2706,130 @@ MuseScore {
             var harmony = addChordSymbolAt(to.tick, staff, text);
             return { success: true, chord: harmony.text, message: "Moved " + harmony.text + " from " + where + " to " + toWhere };
         });
+    }
+
+    function breakTypes() {
+        return { line: LayoutBreak.LINE, page: LayoutBreak.PAGE, section: LayoutBreak.SECTION };
+    }
+
+    // The layout breaks on a measure, optionally only those of one type
+    function breaksOn(measure, type) {
+        var found = [];
+        var els = measure.elements || [];
+        for (var i = 0; i < els.length; i++) {
+            if (els[i].type === Element.LAYOUT_BREAK && (type === undefined || els[i].layoutBreakType === type)) {
+                found.push(els[i]);
+            }
+        }
+        return found;
+    }
+
+    // params: measure (1-based), kind ("line", "page" or "section"; default "line"). The break goes at the end
+    // of the measure, as from the palette. A break of that kind the measure already has is refused.
+    function addBreak(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["measure"]);
+        if (!validation.valid) return validation;
+        var kind = params.kind || "line";
+        var type = breakTypes()[kind];
+        if (type === undefined) return { error: "Unknown break '" + kind + "'" };
+        var range = measureRange({ startMeasure: params.measure, startStaff: 0, endStaff: 1 });
+        if (!range.valid) return range;
+        var existing = breaksOn(range.firstMeasure, type);
+        if (existing.length) {
+            return { error: "Measure " + params.measure + " already has a " + existing[0].subtypeName() };
+        }
+
+        var result = executeWithUndo(function() {
+            var lb = newElement(Element.LAYOUT_BREAK);
+            lb.layoutBreakType = type;  // before adding: the measure takes its break flags from the type
+            range.firstMeasure.add(lb);
+            return { success: true };
+        });
+        if (!result || result.error) return result;
+        var added = breaksOn(range.firstMeasure, type);
+        if (!added.length) return { error: "MuseScore did not add the break to measure " + params.measure };
+        result.added = added[0].subtypeName();
+        result.message = "Added a " + result.added + " at the end of measure " + params.measure;
+        return result;
+    }
+
+    // The systems the measures in a range stand on, as laid out now: [{firstMeasure, lastMeasure}], measures
+    // by position. Measures inside a multi-measure rest have no system of their own and are left out.
+    function systemsOf(range) {
+        var systems = [], current = null, key = null, position = 0;
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) {
+            position++;
+            if (position < range.startMeasure) continue;
+            if (position > range.endMeasure) break;
+            var system = m.parent;
+            if (!system || system.name !== "System" || !m.pagePos) continue;
+            var page = system.parent && system.parent.name === "Page" ? system.parent.pagenumber : 0;
+            var here = page + ":" + Math.round(m.pagePos.y * 10);
+            if (here !== key) {
+                current = { firstMeasure: position, lastMeasure: position };
+                systems.push(current);
+                key = here;
+            } else {
+                current.lastMeasure = position;
+            }
+        }
+        return systems;
+    }
+
+    // params: startMeasure, endMeasure (1-based, inclusive), perSystem, method ("locks", the default, or
+    // "breaks"). Lays out the range perSystem measures to a system:
+    // - "locks": system locks, as Format > Measures per system makes them; the systems keep their measures
+    //   when measures before them change.
+    // - "breaks": a system break after every perSystem measures (none after the score's last measure).
+    // Either way the range's system breaks and the system locks there are removed first, so the result is exactly
+    // perSystem measures to a system; perSystem 0 only removes them, back to MuseScore's own layout. Page and
+    // section breaks stay. The reply gives the systems as laid out afterwards.
+    function setMeasuresPerSystem(params) {
+        if (!curScore) return { error: "No score open" };
+        var validation = validateParams(params, ["startMeasure", "perSystem"]);
+        if (!validation.valid) return validation;
+        var range = measureRange(params);
+        if (!range.valid) return range;
+        var n = params.perSystem;
+        var method = params.method || "locks";
+        if (method !== "locks" && method !== "breaks") return { error: "Unknown method '" + method + "'" };
+        if (n < 0) return { error: "perSystem must be 0 or more" };
+
+        // addRemoveSystemLocks acts on the selected measures, and only sees a selection made before the undo
+        // step starts. A range ending at the score's end tick leaves the last measure out, so it ends past it.
+        var selectEnd = range.lastMeasure.nextMeasure ? range.endTick : range.lastMeasure.lastSegment.tick + 1;
+        curScore.selection.selectRange(range.startTick, selectEnd, 0, curScore.nstaves);
+        var result = executeWithUndo(function() {
+            var removed = 0;
+            var measures = [];
+            for (var m = range.firstMeasure; m; m = m.nextMeasure) {
+                measures.push(m);
+                if (measureStartTick(m) >= measureStartTick(range.lastMeasure)) break;
+            }
+            for (var i = 0; i < measures.length; i++) {
+                var lines = breaksOn(measures[i], LayoutBreak.LINE);
+                for (var b = 0; b < lines.length; b++) {
+                    measures[i].remove(lines[b]);
+                    removed++;
+                }
+            }
+            // With lock false, the locks in the selection are removed, then one is added every n measures
+            curScore.addRemoveSystemLocks(method === "locks" ? n : 0, false);
+            curScore.selection.clear();
+            if (method === "breaks" && n > 0) {
+                for (var j = n - 1; j < measures.length; j += n) {
+                    if (!measures[j].nextMeasure) break;
+                    var lb = newElement(Element.LAYOUT_BREAK);
+                    lb.layoutBreakType = LayoutBreak.LINE;
+                    measures[j].add(lb);
+                }
+            }
+            return { success: true, removed_breaks: removed };
+        });
+        if (!result || result.error) return result;
+        result.systems = systemsOf(range);
+        return result;
     }
 
     // Bar counts of the sections, e.g. "2x4+2". mode "label" (default, the user's choice) writes the count in

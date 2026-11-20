@@ -647,6 +647,73 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
     @mcp.tool(
         description=(
+            "End a system (line), page or section after a bar, as from MuseScore's Breaks & spacers palette. A "
+            "break of that kind the bar already has is refused. get_score lists breaks under [Markings]; remove "
+            "them with remove_annotations(kinds=['breaks']). For a fixed number of bars on every system, use "
+            "set_measures_per_system."
+        ),
+        tags={"layout"},
+    )
+    async def add_break(
+        measure: Annotated[Bar, f"The bar the break comes after, {BAR_HELP}"],
+        kind: Annotated[
+            Literal["line", "page", "section"],
+            "'line' (system break), 'page' or 'section'",
+        ] = "line",
+    ):
+        bars = await bar_numbers(client)
+        return await send(
+            client,
+            bars,
+            "addBreak",
+            {"measure": bars.position(measure), "kind": kind},
+        )
+
+    @mcp.tool(
+        description=(
+            "Put the same number of bars on every system over a range of bars (the whole score by default). "
+            "method 'locks' (default) works as Format > Measures per system: system locks, which keep each "
+            "system's bars when bars before them change. method 'breaks' puts a system break after every N bars "
+            "instead (shown by get_score, and fixed to their bars). Either way the range's system breaks and "
+            "locks are removed first, so the result is exactly N bars a system; per_system=0 only removes them, "
+            "back to MuseScore's own layout. Page and section breaks stay. The reply's `systems` gives each "
+            "system's first and last bar afterwards; render a page to see it."
+        ),
+        tags={"layout"},
+    )
+    async def set_measures_per_system(
+        per_system: Annotated[
+            int, "Bars on each system; 0 removes the locks and system breaks"
+        ],
+        start_measure: Annotated[
+            Optional[Bar], "First bar. Defaults to the first bar of the score."
+        ] = None,
+        end_measure: Annotated[
+            Optional[Bar],
+            "Last bar, inclusive. Defaults to the end of the score.",
+        ] = None,
+        method: Annotated[
+            Literal["locks", "breaks"], "'locks' (default) or 'breaks'"
+        ] = "locks",
+    ):
+        if per_system < 0:
+            raise ToolError("per_system must be 0 or more")
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure, to_end=True)
+        return await send(
+            client,
+            bars,
+            "setMeasuresPerSystem",
+            {
+                "startMeasure": first,
+                "endMeasure": last,
+                "perSystem": per_system,
+                "method": method,
+            },
+        )
+
+    @mcp.tool(
+        description=(
             "Prepare measure-repeat signs: selects the measures that should become repeat signs, on the given staves, "
             "and returns what to click in MuseScore. The plugin API cannot place measure-repeat signs itself."
         ),
