@@ -1,13 +1,15 @@
 """Score coloring tools for MuseScore MCP."""
 
 import re
-from typing import Annotated, List, Literal, Optional, Tuple
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from ..bars import BAR_HELP, Bar, BarNumbers, bar_numbers, send
 from ..client import MuseScoreClient
+from ..types.action_types import ElementKind
+from .connection import marking_text
 
 
 async def bar_range(
@@ -508,6 +510,184 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             params["beat"] = beat
         return await send(client, bars, "addText", params)
 
+    async def element_selection(
+        kinds: Optional[List[ElementKind]],
+        start_measure: Optional[Bar],
+        end_measure: Optional[Bar],
+        first_staff: int,
+        last_staff: Optional[int],
+        beat: Optional[float],
+        contains: Optional[str],
+        exact: bool,
+    ) -> Tuple[BarNumbers, Dict[str, Any]]:
+        """Build the plugin's selection of elements, as find_elements takes it."""
+        bars, params = await bar_range(
+            client,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            to_end=True,
+        )
+        if kinds:
+            params["kinds"] = kinds
+        if beat is not None:
+            params["beat"] = beat
+        if contains:
+            params["contains"] = contains
+            params["exact"] = exact
+        return bars, params
+
+    @mcp.tool(
+        description=(
+            "Find chord symbols, markers (Segno, Coda, To Coda, Fine), jumps, texts, boxed labels, rehearsal marks "
+            "and tempo markings in a range of bars (the whole score by default), with what set_properties can "
+            "change: placement ('above'/'below'), align ('left'/'center'/'right'), fontSize (points) and offset "
+            "([x, y] in staff spaces from where MuseScore puts it, y downwards). Use it to see what set_properties "
+            "will change: both take the same selection. Markers and jumps belong to the bar and have no beat."
+        ),
+        tags={"formatting"},
+        annotations={"readOnlyHint": True},
+    )
+    async def find_elements(
+        kinds: Annotated[
+            Optional[List[ElementKind]],
+            "What to find. Defaults to all of them.",
+        ] = None,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
+        end_measure: Annotated[
+            Optional[Bar],
+            "Last bar (inclusive). Defaults to the end of the score.",
+        ] = None,
+        first_staff: Annotated[int, "First staff (0-based)"] = 0,
+        last_staff: Annotated[
+            Optional[int],
+            "Last staff (0-based, inclusive). Defaults to the last staff.",
+        ] = None,
+        beat: Annotated[
+            Optional[float],
+            "Only elements on this beat (1-based; 3.5 is the 'and' of 3)",
+        ] = None,
+        contains: Annotated[
+            Optional[str], "Only elements whose text contains this, e.g. 'G7'"
+        ] = None,
+        exact: Annotated[
+            bool, "Only elements whose text equals `contains`"
+        ] = False,
+    ):
+        bars, params = await element_selection(
+            kinds,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            beat,
+            contains,
+            exact,
+        )
+        result = await send(client, bars, "findElements", params)
+        for element in result.get("elements", []):
+            if element.get("kind") == "chord_symbols" and not element.get(
+                "text"
+            ):
+                element["text"] = marking_text({"name": "Harmony", "text": ""})
+        return result
+
+    @mcp.tool(
+        description=(
+            "Change how elements look on every one find_elements finds with the same selection: placement "
+            "('above'/'below' the staff), align ('left'/'center'/'right'), font_size (points), offset ([x, y] in "
+            "staff spaces, replacing the current one) or move_by ([dx, dy] added to it; y grows downwards, so "
+            "[0, 1] moves down one space), and reset (put those properties back to the style's value). When "
+            "placement changes, MuseScore also takes the style's offset for that side; move_by is added after. "
+            "Refused when nothing matches. The reply lists the elements as they are afterwards; render to check."
+        ),
+        tags={"formatting"},
+    )
+    async def set_properties(
+        kinds: Annotated[
+            Optional[List[ElementKind]],
+            "What to change. Defaults to every kind find_elements finds.",
+        ] = None,
+        start_measure: Annotated[
+            Optional[Bar], f"First bar, {BAR_HELP}"
+        ] = None,
+        end_measure: Annotated[
+            Optional[Bar],
+            "Last bar (inclusive). Defaults to the end of the score.",
+        ] = None,
+        first_staff: Annotated[int, "First staff (0-based)"] = 0,
+        last_staff: Annotated[
+            Optional[int],
+            "Last staff (0-based, inclusive). Defaults to the last staff.",
+        ] = None,
+        beat: Annotated[
+            Optional[float], "Only elements on this beat (1-based)"
+        ] = None,
+        contains: Annotated[
+            Optional[str], "Only elements whose text contains this"
+        ] = None,
+        exact: Annotated[
+            bool, "Only elements whose text equals `contains`"
+        ] = False,
+        placement: Annotated[
+            Optional[Literal["above", "below"]], "Above or below the staff"
+        ] = None,
+        align: Annotated[
+            Optional[Literal["left", "center", "right"]],
+            "Horizontal alignment on the element's position",
+        ] = None,
+        font_size: Annotated[Optional[float], "Font size in points"] = None,
+        offset: Annotated[
+            Optional[List[float]],
+            "[x, y] in staff spaces, replacing the current offset",
+        ] = None,
+        move_by: Annotated[
+            Optional[List[float]],
+            "[dx, dy] in staff spaces, added to the current offset",
+        ] = None,
+        reset: Annotated[
+            Optional[
+                List[Literal["placement", "align", "font_size", "offset"]]
+            ],
+            "Properties to put back to the style's value",
+        ] = None,
+    ):
+        changes: Dict[str, Any] = {
+            "placement": placement,
+            "align": align,
+            "fontSize": font_size,
+            "offset": offset,
+            "moveBy": move_by,
+            "reset": [
+                {"font_size": "fontSize"}.get(name, name) for name in reset
+            ]
+            if reset
+            else None,
+        }
+        changes = {k: v for k, v in changes.items() if v is not None}
+        if not changes:
+            raise ToolError(
+                "Nothing to change: give placement, align, font_size, offset, move_by or reset"
+            )
+        for name in ("offset", "move_by"):
+            value = offset if name == "offset" else move_by
+            if value is not None and len(value) != 2:
+                raise ToolError(f"{name} is [x, y]: two numbers")
+        bars, params = await element_selection(
+            kinds,
+            start_measure,
+            end_measure,
+            first_staff,
+            last_staff,
+            beat,
+            contains,
+            exact,
+        )
+        return await send(client, bars, "setProperties", {**params, **changes})
+
     @mcp.tool(
         description=(
             "Remove texts and marks from a range of bars, e.g. to redo part of a chart. kinds: 'texts' (add_text: "
@@ -515,7 +695,7 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "markings, which also changes playback), 'voltas', 'markers' (Segno, Coda, To Coda, Fine) and 'jumps' "
             "(D.C., D.S. ...), which belong to the bar, not a staff, 'chord_symbols' (e.g. contains='G7', "
             "exact=True removes only G7s) and 'breaks' (system, page and section breaks). `contains` limits it to texts containing that string, "
-            "e.g. '**'. Defaults to the whole score. Highlights and note colors are removed with clear_highlights / "
+            "e.g. '**'; `beat` to one beat of each bar. Defaults to the whole score. Highlights and note colors are removed with clear_highlights / "
             "clear_color instead."
         ),
         tags={"formatting"},
@@ -557,6 +737,11 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             bool,
             'Only remove texts equal to `contains` (e.g. "*" but not "**" or a legend)',
         ] = False,
+        beat: Annotated[
+            Optional[float],
+            "Only remove what is on this beat (1-based; 3.5 is the 'and' of 3) of each bar, e.g. one chord "
+            "symbol whose name can't be read. Markers, jumps, voltas and breaks have no beat and are left alone",
+        ] = None,
     ):
         bars, params = await bar_range(
             client,
@@ -570,6 +755,8 @@ def setup_formatting_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         if contains:
             params["contains"] = contains
             params["exact"] = exact
+        if beat is not None:
+            params["beat"] = beat
         return await send(client, bars, "removeAnnotations", params)
 
     @mcp.tool(

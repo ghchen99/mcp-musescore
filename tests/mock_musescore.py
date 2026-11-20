@@ -70,6 +70,9 @@ SEQUENCE_ACTIONS = {
     "moveChordSymbol",
     "addBreak",
     "setMeasuresPerSystem",
+    "findElements",
+    "setProperties",
+    "setMeasureStretch",
     "removeParts",
     "addHighlight",
     "addLabel",
@@ -158,6 +161,7 @@ class MockScore:
         self.system_locks: List[
             tuple
         ] = []  # (first, last) measure of each locked system
+        self.stretch: Dict[int, float] = {}  # measure -> layout stretch
         self.symbol_requests: List[
             Dict[str, Any]
         ] = []  # highlightSymbols calls (the mock has no symbols to find)
@@ -1147,6 +1151,7 @@ class MockMuseScore:
         "segno": "Segno",
         "coda": "Coda",
         "to_coda": "To coda",
+        "to_coda_symbol": "To coda (symbol)",
         "fine": "Fine",
     }
     """add_marker's markers, by MuseScore's name for them."""
@@ -1197,6 +1202,8 @@ class MockMuseScore:
                 for el in els
                 if el["name"] == "Marker"
             }
+            if "To coda (symbol)" in present:
+                present.add("To coda")
             missing = [
                 "To Coda" if n == "To coda" else n
                 for n in needs
@@ -1299,6 +1306,146 @@ class MockMuseScore:
         "section": "Section break",
     }
     """add_break's kinds, by MuseScore's name for them."""
+
+    ELEMENT_KINDS = {
+        "Harmony": "chord_symbols",
+        "Marker": "markers",
+        "Jump": "jumps",
+        "StaffText": "texts",
+        "Expression": "texts",
+        "RehearsalMark": "rehearsal_marks",
+        "Tempo": "tempo",
+    }
+    """find_elements' kinds, by element name (the mock has no boxed labels)."""
+
+    def _matching_elements(self, params):
+        """Find elements as the plugin's matchingElements() does.
+
+        Returns (element dict, measure, beat) tuples, or an error.
+        """
+        rng = self._range(params)
+        if "error" in rng:
+            return rng
+        kinds = params.get("kinds") or list(set(self.ELEMENT_KINDS.values()))
+        contains = params.get("contains") or ""
+        exact = params.get("exact") is True
+        ticks = self.score.measure_ticks
+        beat_ticks = WHOLE_NOTE_TICKS // self.score.time_signature[1]
+
+        def keep(element):
+            if self.ELEMENT_KINDS.get(element["name"]) not in kinds:
+                return False
+            text = element["text"]
+            return not contains or (
+                text == contains if exact else contains in text
+            )
+
+        found = []
+        for measure in range(rng["startMeasure"], rng["endMeasure"] + 1):
+            if rng["startStaff"] == 0:
+                found += [
+                    (e, measure, None)
+                    for e in self.score.measure_elements.get(measure, [])
+                    if keep(e)
+                ]
+            on_beats = []
+            for mk in self.score.markings:
+                start = (measure - 1) * ticks
+                if not (
+                    start <= mk["startTick"] < start + ticks
+                    and rng["startStaff"] <= mk["staff"] < rng["endStaff"]
+                ):
+                    continue
+                beat = 1 + (mk["startTick"] - start) / beat_ticks
+                if params.get("beat") and beat != params["beat"]:
+                    continue
+                if keep(mk):
+                    on_beats.append(
+                        (mk, measure, int(beat) if beat == int(beat) else beat)
+                    )
+            found += sorted(on_beats, key=lambda f: f[0]["startTick"])
+        return found
+
+    @staticmethod
+    def _describe(element, measure, beat):
+        kind = MockMuseScore.ELEMENT_KINDS[element["name"]]
+        described = {
+            "measure": measure,
+            "staff": element.get("staff", 0),
+            "kind": kind,
+            "text": element["text"],
+            "placement": element.get("placement", "above"),
+            "align": element.get(
+                "align", "center" if kind == "chord_symbols" else "left"
+            ),
+            "fontSize": element.get("fontSize", 10),
+            "offset": element.get(
+                "offset", [0, -2.5] if kind == "chord_symbols" else [0, -2]
+            ),
+        }
+        if beat is not None:
+            described["beat"] = beat
+        return described
+
+    def _do_findElements(self, params):
+        found = self._matching_elements(params)
+        if isinstance(found, dict):
+            return found
+        elements = [self._describe(*f) for f in found]
+        return {"success": True, "count": len(elements), "elements": elements}
+
+    def _do_setProperties(self, params):
+        changes = [
+            "placement",
+            "align",
+            "fontSize",
+            "offset",
+            "moveBy",
+            "reset",
+        ]
+        if not any(params.get(c) is not None for c in changes):
+            return {
+                "error": "Nothing to change: give placement, align, fontSize, offset, moveBy or reset"
+            }
+        found = self._matching_elements(params)
+        if isinstance(found, dict):
+            return found
+        if not found:
+            return {"error": "No elements match; check them with find_elements"}
+        self._mutating()
+        for element, measure, beat in found:
+            for name in ("placement", "align", "fontSize", "offset"):
+                if params.get(name) is not None:
+                    element[name] = params[name]
+            if params.get("moveBy"):
+                x, y = self._describe(element, measure, beat)["offset"]
+                element["offset"] = [
+                    x + params["moveBy"][0],
+                    y + params["moveBy"][1],
+                ]
+            for name in params.get("reset") or []:
+                element.pop(name, None)
+        elements = [self._describe(*f) for f in found]
+        return {"success": True, "count": len(elements), "elements": elements}
+
+    def _do_setMeasureStretch(self, params):
+        if err := self._missing(params, ["startMeasure", "stretch"]):
+            return err
+        if not params["stretch"] > 0:
+            return {"error": "stretch must be more than 0"}
+        rng = self._range(params)
+        if "error" in rng:
+            return rng
+        self._mutating()
+        measures = range(rng["startMeasure"], rng["endMeasure"] + 1)
+        for m in measures:
+            self.score.stretch[m] = params["stretch"]
+        return {
+            "success": True,
+            "measures": [
+                {"measure": m, "stretch": params["stretch"]} for m in measures
+            ],
+        }
 
     def _do_addBreak(self, params):
         if err := self._missing(params, ["measure"]):
@@ -1744,7 +1891,9 @@ class MockMuseScore:
         kinds = params.get("kinds") or ["texts"]
         contains = params.get("contains") or ""
         exact = params.get("exact") is True
+        beat = params.get("beat")
         score = self.score
+        beat_ticks = WHOLE_NOTE_TICKS // score.time_signature[1]
         removed = dict.fromkeys(
             [
                 "texts",
@@ -1766,9 +1915,14 @@ class MockMuseScore:
                 and rng["startTick"] <= tick < rng["endTick"]
             )
 
+        def on_beat(tick):
+            start = tick - tick % score.measure_ticks
+            return beat is None or 1 + (tick - start) / beat_ticks == beat
+
         def keep(kind, staff, tick, text):
             if (
                 kind in kinds
+                and on_beat(tick)
                 and inside(staff, tick)
                 and (
                     text == contains if exact and contains else contains in text
@@ -1800,7 +1954,8 @@ class MockMuseScore:
         score.voltas = [
             v
             for v in score.voltas
-            if keep("voltas", 0, (v["startMeasure"] - 1) * ticks, "")
+            if beat is not None
+            or keep("voltas", 0, (v["startMeasure"] - 1) * ticks, "")
         ]
         score.markings = [
             mk
@@ -1820,7 +1975,7 @@ class MockMuseScore:
             kept = []
             for el in elements:
                 kind = kind_of.get(el["name"])
-                if kind is not None and kind in kinds:
+                if kind is not None and kind in kinds and beat is None:
                     removed[kind] += 1
                 else:
                     kept.append(el)

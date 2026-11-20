@@ -400,6 +400,53 @@ def test_remove_annotations_removes_one_chord_symbol_by_name():
     run_with_mock(scenario, patterned_score("AA"))
 
 
+def test_add_marker_adds_the_to_coda_symbol():
+    async def scenario(c, mock):
+        added = await c.call_tool(
+            "add_marker", {"measure": 2, "marker": "to_coda_symbol"}
+        )
+        assert added.structured_content["added"] == "To coda (symbol)"
+        text = (await c.call_tool("get_score", {})).content[0].text
+        assert "bar 2: Marker To coda (symbol)" in text
+
+    run_with_mock(scenario, MockScore(staves=1, measures=2))
+
+
+def test_remove_annotations_removes_the_chord_symbol_on_one_beat():
+    score = patterned_score("AA")
+    # Imported chord symbols: no readable name to pick them by
+    score.markings += [
+        {"staff": 0, "startTick": 0, "name": "Harmony", "text": ""},
+        {"staff": 0, "startTick": 960, "name": "Harmony", "text": ""},
+    ]
+
+    async def scenario(c, mock):
+        removed = await c.call_tool(
+            "remove_annotations",
+            {"kinds": ["chord_symbols"], "start_measure": 1, "beat": 3},
+        )
+        assert removed.structured_content["removed"]["chord_symbols"] == 1
+        assert [m["startTick"] for m in mock.score.markings] == [0]
+
+    run_with_mock(scenario, score)
+
+
+def test_find_elements_says_when_a_chord_name_is_not_readable():
+    score = patterned_score("AA")
+    score.markings.append(
+        {"staff": 0, "startTick": 0, "name": "Harmony", "text": ""}
+    )
+
+    async def scenario(c, mock):
+        found = await c.call_tool("find_elements", {"kinds": ["chord_symbols"]})
+        assert found.structured_content["elements"][0]["text"] == (
+            "(name not readable: save the score, close it and open it again; "
+            "saving alone is not enough)"
+        )
+
+    run_with_mock(scenario, score)
+
+
 def test_add_break_ends_a_system_or_page_and_can_be_removed():
     async def scenario(c, mock):
         line = await c.call_tool("add_break", {"measure": 2})
@@ -459,6 +506,82 @@ def test_set_measures_per_system_with_locks_or_breaks():
         assert mock.score.system_locks == []
 
     run_with_mock(scenario, MockScore(staves=1, measures=10))
+
+
+def elements_score():
+    score = patterned_score("AAA")
+    score.markings += [
+        {"staff": 0, "startTick": 0, "name": "Harmony", "text": "C"},
+        {"staff": 0, "startTick": 1920, "name": "Harmony", "text": "F"},
+        {"staff": 0, "startTick": 2880, "name": "Harmony", "text": "G7"},
+        {"staff": 0, "startTick": 1920, "name": "StaffText", "text": "cue"},
+    ]
+    score.measure_elements = {2: [{"name": "Marker", "text": "To coda"}]}
+    return score
+
+
+def test_find_elements_lists_them_with_their_properties():
+    async def scenario(c, mock):
+        found = await c.call_tool(
+            "find_elements",
+            {"start_measure": 2, "kinds": ["chord_symbols", "markers"]},
+        )
+        elements = found.structured_content["elements"]
+        assert [
+            (e["measure"], e.get("beat"), e["kind"], e["text"])
+            for e in elements
+        ] == [
+            ("2", None, "markers", "To coda"),
+            ("2", 1, "chord_symbols", "F"),
+            ("2", 3, "chord_symbols", "G7"),
+        ]
+        assert elements[1]["placement"] == "above" and "offset" in elements[1]
+
+    run_with_mock(scenario, elements_score())
+
+
+def test_set_properties_changes_what_find_elements_finds():
+    async def scenario(c, mock):
+        moved = await c.call_tool(
+            "set_properties",
+            {
+                "start_measure": 2,
+                "kinds": ["chord_symbols"],
+                "beat": 3,
+                "move_by": [0, 1],
+                "font_size": 12,
+            },
+        )
+        (g7,) = moved.structured_content["elements"]
+        assert g7["text"] == "G7" and g7["fontSize"] == 12
+        assert g7["offset"] == [0, -1.5]
+        nothing = await c.call_tool(
+            "set_properties",
+            {"kinds": ["chord_symbols"], "contains": "Bb", "font_size": 12},
+            raise_on_error=False,
+        )
+        assert nothing.is_error and "No elements match" in str(nothing)
+        no_change = await c.call_tool(
+            "set_properties", {"kinds": ["chord_symbols"]}, raise_on_error=False
+        )
+        assert no_change.is_error and "Nothing to change" in str(no_change)
+
+    run_with_mock(scenario, elements_score())
+
+
+def test_set_measure_stretch_on_a_range_of_bars():
+    async def scenario(c, mock):
+        result = await c.call_tool(
+            "set_measure_stretch",
+            {"start_measure": 2, "end_measure": 3, "stretch": 1.5},
+        )
+        assert result.structured_content["measures"] == [
+            {"measure": "2", "stretch": 1.5},
+            {"measure": "3", "stretch": 1.5},
+        ]
+        assert mock.score.stretch == {2: 1.5, 3: 1.5}
+
+    run_with_mock(scenario, elements_score())
 
 
 def test_remove_annotations_removes_markers_and_jumps_apart():

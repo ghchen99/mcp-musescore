@@ -280,6 +280,7 @@ class addMarkerParams(TypedDict):
         "segno",
         "coda",
         "to_coda",
+        "to_coda_symbol",
         "fine",
         "dc",
         "dc_al_fine",
@@ -340,6 +341,60 @@ class setMeasuresPerSystemParams(TypedDict):
 class setMeasuresPerSystemAction(TypedDict):
     action: Literal["setMeasuresPerSystem"]
     params: setMeasuresPerSystemParams
+
+
+ElementKind = Literal[
+    "chord_symbols",
+    "markers",
+    "jumps",
+    "texts",
+    "labels",
+    "rehearsal_marks",
+    "tempo",
+]
+
+
+class findElementsParams(TypedDict):
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
+    startStaff: NotRequired[int]
+    endStaff: NotRequired[int]
+    kinds: NotRequired[List[ElementKind]]
+    beat: NotRequired[float]
+    contains: NotRequired[str]
+    exact: NotRequired[bool]
+
+
+class findElementsAction(TypedDict):
+    action: Literal["findElements"]
+    params: findElementsParams
+
+
+class setPropertiesParams(findElementsParams):
+    placement: NotRequired[Literal["above", "below"]]
+    align: NotRequired[Literal["left", "center", "right"]]
+    fontSize: NotRequired[float]
+    offset: NotRequired[List[float]]
+    moveBy: NotRequired[List[float]]
+    reset: NotRequired[
+        List[Literal["placement", "align", "fontSize", "offset"]]
+    ]
+
+
+class setPropertiesAction(TypedDict):
+    action: Literal["setProperties"]
+    params: setPropertiesParams
+
+
+class setMeasureStretchParams(TypedDict):
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
+    stretch: float
+
+
+class setMeasureStretchAction(TypedDict):
+    action: Literal["setMeasureStretch"]
+    params: setMeasureStretchParams
 
 
 class removePartsParams(TypedDict):
@@ -598,6 +653,9 @@ ActionSequence = List[
     | moveChordSymbolAction
     | addBreakAction
     | setMeasuresPerSystemAction
+    | findElementsAction
+    | setPropertiesAction
+    | setMeasureStretchAction
     | removePartsAction
     | addHighlightAction
     | addLabelAction

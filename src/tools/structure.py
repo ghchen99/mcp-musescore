@@ -547,7 +547,7 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     @mcp.tool(
         description=(
             "Add a repeat marker or jump to a bar, as from MuseScore's Repeats & jumps palette: 'segno', 'coda', "
-            "'to_coda', 'fine', or a jump: 'dc', 'dc_al_fine', 'dc_al_coda', 'ds', 'ds_al_fine', 'ds_al_coda'. "
+            "'to_coda' (the words To Coda), 'to_coda_symbol' (To and the coda sign), 'fine', or a jump: 'dc', 'dc_al_fine', 'dc_al_coda', 'ds', 'ds_al_fine', 'ds_al_coda'. "
             "Segno and Coda go on the bar they start; To Coda, Fine and the jumps on the bar they end. A jump's "
             "reply lists under `missing` the markers it needs that the score doesn't have yet (D.S. al Coda needs "
             "a Segno, a To Coda and a Coda): add them too, or ask the user where they go. A marker the bar "
@@ -562,6 +562,7 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 "segno",
                 "coda",
                 "to_coda",
+                "to_coda_symbol",
                 "fine",
                 "dc",
                 "dc_al_fine",
@@ -710,6 +711,31 @@ def setup_structure_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 "perSystem": per_system,
                 "method": method,
             },
+        )
+
+    @mcp.tool(
+        description=(
+            "Make bars wider or narrower, as Format > Stretch does: 1 is MuseScore's own width, 1.5 half as wide "
+            "again, 0.8 narrower. Wider bars can push the next bars onto the next system; render to check."
+        ),
+        tags={"layout"},
+    )
+    async def set_measure_stretch(
+        stretch: Annotated[float, "1 is MuseScore's own width; more than 0"],
+        start_measure: Annotated[Bar, f"First bar, {BAR_HELP}"],
+        end_measure: Annotated[
+            Optional[Bar], "Last bar, inclusive. Defaults to start_measure."
+        ] = None,
+    ):
+        if stretch <= 0:
+            raise ToolError("stretch must be more than 0")
+        bars = await bar_numbers(client)
+        first, last = bars.bounds(start_measure, end_measure)
+        return await send(
+            client,
+            bars,
+            "setMeasureStretch",
+            {"startMeasure": first, "endMeasure": last, "stretch": stretch},
         )
 
     @mcp.tool(
