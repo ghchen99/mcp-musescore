@@ -9,7 +9,7 @@ from ..bars import BarNumbers, bar_numbers
 from ..client import MuseScoreClient, unwrap_result
 from ..types import ActionSequence
 
-BAR_PARAMS = ("measure", "startMeasure", "endMeasure")
+BAR_PARAMS = ("measure", "startMeasure", "endMeasure", "toMeasure")
 """Step parameters that name a bar."""
 
 
@@ -75,7 +75,7 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "addRehearsalMark, addMarker, setChordSymbol, moveChordSymbol, addBreak, setMeasuresPerSystem, findElements, setProperties, setMeasureStretch, removeParts, addHighlight, addLabel, clearHighlights, highlightNotes, "
             "highlightMarkings, highlightSymbols, setMeasureNumbering, numberAsPlayed, addText, removeAnnotations, "
             "addArticulation, removeArticulations, ghostNotes, beamOverRests, addSectionCounts. "
-            "Bars (measure, startMeasure/endMeasure, inclusive) are as printed in the score before the sequence "
+            "Bars (measure, toMeasure, startMeasure/endMeasure, inclusive) are as printed in the score before the sequence "
             'runs (a pickup bar is 0; a number printed twice is "12a"/"12b"), even after a step that inserts or '
             "deletes bars; staves use startStaff/endStaff (0-based, endStaff exclusive). "
             "Processing stops at the first invalid action or failing step, and the error names it; "

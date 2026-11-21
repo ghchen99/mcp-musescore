@@ -400,6 +400,30 @@ def test_remove_annotations_removes_one_chord_symbol_by_name():
     run_with_mock(scenario, patterned_score("AA"))
 
 
+def test_remove_annotations_runs_in_a_sequence():
+    async def scenario(c, mock):
+        await c.call_tool(
+            "set_chord_symbol", {"measure": 1, "beat": 1, "chord": "C"}
+        )
+        await c.call_tool(
+            "processSequence",
+            {
+                "sequence": [
+                    {
+                        "action": "removeAnnotations",
+                        "params": {
+                            "startMeasure": 1,
+                            "kinds": ["chord_symbols"],
+                        },
+                    }
+                ]
+            },
+        )
+        assert mock.score.markings == []
+
+    run_with_mock(scenario, patterned_score("AA"))
+
+
 def test_add_marker_adds_the_to_coda_symbol():
     async def scenario(c, mock):
         added = await c.call_tool(
