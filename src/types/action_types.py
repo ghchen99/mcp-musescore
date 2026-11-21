@@ -397,6 +397,35 @@ class setMeasureStretchAction(TypedDict):
     params: setMeasureStretchParams
 
 
+AnnotationKind = Literal[
+    "texts",
+    "labels",
+    "rehearsal_marks",
+    "tempo",
+    "voltas",
+    "markers",
+    "jumps",
+    "chord_symbols",
+    "breaks",
+]
+
+
+class removeAnnotationsParams(TypedDict):
+    startMeasure: Bar
+    endMeasure: NotRequired[Bar]
+    startStaff: NotRequired[int]
+    endStaff: NotRequired[int]
+    kinds: NotRequired[List[AnnotationKind]]
+    contains: NotRequired[str]
+    exact: NotRequired[bool]
+    beat: NotRequired[float]
+
+
+class removeAnnotationsAction(TypedDict):
+    action: Literal["removeAnnotations"]
+    params: removeAnnotationsParams
+
+
 class removePartsParams(TypedDict):
     keepStaves: List[int]
 
@@ -656,6 +685,7 @@ ActionSequence = List[
     | findElementsAction
     | setPropertiesAction
     | setMeasureStretchAction
+    | removeAnnotationsAction
     | removePartsAction
     | addHighlightAction
     | addLabelAction

@@ -381,6 +381,26 @@ def test_sequence_steps_take_printed_bars():
     run_with_mock(scenario, pickup_score())
 
 
+def test_a_sequence_moves_a_chord_symbol_to_a_printed_bar():
+    async def scenario(c, mock):
+        await c.call_tool("set_chord_symbol", {"measure": 1, "chord": "Bb7"})
+        await c.call_tool(
+            "processSequence",
+            {
+                "sequence": [
+                    {
+                        "action": "moveChordSymbol",
+                        "params": {"measure": 1, "toMeasure": 2},
+                    }
+                ]
+            },
+        )
+        text = text_of(await c.call_tool("get_score", {}))
+        assert "bar 2 beat 1, staff 0: Harmony Bb7" in text
+
+    run_with_mock(scenario, pickup_score())
+
+
 def test_file_edits_take_printed_bars(tmp_path, monkeypatch):
     from test_integration import bass_staff_repeat, jazz_copy, open_in_mock
 
