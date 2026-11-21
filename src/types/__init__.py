@@ -1,6 +1,7 @@
 """Type definitions for MuseScore MCP."""
 
 from .action_types import (
+    SEQUENCE_STEPS,
     ActionSequence,
     addArticulationAction,
     addBreakAction,
@@ -55,11 +56,13 @@ from .action_types import (
     setStyleAction,
     setTempoAction,
     setTimeSignatureAction,
-    undoAction,
+    with_positions,
 )
 
 __all__ = [
     "ActionSequence",
+    "SEQUENCE_STEPS",
+    "with_positions",
     "getScoreAction",
     "addNoteAction",
     "addRestAction",
@@ -81,7 +84,6 @@ __all__ = [
     "goToFinalMeasureAction",
     "goToBeginningOfScoreAction",
     "setTimeSignatureAction",
-    "undoAction",
     "nextStaffAction",
     "prevStaffAction",
     "setTempoAction",

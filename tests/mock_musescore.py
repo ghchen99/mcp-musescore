@@ -17,9 +17,11 @@ import uuid
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, get_type_hints, is_typeddict
 
 from websockets.asyncio.server import serve
+
+from src.types import SEQUENCE_STEPS
 
 WHOLE_NOTE_TICKS = 1920
 
@@ -32,64 +34,8 @@ DEFAULT_STYLE = {
 }
 """The style keys the mock knows, standing in for MuseScore's style list."""
 
-SEQUENCE_ACTIONS = {
-    "getScore",
-    "addNote",
-    "addTie",
-    "addTiedNote",
-    "addRest",
-    "addTuplet",
-    "appendMeasure",
-    "deleteSelection",
-    "getCursorInfo",
-    "goToMeasure",
-    "nextElement",
-    "prevElement",
-    "nextStaff",
-    "prevStaff",
-    "selectCurrentMeasure",
-    "processSequence",
-    "insertMeasure",
-    "goToFinalMeasure",
-    "goToBeginningOfScore",
-    "setTimeSignature",
-    "addLyrics",
-    "addInstrument",
-    "setStaffMute",
-    "setInstrumentSound",
-    "setTempo",
-    "selectMeasures",
-    "setRepeatBarlines",
-    "addVolta",
-    "colorRange",
-    "deleteMeasures",
-    "setStyle",
-    "addRehearsalMark",
-    "addMarker",
-    "setChordSymbol",
-    "moveChordSymbol",
-    "addBreak",
-    "setMeasuresPerSystem",
-    "findElements",
-    "setProperties",
-    "setMeasureStretch",
-    "removeParts",
-    "addHighlight",
-    "addLabel",
-    "clearHighlights",
-    "highlightNotes",
-    "highlightMarkings",
-    "highlightSymbols",
-    "setMeasureNumbering",
-    "numberAsPlayed",
-    "addText",
-    "removeAnnotations",
-    "addArticulation",
-    "removeArticulations",
-    "ghostNotes",
-    "beamOverRests",
-    "addSectionCounts",
-}
+SEQUENCE_ACTIONS = set(SEQUENCE_STEPS) | {"processSequence"}
+"""The steps processSequence runs; the plugin also lets a sequence nest."""
 
 # MuseScore's Lyrics.Syllabic values
 SYLLABIC = {"SINGLE": 0, "BEGIN": 1, "END": 2, "MIDDLE": 3}
@@ -350,6 +296,15 @@ class MockMuseScore:
         )
         if method is None:
             raise ValueError(f"Unknown command: {action}")
+        # Stricter than the plugin, which ignores unknown params: a tool
+        # sending one would be sending something the step types don't name
+        kind = SEQUENCE_STEPS.get(action)
+        if is_typeddict(kind):
+            unknown = set(params) - set(get_type_hints(kind))
+            if unknown:
+                raise ValueError(
+                    f"{action} has no parameter {', '.join(sorted(unknown))}"
+                )
         return method(params)
 
     def _mutating(self) -> None:

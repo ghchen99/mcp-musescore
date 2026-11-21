@@ -1,6 +1,25 @@
-"""TypedDict definitions for MuseScore MCP action sequences."""
+"""TypedDict definitions for MuseScore MCP action sequences.
 
-from typing import Any, Dict, List, Literal, NotRequired, TypedDict
+These types are the one list of the steps processSequence takes: the tool's
+schema and description, the bars it turns into positions, and the checks on the
+plugin and the mock all come from them.
+"""
+
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    NotRequired,
+    Tuple,
+    TypedDict,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+    is_typeddict,
+)
 
 from ..bars import Bar
 
@@ -165,11 +184,6 @@ class setTimeSignatureParams(TypedDict):
 class setTimeSignatureAction(TypedDict):
     action: Literal["setTimeSignature"]
     params: setTimeSignatureParams
-
-
-class undoAction(TypedDict):
-    action: Literal["undo"]
-    params: Dict[str, Any]
 
 
 class nextStaffAction(TypedDict):
@@ -540,6 +554,7 @@ class setMeasureNumberingAction(TypedDict):
 
 class numberAsPlayedParams(TypedDict):
     exclude: NotRequired[List[Bar]]
+    reset: NotRequired[bool]
 
 
 class numberAsPlayedAction(TypedDict):
@@ -666,7 +681,6 @@ ActionSequence = List[
     | goToFinalMeasureAction
     | goToBeginningOfScoreAction
     | setTimeSignatureAction
-    | undoAction
     | nextStaffAction
     | prevStaffAction
     | setTempoAction
@@ -702,3 +716,44 @@ ActionSequence = List[
     | beamOverRestsAction
     | addSectionCountsAction
 ]
+
+
+def _step_params(step: type) -> Tuple[str, object]:
+    hints = get_type_hints(step)
+    return get_args(hints["action"])[0], hints["params"]
+
+
+SEQUENCE_STEPS: Dict[str, object] = dict(
+    _step_params(step) for step in get_args(get_args(ActionSequence)[0])
+)
+"""Each step's action name and the type of its params."""
+
+
+def with_positions(
+    value: object, kind: object, position: Callable[[Bar], int]
+) -> object:
+    """Copy a step's params, turning every value typed Bar into a position.
+
+    Args:
+        value (object): The params, or a value inside them.
+        kind (object): The value's type, from SEQUENCE_STEPS.
+        position (Callable[[Bar], int]): Turns a bar as printed into a position.
+
+    Returns:
+        value (object): A copy with the bars as positions; other values as they
+            were.
+    """
+    if value is None:
+        return value
+    if kind == Bar:
+        return position(cast(Bar, value))
+    if get_origin(kind) in (list, List) and isinstance(value, list):
+        (item,) = get_args(kind)
+        return [with_positions(v, item, position) for v in value]
+    if is_typeddict(kind) and isinstance(value, dict):
+        fields = get_type_hints(kind)
+        return {
+            k: with_positions(v, fields[k], position) if k in fields else v
+            for k, v in value.items()
+        }
+    return value
