@@ -1225,6 +1225,55 @@ def test_add_tied_note_errors_write_nothing(tmp_path):
     assert not any(e["isTie"] for e in bar)
 
 
+def test_add_note_reports_the_position_after_the_note(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_note(60),
+            add_note(62, advance=False),
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 480
+    # Without advancing, the cursor stays on the note it wrote
+    assert results[2]["result"]["currentSelection"]["startTick"] == 480
+
+
+def test_a_sequence_of_notes_reports_the_position_after_the_last(tmp_path):
+    (result,) = run(
+        [
+            {
+                "action": "processSequence",
+                "params": {
+                    "sequence": [
+                        {"action": "goToMeasure", "params": {"measure": 1}},
+                        add_note(60),
+                        add_note(62),
+                    ]
+                },
+            }
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    assert result["result"]["currentSelection"]["startTick"] == 960
+
+
+def test_next_element_reports_where_it_moved(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "nextElement", "params": {}},
+        ],
+        tie_score(
+            tmp_path,
+            REST_BAR,
+            xml_chord("half", 60) + xml_chord("half", 64),
+            REST_BAR,
+        ),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 1920 + 960
+
+
 def get_measures(start=1, end=4):
     return {
         "action": "getScore",

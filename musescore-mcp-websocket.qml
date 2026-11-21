@@ -901,33 +901,13 @@ MuseScore {
                 cursor.next();
             }
 
-            var element = processElement(cursor.element);
-            var startTick = cursor.tick;
-            var staffIdx = cursor.staffIdx;
-            var durationTicks = element && element.durationTicks ? element.durationTicks : 0;
-
-            curScore.selection.clear();
-            if (durationTicks > 0) {
-                curScore.selection.selectRange(startTick, startTick + durationTicks, staffIdx, staffIdx + 1);
-            }
-
-            var syncRes = syncStateToSelection();
-            if (syncRes && syncRes.error) {
-                var staffMap = {};
-                staffMap["staff" + staffIdx] = element ? [element] : [];
-                selectionState = {
-                    startStaff: staffIdx,
-                    endStaff: staffIdx + 1,
-                    startTick: startTick,
-                    elements: staffMap,
-                    totalDuration: durationTicks
-                };
-            }
-
-            return { 
-                success: true, 
+            // Build the state from the cursor's own position: reading the selection back with
+            // syncStateToSelection() would give the old one, since MuseScore applies a new
+            // selection only when the command ends.
+            return {
+                success: true,
                 message: "Note added with pitch " + params.pitch,
-                currentSelection: selectionState
+                currentSelection: moveCursorTo(cursor.tick, cursor.staffIdx)
             };
         });
     }
