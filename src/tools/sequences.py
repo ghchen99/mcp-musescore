@@ -5,8 +5,8 @@ from typing import Annotated, Any, Dict, List, cast
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from ..bars import BarNumbers, bar_numbers
-from ..client import MuseScoreClient, unwrap_result
+from ..bars import BarNumbers, bar_numbers, send
+from ..client import MuseScoreClient
 from ..types import ActionSequence
 
 BAR_PARAMS = ("measure", "startMeasure", "endMeasure")
@@ -92,11 +92,9 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         ],
     ):
         bars = await bar_numbers(client)
-        reply = await client.send_command(
-            "processSequence", {"sequence": step_positions(sequence, bars)}
+        return await send(
+            client,
+            bars,
+            "processSequence",
+            {"sequence": step_positions(sequence, bars)},
         )
-        try:
-            unwrap_result(reply)  # raises ToolError when a step failed
-        except ToolError as error:
-            raise ToolError(bars.relabel_text(str(error))) from error
-        return bars.relabel(reply)

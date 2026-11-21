@@ -34,7 +34,7 @@ def test_tool_forwards_command_to_musescore(monkeypatch):
 
     async def fake_send_command(action, params=None):
         calls.append((action, params))
-        return {"success": True}
+        return {"status": "success", "result": {"success": True}}
 
     monkeypatch.setattr(server.client, "send_command", fake_send_command)
 
