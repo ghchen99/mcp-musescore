@@ -34,7 +34,7 @@ Call `ping_musescore` before a mutation. Call `get_score` before and after a com
 | `select_current_measure` | none | Selects the current measure. |
 | `select_custom_range` | `start_tick: int`, `end_tick: int`, `start_staff: int`, `end_staff: int` | Selects a precise tick range across one or more zero-based staves. MuseScore uses 480 ticks per quarter note in this project. |
 
-Navigation tools return the selection as LilyPond with measure/beat/staff metadata. On a plugin error they return the raw response envelope instead; read it rather than assuming a move succeeded.
+Navigation tools return the selection as LilyPond with measure/beat/staff metadata. A move the plugin refuses is an MCP tool error.
 
 ## Notes, rests, lyrics, and measures
 

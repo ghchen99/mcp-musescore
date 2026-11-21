@@ -30,7 +30,7 @@ def setup_time_tempo_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "Bottom number of time signature (note value that gets the beat)",
         ] = 4,
     ):
-        return await client.send_command(
+        return await client.request(
             "setTimeSignature",
             {"numerator": numerator, "denominator": denominator},
         )
@@ -53,7 +53,7 @@ def setup_time_tempo_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     ):
         params: dict = {"bpm": bpm}
         if measure is None:
-            return await client.send_command("setTempo", params)
+            return await client.request("setTempo", params)
         bars = await bar_numbers(client)
         params["measure"] = bars.position(measure)
         return await send(client, bars, "setTempo", params)
