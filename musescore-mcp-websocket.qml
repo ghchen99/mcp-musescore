@@ -642,7 +642,8 @@ MuseScore {
                 
                 return { success: true, currentSelection: selectionState };
             } else {
-                return { success: false, message: "End of score reached" };
+                // An error, not success: false, so processSequence stops and the tool fails
+                return { error: "End of score reached" };
             }
         });
     }
@@ -682,7 +683,7 @@ MuseScore {
                 
                 return { success: true, currentSelection: selectionState };
             } else {
-                return { success: false, message: "Beginning of score reached" };
+                return { error: "Beginning of score reached" };
             }
         });
     }
@@ -691,11 +692,12 @@ MuseScore {
         return executeWithUndo(function() {
             syncStateToSelection();
 
-            if (selectionState.endStaff >= curScore.nstaves) {
-                return { success: false, message: "Already at last staff" };
+            // From the first selected staff: goToMeasure selects every staff, and the cursor is on the first
+            var newStaff = selectionState.startStaff + 1;
+            if (newStaff >= curScore.nstaves) {
+                return { error: "Already at the last staff" };
             }
 
-            var newStaff = selectionState.endStaff;
             var cursor = createCursor({ 
                 startTick: selectionState.startTick, 
                 startStaff: newStaff 
@@ -728,7 +730,7 @@ MuseScore {
             syncStateToSelection();
 
             if (selectionState.startStaff <= 0) {
-                return { success: false, message: "Already at first staff" };
+                return { error: "Already at the first staff" };
             }
 
             var newStaff = selectionState.startStaff - 1;

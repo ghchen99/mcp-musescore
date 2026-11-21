@@ -199,6 +199,60 @@ def test_go_to_measure_moves_the_cursor_there():
     assert [m["durationTicks"] for m in measures] == [1440, 1440, 960]
 
 
+def test_next_staff_after_go_to_measure_moves_to_the_second_staff():
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "nextStaff", "params": {}},
+            {"action": "nextElement", "params": {}},
+        ],
+        JAZZ,
+    )
+    # go_to_measure selects the bar on both staves; next_staff goes to the second
+    staff = results[1]["result"]["currentSelection"]
+    assert (staff["startStaff"], staff["endStaff"]) == (1, 2)
+    assert staff["startTick"] == 1440
+    after = results[2]["result"]["currentSelection"]
+    assert after["startStaff"] == 1
+
+
+def test_staff_navigation_past_the_outer_staves_is_an_error():
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "prevStaff", "params": {}},
+            {"action": "nextStaff", "params": {}},
+            {"action": "nextStaff", "params": {}},
+            {"action": "prevStaff", "params": {}},
+        ],
+        JAZZ,
+    )
+    assert "first staff" in results[1]["result"]["error"]
+    assert results[2]["result"]["currentSelection"]["startStaff"] == 1
+    assert "last staff" in results[3]["result"]["error"]
+    assert results[4]["result"]["currentSelection"]["startStaff"] == 0
+
+
+def test_a_staff_step_that_cannot_move_stops_a_sequence():
+    (result,) = run(
+        [
+            {
+                "action": "processSequence",
+                "params": {
+                    "sequence": [
+                        {"action": "goToMeasure", "params": {"measure": 2}},
+                        {"action": "prevStaff", "params": {}},
+                        {"action": "nextElement", "params": {}},
+                    ]
+                },
+            }
+        ],
+        JAZZ,
+    )
+    error = result["result"]["error"]
+    assert error.startswith("Step 2 of 3 (prevStaff) failed")
+
+
 def test_errors_come_back_as_results():
     (result,) = run(
         [{"action": "colorRange", "params": {"startMeasure": 99}}], JAZZ
@@ -1320,6 +1374,22 @@ def test_next_element_onto_the_last_note_appends_a_measure(tmp_path):
     )
     assert results[1]["result"].get("success")
     assert results[-1]["result"]["analysis"]["numMeasures"] == 3
+
+
+def test_element_steps_past_the_start_or_end_of_the_score_are_errors(
+    tmp_path,
+):
+    results = run(
+        [
+            {"action": "goToBeginningOfScore", "params": {}},
+            {"action": "prevElement", "params": {}},
+            {"action": "goToFinalMeasure", "params": {}},
+            {"action": "nextElement", "params": {}},
+        ],
+        tie_score(tmp_path, REST_BAR, xml_chord("whole", 60)),
+    )
+    assert "Beginning of score" in results[1]["result"]["error"]
+    assert "End of score" in results[3]["result"]["error"]
 
 
 def test_style_keys_are_checked_and_read_back():
