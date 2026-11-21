@@ -7,14 +7,13 @@ from fastmcp.exceptions import ToolError
 
 from ..bars import BarNumbers, bar_numbers, send
 from ..client import MuseScoreClient
-from ..types import ActionSequence
-
-BAR_PARAMS = ("measure", "startMeasure", "endMeasure", "toMeasure")
-"""Step parameters that name a bar."""
+from ..types import SEQUENCE_STEPS, ActionSequence, with_positions
 
 
 def step_positions(sequence: ActionSequence, bars: BarNumbers) -> List[Dict]:
     """Turn the bars named in a sequence's steps into positions.
+
+    Every params value typed Bar in the step types is a bar, however deep.
 
     Args:
         sequence (ActionSequence): The steps, bars as printed.
@@ -29,27 +28,17 @@ def step_positions(sequence: ActionSequence, bars: BarNumbers) -> List[Dict]:
     steps = []
     for i, typed in enumerate(sequence):
         step = cast(Dict[str, Any], typed)
-        params = dict(step.get("params") or {})
+        if "params" not in step:
+            steps.append(step)
+            continue
+        kind = SEQUENCE_STEPS.get(step.get("action"))
         try:
-            for key in BAR_PARAMS:
-                if params.get(key) is not None:
-                    params[key] = bars.position(params[key])
-            if isinstance(params.get("exclude"), list):
-                params["exclude"] = [
-                    bars.position(b) for b in params["exclude"]
-                ]
-            if isinstance(params.get("counts"), list):
-                params["counts"] = [
-                    {**c, "measure": bars.position(c["measure"])}
-                    if isinstance(c, dict) and "measure" in c
-                    else c
-                    for c in params["counts"]
-                ]
+            params = with_positions(step["params"], kind, bars.position)
         except ToolError as error:
             raise ToolError(
                 f"Step {i + 1} ({step.get('action')}): {error}. No step was applied."
             ) from error
-        steps.append({**step, "params": params} if "params" in step else step)
+        steps.append({**step, "params": params})
     return steps
 
 
@@ -67,14 +56,7 @@ def setup_sequence_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "Run several score commands in order in a single call. "
             'Each item is {"action": <name>, "params": {...}}, using the same camelCase action names '
             'and parameters as the plugin (e.g. "addNote" with pitch, duration, advanceCursorAfterAction). '
-            "Allowed actions: getScore, addNote, addTie, addTiedNote, addRest, addTuplet, appendMeasure, deleteSelection, "
-            "getCursorInfo, goToMeasure, nextElement, prevElement, nextStaff, prevStaff, "
-            "selectCurrentMeasure, insertMeasure, goToFinalMeasure, goToBeginningOfScore, "
-            "setTimeSignature, addLyrics, addInstrument, setStaffMute, setInstrumentSound, setTempo, "
-            "selectMeasures, deleteMeasures, setRepeatBarlines, addVolta, colorRange, setStyle, "
-            "addRehearsalMark, addMarker, setChordSymbol, moveChordSymbol, addBreak, setMeasuresPerSystem, findElements, setProperties, setMeasureStretch, removeParts, addHighlight, addLabel, clearHighlights, highlightNotes, "
-            "highlightMarkings, highlightSymbols, setMeasureNumbering, numberAsPlayed, addText, removeAnnotations, "
-            "addArticulation, removeArticulations, ghostNotes, beamOverRests, addSectionCounts. "
+            f"Allowed actions: {', '.join(SEQUENCE_STEPS)}. "
             "Bars (measure, toMeasure, startMeasure/endMeasure, inclusive) are as printed in the score before the sequence "
             'runs (a pickup bar is 0; a number printed twice is "12a"/"12b"), even after a step that inserts or '
             "deletes bars; staves use startStaff/endStaff (0-based, endStaff exclusive). "

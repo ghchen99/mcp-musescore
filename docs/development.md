@@ -65,6 +65,12 @@ Docstrings follow the [Google Python Style Guide](https://google.github.io/style
 - The MCP tool functions have no docstrings: FastMCP ignores them, because each tool's description comes from `description=` in its decorator and its parameters from `Annotated[...]`. Likewise, the classes behind tool parameters (the `TypedDict`s in `src/types/action_types.py` and `RepeatGroup`) have no docstrings, since pydantic would add them to the tool's input schema.
 - Tests need no docstrings; test names say what they test.
 
+## Adding a plugin action
+
+The step types in `src/types/action_types.py` (the `ActionSequence` union) are the one list of the actions `processSequence` takes. The tool's schema, its list of allowed actions and the bars it turns into positions (every params field typed `Bar`, however deep) all come from them, and so does the mock plugin's list of sequence steps.
+
+To add an action, add it to the plugin's `processCommand` switch and to its `validCommands` if sequences may run it, give it a `...Params` and `...Action` type in the union, implement it in the mock (`_do_<action>`) and document its tool in `docs/tools.md` and the skill's `references/tools.md`. `tests/test_action_registry.py` fails when one of these is missing. The mock also refuses a parameter that the action's type doesn't name, so the integration tests catch a tool sending one.
+
 ## Tests with coverage
 
 The tests are not a commit hook: they run separately, locally and as their own step in CI.
