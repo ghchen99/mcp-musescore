@@ -236,9 +236,18 @@ MuseScore {
         return range;
     }
 
+    // The end tick to pass to selectRange. A range that ends at the end of the score leaves the last
+    // measure out (the selection is empty when that is the only one), and MuseScore then refuses actions
+    // that need a selection (insert-measure, delete) or does nothing (time-delete); ending just past the
+    // score's last segment takes it in.
+    function selectionEndTick(endTick) {
+        var scoreEnd = curScore.lastSegment.tick;
+        return endTick >= scoreEnd ? scoreEnd + 1 : endTick;
+    }
+
     function selectMeasureRange(range) {
         curScore.selection.clear();
-        curScore.selection.selectRange(range.startTick, range.endTick, range.startStaff, range.endStaff);
+        curScore.selection.selectRange(range.startTick, selectionEndTick(range.endTick), range.startStaff, range.endStaff);
         selectionState = {
             startStaff: range.startStaff,
             endStaff: range.endStaff,
@@ -830,7 +839,7 @@ MuseScore {
 
             // Visual GUI snap
             curScore.selection.clear();
-            curScore.selection.selectRange(startTick, endTick, startStaff, endStaff);
+            curScore.selection.selectRange(startTick, selectionEndTick(endTick), startStaff, endStaff);
 
             var elementsMap = {};
             for (var st = startStaff; st <= endStaff; st++) {

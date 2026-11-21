@@ -1345,12 +1345,8 @@ def test_append_measure_adds_measures_at_the_end(tmp_path):
     assert results[-1]["result"]["analysis"]["numMeasures"] == 5
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B7: MuseScore does not see the plugin's selection, so it refuses "
-    "insert-measure ('no one can handle the action')",
-)
 def test_insert_measure_goes_before_the_selected_measure(tmp_path):
+    # Bar 2 is the score's last bar, which the selection used to leave out
     results = run(
         [
             {"action": "goToMeasure", "params": {"measure": 2}},
@@ -1392,11 +1388,6 @@ def test_delete_selection_turns_the_notes_into_rests(tmp_path):
     assert first and all(e["name"] == "Rest" for e in first)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B8: MuseScore does not see the selection go_to_measure makes, so it "
-    "refuses the delete ('no one can handle the action')",
-)
 def test_delete_selection_after_go_to_measure(tmp_path):
     results = run(
         [
@@ -1405,6 +1396,41 @@ def test_delete_selection_after_go_to_measure(tmp_path):
             get_measures(1, 2),
         ],
         tie_score(tmp_path, REST_BAR, xml_chord("whole", 60)),
+    )
+    first, second = bars_of(results[-1]["result"])
+    assert second and all(e["name"] == "Rest" for e in second)
+
+
+def test_delete_measures_removes_the_last_bar(tmp_path):
+    results = run(
+        [
+            {
+                "action": "deleteMeasures",
+                "params": {"startMeasure": 2, "endMeasure": 2},
+            },
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, xml_chord("whole", 60), xml_chord("whole", 62)),
+    )
+    assert results[-1]["result"]["analysis"]["numMeasures"] == 1
+
+
+def test_a_custom_range_up_to_the_end_of_the_score_can_be_deleted(tmp_path):
+    results = run(
+        [
+            {
+                "action": "selectCustomRange",
+                "params": {
+                    "startTick": 1920,
+                    "endTick": 3840,
+                    "startStaff": 0,
+                    "endStaff": 1,
+                },
+            },
+            {"action": "deleteSelection", "params": {}},
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, xml_chord("whole", 60), xml_chord("whole", 62)),
     )
     first, second = bars_of(results[-1]["result"])
     assert second and all(e["name"] == "Rest" for e in second)
