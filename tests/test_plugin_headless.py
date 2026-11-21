@@ -199,6 +199,60 @@ def test_go_to_measure_moves_the_cursor_there():
     assert [m["durationTicks"] for m in measures] == [1440, 1440, 960]
 
 
+def test_next_staff_after_go_to_measure_moves_to_the_second_staff():
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "nextStaff", "params": {}},
+            {"action": "nextElement", "params": {}},
+        ],
+        JAZZ,
+    )
+    # go_to_measure selects the bar on both staves; next_staff goes to the second
+    staff = results[1]["result"]["currentSelection"]
+    assert (staff["startStaff"], staff["endStaff"]) == (1, 2)
+    assert staff["startTick"] == 1440
+    after = results[2]["result"]["currentSelection"]
+    assert after["startStaff"] == 1
+
+
+def test_staff_navigation_past_the_outer_staves_is_an_error():
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "prevStaff", "params": {}},
+            {"action": "nextStaff", "params": {}},
+            {"action": "nextStaff", "params": {}},
+            {"action": "prevStaff", "params": {}},
+        ],
+        JAZZ,
+    )
+    assert "first staff" in results[1]["result"]["error"]
+    assert results[2]["result"]["currentSelection"]["startStaff"] == 1
+    assert "last staff" in results[3]["result"]["error"]
+    assert results[4]["result"]["currentSelection"]["startStaff"] == 0
+
+
+def test_a_staff_step_that_cannot_move_stops_a_sequence():
+    (result,) = run(
+        [
+            {
+                "action": "processSequence",
+                "params": {
+                    "sequence": [
+                        {"action": "goToMeasure", "params": {"measure": 2}},
+                        {"action": "prevStaff", "params": {}},
+                        {"action": "nextElement", "params": {}},
+                    ]
+                },
+            }
+        ],
+        JAZZ,
+    )
+    error = result["result"]["error"]
+    assert error.startswith("Step 2 of 3 (prevStaff) failed")
+
+
 def test_errors_come_back_as_results():
     (result,) = run(
         [{"action": "colorRange", "params": {"startMeasure": 99}}], JAZZ
@@ -1171,6 +1225,147 @@ def test_add_tied_note_errors_write_nothing(tmp_path):
     assert not any(e["isTie"] for e in bar)
 
 
+def test_add_note_reports_the_position_after_the_note(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_note(60),
+            add_note(62, advance=False),
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 480
+    # Without advancing, the cursor stays on the note it wrote
+    assert results[2]["result"]["currentSelection"]["startTick"] == 480
+
+
+def test_a_sequence_of_notes_reports_the_position_after_the_last(tmp_path):
+    (result,) = run(
+        [
+            {
+                "action": "processSequence",
+                "params": {
+                    "sequence": [
+                        {"action": "goToMeasure", "params": {"measure": 1}},
+                        add_note(60),
+                        add_note(62),
+                    ]
+                },
+            }
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    assert result["result"]["currentSelection"]["startTick"] == 960
+
+
+def test_add_note_across_the_barline_moves_past_the_tied_part(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_note(60),
+            add_note(62),
+            add_note(64),
+            add_note(65, HALF),  # beat 4: split into two tied quarters
+            add_note(67),
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    assert results[4]["result"]["currentSelection"]["startTick"] == 2400
+    first, second = bars_of(results[-1]["result"])
+    # The tied quarter of the F is kept; the G follows it
+    assert [(e["name"], e["durationTicks"]) for e in second[:2]] == [
+        ("Chord", 480),
+        ("Chord", 480),
+    ]
+    assert [n["pitchMidi"] for e in second[:2] for n in e["notes"]] == [65, 67]
+
+
+def test_add_note_at_the_end_of_the_score_appends_a_bar(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_note(60, {"numerator": 1, "denominator": 1}),
+            add_note(62, {"numerator": 1, "denominator": 1}),
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, REST_BAR),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 1920
+    pitches = [
+        [
+            n["pitchMidi"]
+            for e in bar
+            if e["name"] == "Chord"
+            for n in e["notes"]
+        ]
+        for bar in bars_of(results[-1]["result"])
+    ]
+    assert pitches == [[60], [62]]
+
+
+def add_tuplet(advance):
+    return {
+        "action": "addTuplet",
+        "params": {
+            "duration": QUARTER,
+            "ratio": {"numerator": 3, "denominator": 2},
+            "advanceCursorAfterAction": advance,
+        },
+    }
+
+
+def test_a_tuplet_is_filled_from_its_first_slot(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_tuplet(advance=False),
+            add_note(60, EIGHTH),
+            add_note(62, EIGHTH),
+            add_note(64, EIGHTH),
+            get_measures(1, 1),
+        ],
+        tie_score(tmp_path, REST_BAR),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 0
+    assert results[4]["result"]["currentSelection"]["startTick"] == 480
+    (bar,) = bars_of(results[-1]["result"])
+    chords = [e for e in bar if e["name"] == "Chord"]
+    assert [(e["startTick"], e["durationTicks"]) for e in chords] == [
+        (0, 160),
+        (160, 160),
+        (320, 160),
+    ]
+    assert all(e["isTuplet"] for e in chords)
+
+
+def test_advancing_past_a_tuplet_moves_after_it(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_tuplet(advance=True),
+        ],
+        tie_score(tmp_path, REST_BAR),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 480
+
+
+def test_next_element_reports_where_it_moved(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 2}},
+            {"action": "nextElement", "params": {}},
+        ],
+        tie_score(
+            tmp_path,
+            REST_BAR,
+            xml_chord("half", 60) + xml_chord("half", 64),
+            REST_BAR,
+        ),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 1920 + 960
+
+
 def get_measures(start=1, end=4):
     return {
         "action": "getScore",
@@ -1242,12 +1437,8 @@ def test_append_measure_adds_measures_at_the_end(tmp_path):
     assert results[-1]["result"]["analysis"]["numMeasures"] == 5
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B7: MuseScore does not see the plugin's selection, so it refuses "
-    "insert-measure ('no one can handle the action')",
-)
 def test_insert_measure_goes_before_the_selected_measure(tmp_path):
+    # Bar 2 is the score's last bar, which the selection used to leave out
     results = run(
         [
             {"action": "goToMeasure", "params": {"measure": 2}},
@@ -1289,11 +1480,6 @@ def test_delete_selection_turns_the_notes_into_rests(tmp_path):
     assert first and all(e["name"] == "Rest" for e in first)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B8: MuseScore does not see the selection go_to_measure makes, so it "
-    "refuses the delete ('no one can handle the action')",
-)
 def test_delete_selection_after_go_to_measure(tmp_path):
     results = run(
         [
@@ -1302,6 +1488,41 @@ def test_delete_selection_after_go_to_measure(tmp_path):
             get_measures(1, 2),
         ],
         tie_score(tmp_path, REST_BAR, xml_chord("whole", 60)),
+    )
+    first, second = bars_of(results[-1]["result"])
+    assert second and all(e["name"] == "Rest" for e in second)
+
+
+def test_delete_measures_removes_the_last_bar(tmp_path):
+    results = run(
+        [
+            {
+                "action": "deleteMeasures",
+                "params": {"startMeasure": 2, "endMeasure": 2},
+            },
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, xml_chord("whole", 60), xml_chord("whole", 62)),
+    )
+    assert results[-1]["result"]["analysis"]["numMeasures"] == 1
+
+
+def test_a_custom_range_up_to_the_end_of_the_score_can_be_deleted(tmp_path):
+    results = run(
+        [
+            {
+                "action": "selectCustomRange",
+                "params": {
+                    "startTick": 1920,
+                    "endTick": 3840,
+                    "startStaff": 0,
+                    "endStaff": 1,
+                },
+            },
+            {"action": "deleteSelection", "params": {}},
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, xml_chord("whole", 60), xml_chord("whole", 62)),
     )
     first, second = bars_of(results[-1]["result"])
     assert second and all(e["name"] == "Rest" for e in second)
@@ -1320,6 +1541,49 @@ def test_next_element_onto_the_last_note_appends_a_measure(tmp_path):
     )
     assert results[1]["result"].get("success")
     assert results[-1]["result"]["analysis"]["numMeasures"] == 3
+
+
+def test_element_steps_past_the_start_or_end_of_the_score_are_errors(
+    tmp_path,
+):
+    results = run(
+        [
+            {"action": "goToBeginningOfScore", "params": {}},
+            {"action": "prevElement", "params": {}},
+            {"action": "goToFinalMeasure", "params": {}},
+            {"action": "nextElement", "params": {}},
+        ],
+        tie_score(tmp_path, REST_BAR, xml_chord("whole", 60)),
+    )
+    assert "Beginning of score" in results[1]["result"]["error"]
+    assert "End of score" in results[3]["result"]["error"]
+
+
+def test_go_to_final_measure_selects_the_whole_last_bar(tmp_path):
+    results = run(
+        [
+            {"action": "goToFinalMeasure", "params": {}},
+            {"action": "deleteSelection", "params": {}},
+            get_measures(1, 2),
+        ],
+        tie_score(
+            tmp_path,
+            REST_BAR,
+            xml_chord("half", 60) + xml_chord("half", 62),
+        ),
+    )
+    selection = results[0]["result"]["currentSelection"]
+    assert (selection["startTick"], selection["totalDuration"]) == (1920, 1920)
+    first, second = bars_of(results[-1]["result"])
+    assert second and all(e["name"] == "Rest" for e in second)
+
+
+def test_go_to_final_measure_in_a_one_bar_score(tmp_path):
+    (result,) = run(
+        [{"action": "goToFinalMeasure", "params": {}}],
+        tie_score(tmp_path, xml_chord("whole", 60)),
+    )
+    assert result["result"]["currentSelection"]["startTick"] == 0
 
 
 def test_style_keys_are_checked_and_read_back():
