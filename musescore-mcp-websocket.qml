@@ -509,8 +509,10 @@ MuseScore {
             var selection = curScore.selection;
             var startSegment = selection.startSegment;
             var endSegment = selection.endSegment;
+            // A selection that runs to the end of the score (see selectionEndTick) has no end segment
+            var endTick = endSegment ? endSegment.tick : curScore.lastSegment.tick;
 
-            if (startSegment && endSegment) {
+            if (startSegment) {
                 var cursor = createCursor({
                     startTick: startSegment.tick,
                     startStaff: selection.startStaff    
@@ -522,7 +524,7 @@ MuseScore {
                 }
 
                 var currentSegment = startSegment;
-                while (currentSegment && currentSegment.tick < endSegment.tick) {
+                while (currentSegment && currentSegment.tick < endTick) {
                     for (var s = selection.startStaff; s < selection.endStaff; s++) {
                         for (var v = 0; v < 4; v++) {
                             var track = s * 4 + v;
@@ -545,7 +547,7 @@ MuseScore {
                     endStaff: selection.endStaff,
                     startTick: startSegment.tick,
                     elements: elementsMap,
-                    totalDuration: endSegment.tick - startSegment.tick
+                    totalDuration: endTick - startSegment.tick
                 };
             } else {
                 var c = createCursor();
@@ -770,39 +772,12 @@ MuseScore {
         });
     }
 
+    // The whole last measure on every staff, as goToMeasure selects a measure (also in a one-measure score).
     function goToFinalMeasure(params) {
-        return executeWithUndo(function() {
-            var cursor = createCursor({ startTick: 0 });
-            var count = 0;
-            var startTick = 0;
-
-            while (cursor.nextMeasure()) {
-                startTick = cursor.tick;
-                count++;
-            }
-
-            if (count === 0) {
-                return { success: false, message: "Already at the last measure" };
-            }
-
-            cursor.rewindToTick(startTick);
-            cursor.next();
-            var endTick = cursor.tick;
-            var staffIdx = cursor.staffIdx;
-            
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, endTick, staffIdx, staffIdx + 1);
-            
-            selectionState = {
-                startStaff: staffIdx,
-                endStaff: staffIdx + 1,
-                startTick: startTick,
-                elements: [processElement(cursor.element)],
-                totalDuration: endTick - startTick
-            };
-
-            return { success: true, currentSelection: selectionState };
-        });
+        if (!curScore) return { error: "No score open" };
+        var range = measureRange({ startMeasure: curScore.nmeasures });
+        if (!range.valid) return range;
+        return selectWholeMeasure(range);
     }
 
     // ========================================
@@ -903,20 +878,23 @@ MuseScore {
             cursor.setDuration(params.duration.numerator, params.duration.denominator);
             
             // Melody is the default. Pass addToChord: true to stack a pitch on the current chord.
-            cursor.addNote(params.pitch, params.addToChord === true);
-            cursor.rewindToTick(selectionState.startTick);
+            var addToChord = params.addToChord === true;
+            cursor.addNote(params.pitch, addToChord);
+            var startTick = selectionState.startTick;
+            var staffIdx = cursor.staffIdx;
 
-            if (params.advanceCursorAfterAction) {
-                cursor.next();
-            }
-
-            // Build the state from the cursor's own position: reading the selection back with
+            // Build the state from the position itself: reading the selection back with
             // syncStateToSelection() would give the old one, since MuseScore applies a new
-            // selection only when the command ends.
+            // selection only when the command ends. Advancing goes past the whole note, also
+            // past the tied part of a note split at the barline (not onto it), but not past a
+            // tie the chord added to already had.
+            var currentSelection = params.advanceCursorAfterAction
+                ? advanceCursorTo(tickAfter(startTick, staffIdx, !addToChord), staffIdx)
+                : moveCursorTo(startTick, staffIdx);
             return {
                 success: true,
                 message: "Note added with pitch " + params.pitch,
-                currentSelection: moveCursorTo(cursor.tick, cursor.staffIdx)
+                currentSelection: currentSelection
             };
         });
     }
@@ -992,6 +970,26 @@ MuseScore {
     // Put the cursor on the element at `tick` and return the new cursor state. MuseScore applies a new
     // selection only when the command ends, so reading it back here (syncStateToSelection) would still give
     // the old one. The state is built directly instead, as nextElement does.
+    // The tick right after the chord or rest at `tick`: past its actual duration (which counts tuplets) and,
+    // with followTies, past the tied parts MuseScore splits a note into when it crosses a barline.
+    function tickAfter(tick, staffIdx, followTies) {
+        var t = tick;
+        while (true) {
+            var el = createCursor({ startTick: t, startStaff: staffIdx }).element;
+            if (!el || !el.actualDuration || el.actualDuration.ticks <= 0) return t;
+            t += el.actualDuration.ticks;
+            var tied = followTies && el.notes && el.notes.length > 0 && el.notes[0].tieForward;
+            if (!tied) return t;
+        }
+    }
+
+    // moveCursorTo for a cursor that advances: at the end of the score a measure is appended first, so the
+    // next note has a place (as nextElement does at the last note) instead of overwriting the one before.
+    function advanceCursorTo(tick, staffIdx) {
+        if (tick >= curScore.lastSegment.tick) cmd("append-measure");
+        return moveCursorTo(tick, staffIdx);
+    }
+
     function moveCursorTo(tick, staffIdx) {
         var element = processElement(createCursor({ startTick: tick, startStaff: staffIdx }).element);
         var ticks = element ? element.durationTicks : 0;
@@ -1179,35 +1177,28 @@ MuseScore {
         }
         
         return executeWithUndo(function() {
+            syncStateToSelection();
+
             var cursor = createCursor();
-            cursor.setDuration(params.duration.numerator, params.duration.denominator);
-            
-            var ratio = fraction(params.ratio.numerator, params.ratio.denominator);
-            var duration = fraction(params.duration.numerator, params.duration.denominator);
-            
-            cursor.addTuplet(ratio, duration);
-            cursor.next();
-
-            if (params.advanceCursorAfterAction) {
-                cursor.next();
-            }
-
-            var element = processElement(cursor.element);
             var startTick = cursor.tick;
             var staffIdx = cursor.staffIdx;
+            cursor.setDuration(params.duration.numerator, params.duration.denominator);
 
-            selectionState = {
-                startStaff: staffIdx,
-                endStaff: staffIdx + 1,
-                startTick: startTick,
-                elements: [element],
-                totalDuration: element.durationTicks
-            };
+            var ratio = fraction(params.ratio.numerator, params.ratio.denominator);
+            var duration = fraction(params.duration.numerator, params.duration.denominator);
 
-            return { 
-                success: true, 
+            cursor.addTuplet(ratio, duration);
+
+            // Without advancing, the cursor stays on the tuplet's first slot, so the following addNotes fill it
+            // slot by slot. Advancing moves past the whole tuplet (duration is its total length). The state is
+            // built from the position, as in addNote, and MuseScore's selection follows it.
+            var currentSelection = params.advanceCursorAfterAction
+                ? advanceCursorTo(startTick + 1920 * params.duration.numerator / params.duration.denominator, staffIdx)
+                : moveCursorTo(startTick, staffIdx);
+            return {
+                success: true,
                 message: "Tuplet " + params.ratio.numerator + ":" + params.ratio.denominator + " added",
-                currentSelection: selectionState
+                currentSelection: currentSelection
             };
         });
     }

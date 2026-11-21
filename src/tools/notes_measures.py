@@ -139,20 +139,27 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         )
 
     @mcp.tool(
-        description="Add a tuplet at the current cursor position.",
+        description=(
+            "Add an empty tuplet (rests) at the current cursor position. By default the cursor stays on its "
+            "first slot, so the following add_note calls fill it slot by slot, each with the duration of one "
+            "slot (an eighth for a triplet of eighths). With advance_cursor_after_action=True the cursor moves "
+            "past the whole tuplet instead."
+        ),
         tags={"notes"},
     )
     async def add_tuplet(
         duration: Annotated[
-            dict, 'Base duration as {"numerator": int, "denominator": int}'
+            dict,
+            'Total length of the tuplet as {"numerator": int, "denominator": int}, e.g. a quarter for a triplet of eighths',
         ] = {"numerator": 1, "denominator": 4},
         ratio: Annotated[
             dict,
             'Tuplet ratio as {"numerator": int, "denominator": int} (e.g. {"numerator": 3, "denominator": 2} for a triplet)',
         ] = {"numerator": 3, "denominator": 2},
         advance_cursor_after_action: Annotated[
-            bool, "Whether to move cursor to next position after adding tuplet"
-        ] = True,
+            bool,
+            "False (default): stay on the first slot to fill the tuplet; True: move past the whole tuplet",
+        ] = False,
     ):
         return await client.send_command(
             "addTuplet",

@@ -25,7 +25,7 @@ Call `ping_musescore` before a mutation. Call `get_score` before and after a com
 |---|---|---|
 | `get_cursor_info` | none | Reads the current cursor/selection state and the related score context. |
 | `go_to_measure` | `measure: int` | Moves the cursor to the start of a bar, as printed. |
-| `go_to_final_measure` | none | Moves to the final measure. |
+| `go_to_final_measure` | none | Selects the final measure on every staff, as `go_to_measure` does. |
 | `go_to_beginning_of_score` | none | Resets the plugin cursor/selection to the beginning of the score. |
 | `next_element` | none | Moves the cursor to the next score element. |
 | `prev_element` | none | Moves the cursor to the previous score element. |
@@ -42,11 +42,11 @@ Duration values are JSON objects such as `{"numerator": 1, "denominator": 4}` fo
 
 | MCP tool | Parameters | What it does |
 |---|---|---|
-| `add_note` | `pitch: int = 64`, `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a note at the current cursor position. |
+| `add_note` | `pitch: int = 64`, `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a note at the current cursor position. Advancing moves past the whole note, also past the tied part when it crosses a barline; at the end of the score a measure is appended. |
 | `add_tie` | `pitches: list[int] \| None = None` | Ties notes of the chord at the cursor to the same pitches in the next chord (default: every pitch in both chords) and moves the cursor to the second chord. After `add_note` the cursor is on the next position, so move back first. Write both chords completely before tying: a pitch added later with `add_to_chord` is also added, tied, to the first chord. Fails without changing the score when no pitch can be tied. |
 | `add_tied_note` | `duration: dict`, `pitches: list[int] \| None = None`, `extra_pitches: list[int] \| None = None`, `advance_cursor_after_action: bool = true` | Writes the next note or chord tied to the chord before the cursor, like `+` in note input. Default: every pitch of the chord before; `extra_pitches` are added untied (C-E-G into C-E-A: `pitches=[60, 64], extra_pitches=[69]`). Notes longer than the rest of the bar are split into tied notes. Fails without changing the score when there is no note before the cursor or a pitch is not in it. |
 | `add_rest` | `duration: dict = {numerator: 1, denominator: 4}`, `advance_cursor_after_action: bool = true` | Adds a rest at the current cursor position. |
-| `add_tuplet` | `duration: dict = {numerator: 1, denominator: 4}`, `ratio: dict = {numerator: 3, denominator: 2}`, `advance_cursor_after_action: bool = true` | Adds a tuplet; the default ratio represents a triplet. |
+| `add_tuplet` | `duration: dict = {numerator: 1, denominator: 4}` (total length), `ratio: dict = {numerator: 3, denominator: 2}`, `advance_cursor_after_action: bool = false` | Adds an empty tuplet; the default ratio represents a triplet. The cursor stays on its first slot, so the following `add_note` calls fill it slot by slot, each with one slot's duration; `advance_cursor_after_action=True` moves past the whole tuplet. |
 | `add_lyrics` | `lyrics: list[str]`, `verse: int = 0` | Adds syllables to consecutive notes from the current cursor, one entry per note (rests skipped). `"Hel-"` hyphenates to the next syllable; `"_"` holds the previous syllable over that note with an extender line (no lyric is placed there). Verse is zero-based. |
 | `insert_measure` | none | Inserts a measure at the current position. |
 | `append_measure` | `count: int = 1` | Appends one or more measures to the end of the score. |

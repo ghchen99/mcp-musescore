@@ -1258,6 +1258,98 @@ def test_a_sequence_of_notes_reports_the_position_after_the_last(tmp_path):
     assert result["result"]["currentSelection"]["startTick"] == 960
 
 
+def test_add_note_across_the_barline_moves_past_the_tied_part(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_note(60),
+            add_note(62),
+            add_note(64),
+            add_note(65, HALF),  # beat 4: split into two tied quarters
+            add_note(67),
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, REST_BAR, REST_BAR),
+    )
+    assert results[4]["result"]["currentSelection"]["startTick"] == 2400
+    first, second = bars_of(results[-1]["result"])
+    # The tied quarter of the F is kept; the G follows it
+    assert [(e["name"], e["durationTicks"]) for e in second[:2]] == [
+        ("Chord", 480),
+        ("Chord", 480),
+    ]
+    assert [n["pitchMidi"] for e in second[:2] for n in e["notes"]] == [65, 67]
+
+
+def test_add_note_at_the_end_of_the_score_appends_a_bar(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_note(60, {"numerator": 1, "denominator": 1}),
+            add_note(62, {"numerator": 1, "denominator": 1}),
+            get_measures(1, 2),
+        ],
+        tie_score(tmp_path, REST_BAR),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 1920
+    pitches = [
+        [
+            n["pitchMidi"]
+            for e in bar
+            if e["name"] == "Chord"
+            for n in e["notes"]
+        ]
+        for bar in bars_of(results[-1]["result"])
+    ]
+    assert pitches == [[60], [62]]
+
+
+def add_tuplet(advance):
+    return {
+        "action": "addTuplet",
+        "params": {
+            "duration": QUARTER,
+            "ratio": {"numerator": 3, "denominator": 2},
+            "advanceCursorAfterAction": advance,
+        },
+    }
+
+
+def test_a_tuplet_is_filled_from_its_first_slot(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_tuplet(advance=False),
+            add_note(60, EIGHTH),
+            add_note(62, EIGHTH),
+            add_note(64, EIGHTH),
+            get_measures(1, 1),
+        ],
+        tie_score(tmp_path, REST_BAR),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 0
+    assert results[4]["result"]["currentSelection"]["startTick"] == 480
+    (bar,) = bars_of(results[-1]["result"])
+    chords = [e for e in bar if e["name"] == "Chord"]
+    assert [(e["startTick"], e["durationTicks"]) for e in chords] == [
+        (0, 160),
+        (160, 160),
+        (320, 160),
+    ]
+    assert all(e["isTuplet"] for e in chords)
+
+
+def test_advancing_past_a_tuplet_moves_after_it(tmp_path):
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            add_tuplet(advance=True),
+        ],
+        tie_score(tmp_path, REST_BAR),
+    )
+    assert results[1]["result"]["currentSelection"]["startTick"] == 480
+
+
 def test_next_element_reports_where_it_moved(tmp_path):
     results = run(
         [
@@ -1465,6 +1557,33 @@ def test_element_steps_past_the_start_or_end_of_the_score_are_errors(
     )
     assert "Beginning of score" in results[1]["result"]["error"]
     assert "End of score" in results[3]["result"]["error"]
+
+
+def test_go_to_final_measure_selects_the_whole_last_bar(tmp_path):
+    results = run(
+        [
+            {"action": "goToFinalMeasure", "params": {}},
+            {"action": "deleteSelection", "params": {}},
+            get_measures(1, 2),
+        ],
+        tie_score(
+            tmp_path,
+            REST_BAR,
+            xml_chord("half", 60) + xml_chord("half", 62),
+        ),
+    )
+    selection = results[0]["result"]["currentSelection"]
+    assert (selection["startTick"], selection["totalDuration"]) == (1920, 1920)
+    first, second = bars_of(results[-1]["result"])
+    assert second and all(e["name"] == "Rest" for e in second)
+
+
+def test_go_to_final_measure_in_a_one_bar_score(tmp_path):
+    (result,) = run(
+        [{"action": "goToFinalMeasure", "params": {}}],
+        tie_score(tmp_path, xml_chord("whole", 60)),
+    )
+    assert result["result"]["currentSelection"]["startTick"] == 0
 
 
 def test_style_keys_are_checked_and_read_back():

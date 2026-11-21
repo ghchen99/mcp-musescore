@@ -15,7 +15,7 @@ Repeats, drum charts and drum notation have [their own page](drum-charts.md).
 ## Navigation & Cursor Control
 - `get_cursor_info()` - Get current cursor position and selection info
 - `go_to_measure(measure)` - Select a measure on every staff and move the cursor to its first beat on staff 0. The next cursor tool (`add_note`, `add_rest`, `add_lyrics`, `set_time_signature`...) acts there; follow with `next_staff()` to write on another staff
-- `go_to_beginning_of_score()` / `go_to_final_measure()` - Navigate to start/end
+- `go_to_beginning_of_score()` / `go_to_final_measure()` - Navigate to start/end; `go_to_final_measure` selects the last measure on every staff, as `go_to_measure` does
 - `next_element()` / `prev_element()` - Move cursor element by element
 - `next_staff()` / `prev_staff()` - Move between staves; at the last or first staff they fail with an error, as `next_element()` and `prev_element()` do at the end or start of the score
 - `select_current_measure()` - Select the whole measure the cursor is in, on every staff (the cursor moves to its first beat on staff 0)
@@ -29,11 +29,11 @@ Navigation results come back as LilyPond with measure, beat and staff metadata.
 - **Bar markers**: every bar ends with a bar check and a `% bar N` comment, N as printed in the score, so bars are easy to compare.
 
 ## Note & Rest Creation
-- `add_note(pitch, duration, advance_cursor_after_action, add_to_chord)` - Add notes with MIDI pitch. Sequential notes write a melody; set `add_to_chord=True` to stack a pitch on the current chord.
+- `add_note(pitch, duration, advance_cursor_after_action, add_to_chord)` - Add notes with MIDI pitch. Sequential notes write a melody; set `add_to_chord=True` to stack a pitch on the current chord. Advancing moves the cursor past the whole note, also when MuseScore splits it into tied notes at a barline, and at the end of the score a measure is appended so the next note has a place.
 - `add_tie(pitches)` - Tie notes of the chord at the cursor to the same pitches in the next chord. By default every pitch that is in both chords is tied; pass `pitches` to tie only some (e.g. `[60, 64]` ties C and E of C–E–G into C–E–A). The cursor then moves to the second chord, so calling it again continues a tie chain. Write both chords completely before tying: MuseScore treats tied chords as one, so a pitch added afterwards with `add_to_chord` is also added, tied, to the first chord. Fails without changing the score when no pitch can be tied. `get_score` shows ties as `~` in LilyPond and as `tieForward`/`tieBack` per note in JSON.
 - `add_tied_note(duration, pitches, extra_pitches, advance_cursor_after_action)` - Write the next note or chord tied to the chord before the cursor, like `+` in MuseScore's note input. By default every pitch of the chord before is continued; `pitches` ties only some, and `extra_pitches` adds new pitches to the chord without a tie (C–E–G into C–E–A: `pitches=[60, 64], extra_pitches=[69]`). A note longer than the rest of the bar is split at the barline into tied notes.
 - `add_rest(duration, advance_cursor_after_action)` - Add rests
-- `add_tuplet(duration, ratio, advance_cursor_after_action)` - Add tuplets (triplets, etc.)
+- `add_tuplet(duration, ratio, advance_cursor_after_action)` - Add an empty tuplet (triplets, etc.); `duration` is its total length, e.g. a quarter for a triplet of eighths. By default the cursor stays on its first slot, so the following `add_note` calls fill it slot by slot; with `advance_cursor_after_action=True` it moves past the whole tuplet
 - `add_lyrics(lyrics, verse)` - Add lyric syllables to consecutive notes from the cursor, one entry per note (rests are skipped). End a syllable with `-` to hyphenate it to the next one; use `"_"` for a note that holds the previous syllable (a melisma), which then gets an extender line. For example, "Glo-ri-a" sung over five notes, with "ri" held for three: `["Glo-", "ri", "_", "_", "a"]`
 
 ## Measures, Time & Tempo

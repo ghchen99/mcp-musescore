@@ -73,6 +73,16 @@ def test_ping_reaches_plugin():
     run_with_mock(scenario)
 
 
+def test_add_tuplet_leaves_the_cursor_on_its_first_slot_by_default():
+    async def scenario(c, mock):
+        await c.call_tool("add_tuplet", {})
+        (command,) = mock.commands
+        assert command["action"] == "addTuplet"
+        assert command["params"]["advanceCursorAfterAction"] is False
+
+    run_with_mock(scenario)
+
+
 def test_melody_is_written_sequentially():
     async def scenario(c, mock):
         for pitch in (60, 62, 64):
