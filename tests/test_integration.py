@@ -75,7 +75,8 @@ def test_ping_reaches_plugin():
 
 def test_add_tuplet_leaves_the_cursor_on_its_first_slot_by_default():
     async def scenario(c, mock):
-        await c.call_tool("add_tuplet", {})
+        # The mock has no addTuplet: only the command the tool sends matters
+        await c.call_tool("add_tuplet", {}, raise_on_error=False)
         (command,) = mock.commands
         assert command["action"] == "addTuplet"
         assert command["params"]["advanceCursorAfterAction"] is False
