@@ -3,6 +3,7 @@
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
 from ..bars import BAR_HELP, Bar, bar_numbers
 from ..client import MuseScoreClient
@@ -52,7 +53,11 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"connection"},
     )
     async def ping_musescore():
-        return await client.send_command("ping")
+        # The plugin answers the bare string "pong", not a result dictionary
+        reply = await client.send_command("ping")
+        if reply.get("status") != "success" or reply.get("result") != "pong":
+            raise ToolError(f"The plugin did not answer the ping: {reply}")
+        return {"success": True, "message": "pong"}
 
     @mcp.tool(
         description=(
@@ -93,14 +98,9 @@ def setup_connection_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         if staves:
             params["staves"] = staves
 
-        res = await client.send_command("getScore", params)
-        result = res.get("result")
-        if not (
-            isinstance(result, dict)
-            and result.get("success")
-            and isinstance(result.get("analysis"), dict)
-        ):
-            return res
+        result = await client.request("getScore", params)
+        if not isinstance(result.get("analysis"), dict):
+            raise ToolError("MuseScore sent no score analysis")
 
         analysis = result["analysis"]
         for m in analysis.get("measures", []):

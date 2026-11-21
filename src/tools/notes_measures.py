@@ -40,7 +40,7 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             "If True, add this pitch to the current chord instead of writing the next melody note",
         ] = False,
     ):
-        return await client.send_command(
+        return await client.request(
             "addNote",
             {
                 "pitch": pitch,
@@ -130,7 +130,7 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             bool, "Whether to move cursor to next position after adding rest"
         ] = True,
     ):
-        return await client.send_command(
+        return await client.request(
             "addRest",
             {
                 "duration": duration,
@@ -154,7 +154,7 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             bool, "Whether to move cursor to next position after adding tuplet"
         ] = True,
     ):
-        return await client.send_command(
+        return await client.request(
             "addTuplet",
             {
                 "duration": duration,
@@ -182,7 +182,7 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             int, "Verse number (0-based, default is 0 for first verse)"
         ] = 0,
     ):
-        return await client.send_command(
+        return await client.request(
             "addLyrics", {"lyrics": lyrics, "verse": verse}
         )
 
@@ -191,7 +191,7 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"measures"},
     )
     async def insert_measure():
-        return await client.send_command("insertMeasure")
+        return await client.request("insertMeasure")
 
     @mcp.tool(
         description="Append measures to the end of the score.",
@@ -200,7 +200,7 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     async def append_measure(
         count: Annotated[int, "Number of empty measures to append"] = 1,
     ):
-        return await client.send_command("appendMeasure", {"count": count})
+        return await client.request("appendMeasure", {"count": count})
 
     @mcp.tool(
         description="Delete the current selection, or the specified measure.",
@@ -248,4 +248,4 @@ def setup_notes_measures_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         tags={"measures"},
     )
     async def undo():
-        return await client.send_command("undo")
+        return await client.request("undo")

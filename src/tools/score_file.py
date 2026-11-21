@@ -224,13 +224,15 @@ async def reopen_in_place(
     wait = _last_reopen + REOPEN_GAP - time.monotonic()
     if wait > 0:
         await asyncio.sleep(wait)
-    res = await client.send_command("reopenScore", params)
-    _last_reopen = time.monotonic()
-    result = res.get("result")
-    if isinstance(result, dict) and result.get("success"):
-        info = (await client.send_command("scoreFileInfo")).get("result") or {}
-        if not expected or info.get("scoreId") == expected:
-            return {"reopened": True}
+    try:
+        result = await client.request("reopenScore", params)
+        _last_reopen = time.monotonic()
+        if result.get("success"):
+            info = await client.request("scoreFileInfo")
+            if not expected or info.get("scoreId") == expected:
+                return {"reopened": True}
+    except ToolError:
+        _last_reopen = time.monotonic()
     return {
         "reopened": False,
         "next_step": (

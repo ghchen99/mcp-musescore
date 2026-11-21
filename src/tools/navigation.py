@@ -39,13 +39,8 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
             bars = None  # no score open: the command says so
         if bars and params and "measure" in params:
             params = {**params, "measure": bars.position(params["measure"])}
-        res = await client.send_command(action, params)
-        result = res.get("result")
-        if (
-            isinstance(result, dict)
-            and result.get("success")
-            and "currentSelection" in result
-        ):
+        result = await client.request(action, params)
+        if result.get("success") and "currentSelection" in result:
             from ..utils.lilypond_converter import json_to_lilypond
 
             sel = result["currentSelection"]
@@ -107,7 +102,7 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
 
             meta_str = ", ".join(meta) if meta else "No metadata"
             return f"[Metadata] {meta_str}\n[Score]\n{lily_str}"
-        return res
+        return bars.relabel(result) if bars else result
 
     @mcp.tool(
         description="Get information about the current cursor position.",

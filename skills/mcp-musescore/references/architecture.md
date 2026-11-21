@@ -53,7 +53,7 @@ Errors use:
 {"status": "error", "message": "..."}
 ```
 
-`get_score` and the navigation tools unwrap `result` and return LilyPond text on success. When the plugin reports an error they return the raw envelope; read `result.error` and do not claim that a formatted LilyPond response was produced. The newer tools (repeat structure, coloring, `render`) raise an MCP tool error instead.
+A command the plugin refuses comes back as `{"status": "success", "result": {"error": "..."}}`. Every tool unwraps the envelope: on success it returns `result` (or, for `get_score` and the navigation tools, LilyPond text), and on either kind of error it raises an MCP tool error with the plugin's message. `ping_musescore` checks for the bare `pong` and returns `{"success": true, "message": "pong"}`.
 
 ## Files and versions
 

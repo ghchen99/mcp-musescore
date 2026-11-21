@@ -148,6 +148,46 @@ def test_process_sequence_runs_actions_in_order():
     run_with_mock(scenario)
 
 
+def test_a_refused_command_is_a_tool_error():
+    async def scenario(c, mock):
+        result = await c.call_tool(
+            "add_note",
+            {"pitch": 60, "duration": {"numerator": 1, "denominator": 0}},
+            raise_on_error=False,
+        )
+        assert result.is_error and "Duration must be specified" in str(result)
+        assert mock.score.elements[0] == []
+
+    run_with_mock(scenario)
+
+
+def test_tools_reply_with_the_result_itself():
+    async def scenario(c, mock):
+        added = (
+            await c.call_tool("add_rest", {"duration": QUARTER})
+        ).structured_content
+        assert added["success"] and "result" not in added
+        ran = (
+            await c.call_tool(
+                "processSequence",
+                {
+                    "sequence": [
+                        {
+                            "action": "addRest",
+                            "params": {
+                                "duration": QUARTER,
+                                "advanceCursorAfterAction": True,
+                            },
+                        }
+                    ]
+                },
+            )
+        ).structured_content
+        assert ran["success"] and "result" not in ran
+
+    run_with_mock(scenario)
+
+
 def test_undo_reverts_last_edit():
     async def scenario(c, mock):
         await c.call_tool("add_note", {"pitch": 60, "duration": QUARTER})
@@ -903,9 +943,7 @@ def test_add_tie_in_a_sequence():
                 },
             )
         ).data
-        assert reply["result"][
-            "success"
-        ]  # processSequence returns the plugin's reply envelope
+        assert reply["success"]
         assert note_ties(mock.score, 0)[60] == (True, False)
 
     run_with_mock(scenario, chord_score((60,), (60,)))
@@ -1025,7 +1063,7 @@ def test_add_tied_note_in_a_sequence():
                 },
             )
         ).data
-        assert reply["result"]["success"]
+        assert reply["success"]
         assert [note_ties(mock.score, i)[67] for i in range(2)] == [
             (True, False),
             (False, True),

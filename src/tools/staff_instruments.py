@@ -25,7 +25,7 @@ def setup_staff_instruments_tools(
     async def add_instrument(
         instrument_id: Annotated[str, "ID of the instrument to add"],
     ):
-        return await client.send_command(
+        return await client.request(
             "addInstrument", {"instrumentId": instrument_id}
         )
 
@@ -37,7 +37,7 @@ def setup_staff_instruments_tools(
         staff: Annotated[int, "Staff number (0-based)"],
         mute: Annotated[bool, "True to mute, False to unmute"],
     ):
-        return await client.send_command(
+        return await client.request(
             "setStaffMute", {"staff": staff, "mute": mute}
         )
 
@@ -49,7 +49,7 @@ def setup_staff_instruments_tools(
         staff: Annotated[int, "Staff number (0-based)"],
         instrument_id: Annotated[str, "ID of the new instrument sound"],
     ):
-        return await client.send_command(
+        return await client.request(
             "setInstrumentSound",
             {"staff": staff, "instrumentId": instrument_id},
         )
