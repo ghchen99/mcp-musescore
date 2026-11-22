@@ -32,7 +32,7 @@ Call `ping_musescore` before a mutation. Call `get_score` before and after a com
 | `next_staff` | none | Moves the cursor to the next staff. |
 | `prev_staff` | none | Moves the cursor to the previous staff. |
 | `select_current_measure` | none | Selects the current measure. |
-| `select_custom_range` | `start_tick: int`, `end_tick: int`, `start_staff: int`, `end_staff: int` | Selects a precise tick range across one or more zero-based staves. MuseScore uses 480 ticks per quarter note in this project. |
+| `select_custom_range` | `start_tick: int`, `end_tick: int`, `start_staff: int`, `end_staff: int` | Selects a precise tick range across one or more zero-based staves. `end_staff` is **exclusive**, as everywhere else in the plugin: staff 2 alone is `start_staff=2, end_staff=3`, and `end_staff <= start_staff` is an error rather than an empty selection that would send the next edit to staff 0. MuseScore uses 480 ticks per quarter note in this project. |
 
 Navigation tools return the selection as LilyPond with measure/beat/staff metadata. A move the plugin refuses is an MCP tool error.
 

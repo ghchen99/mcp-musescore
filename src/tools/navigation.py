@@ -176,7 +176,8 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
     @mcp.tool(
         description=(
             "Select a custom range of ticks across staves. "
-            "Useful for retrieving continuous phrasing that spans measure boundaries."
+            "Useful for retrieving continuous phrasing that spans measure boundaries. "
+            "end_staff is exclusive, so one staff N is start_staff=N, end_staff=N+1."
         ),
         tags={"navigation"},
     )
@@ -187,7 +188,11 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
         ],
         end_tick: Annotated[int, "End of the range in ticks (exclusive)"],
         start_staff: Annotated[int, "First staff index (0-based)"],
-        end_staff: Annotated[int, "Last staff index (0-based)"],
+        end_staff: Annotated[
+            int,
+            "Staff index to stop before (0-based, exclusive, must be greater than start_staff): "
+            "staff 2 alone is start_staff=2, end_staff=3",
+        ],
     ):
         params = {
             "startTick": start_tick,

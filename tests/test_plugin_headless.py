@@ -233,6 +233,43 @@ def test_staff_navigation_past_the_outer_staves_is_an_error():
     assert results[4]["result"]["currentSelection"]["startStaff"] == 0
 
 
+def test_select_custom_range_end_staff_is_exclusive():
+    """EndStaff stops before that staff, as MuseScore's selectRange() does.
+
+    The element map was built with an inclusive loop, so it reported a staff
+    MuseScore had not selected. With startStaff == endStaff it selected nothing
+    at all while still reporting success, and the edits that followed went to
+    staff 0 instead of the staff that was asked for.
+    """
+    one_staff, empty = run(
+        [
+            {
+                "action": "selectCustomRange",
+                "params": {
+                    "startTick": 0,
+                    "endTick": 1440,  # bar 1 is in 3/4
+                    "startStaff": 1,
+                    "endStaff": 2,
+                },
+            },
+            {
+                "action": "selectCustomRange",
+                "params": {
+                    "startTick": 0,
+                    "endTick": 1440,
+                    "startStaff": 1,
+                    "endStaff": 1,
+                },
+            },
+        ],
+        JAZZ,
+    )
+    selection = one_staff["result"]["currentSelection"]
+    assert list(selection["elements"]) == ["staff1"]
+    assert (selection["startStaff"], selection["endStaff"]) == (1, 2)
+    assert "endStaff is exclusive" in empty["result"]["error"]
+
+
 def test_a_staff_step_that_cannot_move_stops_a_sequence():
     (result,) = run(
         [

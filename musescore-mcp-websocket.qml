@@ -802,9 +802,19 @@ MuseScore {
         return result;
     }
 
+    // endStaff is exclusive, as MuseScore's selection.selectRange() treats it and as the rest of this
+    // plugin does (measureRange, syncStateToSelection, the range actions of processSequence): one staff
+    // is startStaff = 2, endStaff = 3. The element map used to be built with an inclusive loop, so it
+    // reported a staff MuseScore had not selected, and startStaff === endStaff selected nothing at all
+    // while still reporting success, which sent the edits that followed to staff 0.
     function selectCustomRange(params) {
         var validation = validateParams(params, ["startTick", "endTick", "startStaff", "endStaff"]);
         if (!validation.valid) return validation;
+        if (!curScore) return { error: "No score open" };
+        if (params.startStaff < 0 || params.endStaff > curScore.nstaves || params.startStaff >= params.endStaff) {
+            return { error: "Invalid staff range " + params.startStaff + "-" + params.endStaff + " (score has " +
+                     curScore.nstaves + " staves, endStaff is exclusive)" };
+        }
 
         return executeWithUndo(function() {
             var startTick = params.startTick;
@@ -817,7 +827,7 @@ MuseScore {
             curScore.selection.selectRange(startTick, selectionEndTick(endTick), startStaff, endStaff);
 
             var elementsMap = {};
-            for (var st = startStaff; st <= endStaff; st++) {
+            for (var st = startStaff; st < endStaff; st++) {
                 elementsMap[`staff${st}`] = [];
             }
 
@@ -830,7 +840,7 @@ MuseScore {
             }
 
             while (currentSegment && currentSegment.tick < endTick) {
-                for (var s = startStaff; s <= endStaff; s++) {
+                for (var s = startStaff; s < endStaff; s++) {
                     for (var v = 0; v < 4; v++) {
                         var track = s * 4 + v;
                         var el = currentSegment.elementAt(track);

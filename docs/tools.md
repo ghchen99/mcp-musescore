@@ -19,7 +19,7 @@ Repeats, drum charts and drum notation have [their own page](drum-charts.md).
 - `next_element()` / `prev_element()` - Move cursor element by element
 - `next_staff()` / `prev_staff()` - Move between staves; at the last or first staff they fail with an error, as `next_element()` and `prev_element()` do at the end or start of the score
 - `select_current_measure()` - Select the whole measure the cursor is in, on every staff (the cursor moves to its first beat on staff 0)
-- `select_custom_range(start_tick, end_tick, start_staff, end_staff)` - Slicing tool to extract cross-measure, multi-staff phrasing
+- `select_custom_range(start_tick, end_tick, start_staff, end_staff)` - Slicing tool to extract cross-measure, multi-staff phrasing. `end_staff` is exclusive, so staff 2 alone is `start_staff=2, end_staff=3`
 
 Navigation results come back as LilyPond with measure, beat and staff metadata.
 
