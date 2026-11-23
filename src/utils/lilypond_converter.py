@@ -246,7 +246,9 @@ def process_element(element: Dict[str, Any]) -> str:
             lily_notes = []
             tied = []  # per note: tied to the next note (written as "~" in LilyPond)
             for note in notes:
-                pitch = note.get("pitchMidi")
+                # The written pitch on a transposing staff: the tpc names the
+                # written note, so the octave has to be the written one too
+                pitch = note.get("pitchWritten", note.get("pitchMidi"))
                 tpc = note.get("tpc")
                 if pitch is not None:
                     lily_notes.append(midi_to_lilypond_pitch(pitch, tpc))

@@ -370,6 +370,18 @@ MuseScore {
     // ELEMENT PROCESSING
     // ========================================
 
+    // The pitch a note is written at: the sounding pitch minus the staff's transposition (a B flat
+    // instrument's written C sounds as B flat), unless the score is shown in concert pitch.
+    // Without Staff.transpose (older MuseScore), the sounding pitch.
+    function writtenPitch(note) {
+        try {
+            if (curScore.style.value("concertPitch")) return note.pitch;
+            return note.pitch - note.staff.transpose(note.fraction).chromatic;
+        } catch (e) {
+            return note.pitch;
+        }
+    }
+
     function processElement(element) {
         if (!element) return null;
         if (element.name === "MeasureRepeat") {
@@ -415,6 +427,10 @@ MuseScore {
                     tpc: note.tpc,
                     pitchName: getTpcName(note.tpc)
                 };
+                // On a transposing staff the name (tpc) is the written note's but pitch is the sounding one:
+                // report the written pitch too, so the octave can follow the name
+                var written = writtenPitch(note);
+                if (written !== note.pitch) noteData.pitchWritten = written;
                 if (note.ghost) noteData.ghost = true;
                 // Ties belong to single notes, not to the chord. Like ghost, only reported when present.
                 if (note.tieForward) {

@@ -89,3 +89,10 @@ def test_octave_follows_the_written_note_across_the_octave_boundary():
     # A plain B4 and middle C are unchanged
     assert midi_to_lilypond_pitch(71, tpc=19) == "b'"
     assert midi_to_lilypond_pitch(60, tpc=14) == "c'"
+
+
+def test_transposing_staff_takes_the_octave_of_the_written_pitch():
+    # A B flat instrument's written C5 sounds as B flat 4: the plugin names it
+    # C (tpc 14) and reports the written pitch next to the sounding one
+    written_c = (70, {"pitchWritten": 72, "tpc": 14})
+    assert process_element(chord(written_c)) == "c''4"
