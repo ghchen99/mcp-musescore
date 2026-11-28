@@ -12,6 +12,7 @@ apart with letters in score order: 12a, 12b.
 """
 
 import re
+from bisect import bisect_right
 from string import ascii_lowercase
 from typing import (
     Any,
@@ -45,7 +46,13 @@ BAR_HELP = (
 class BarNumbers:
     """The score's printed bar numbers, by position."""
 
-    def __init__(self, numbers: List[int], excluded: List[bool]) -> None:
+    def __init__(
+        self,
+        numbers: List[int],
+        excluded: List[bool],
+        start_ticks: Optional[List[int]] = None,
+        beat_ticks: Optional[List[int]] = None,
+    ) -> None:
         """Name each measure as printed.
 
         Args:
@@ -53,6 +60,11 @@ class BarNumbers:
                 position.
             excluded (List[bool]): Whether each measure is left out of the
                 count; a first measure that is, is a pickup: bar 0.
+            start_ticks (Optional[List[int]]): The tick each measure starts at,
+                by position. Without them, locate() cannot place a tick.
+            beat_ticks (Optional[List[int]]): The length of a beat in each
+                measure, by position: its time signature's denominator (480 in
+                4/4, 240 in 6/8).
         """
         printed = list(numbers)
         if printed and excluded and excluded[0]:
@@ -75,6 +87,38 @@ class BarNumbers:
             label: position
             for position, label in enumerate(self.labels, start=1)
         }
+        self._start_ticks = list(start_ticks or [])
+        self._beat_ticks = list(beat_ticks or [])
+
+    def locate(self, tick: int) -> Optional[Tuple[int, int]]:
+        """Return the measure a tick is in, and its beat in that measure.
+
+        The beat follows the measure's time signature, so it is right in 3/4,
+        6/8 and after a measure of another length, where counting in 4/4 is not.
+
+        Args:
+            tick (int): A position in the score, in ticks.
+
+        Returns:
+            located (Optional[Tuple[int, int]]): The measure's position
+                (1-based) and the beat (1-based), or None when the plugin sent
+                no measure starts.
+        """
+        if not self._start_ticks:
+            return None
+
+        before = bisect_right(self._start_ticks, tick)
+        position = max(1, before)
+        start = self._start_ticks[position - 1]
+        beat_length = (
+            self._beat_ticks[position - 1]
+            if position <= len(self._beat_ticks)
+            else 480
+        )
+        beat = max(0, tick - start) // beat_length + 1
+        located = (position, beat)
+
+        return located
 
     def label(self, position: int) -> str:
         """Return the printed name of the measure at a position (1-based)."""
@@ -234,7 +278,12 @@ POSITION_FIELDS = {
 async def bar_numbers(client: MuseScoreClient) -> BarNumbers:
     """Fetch the open score's printed bar numbers from the plugin."""
     reply = await client.request("barNumbers")
-    return BarNumbers(reply["numbers"], reply["excluded"])
+    return BarNumbers(
+        reply["numbers"],
+        reply["excluded"],
+        reply.get("startTicks"),
+        reply.get("beatTicks"),
+    )
 
 
 async def send(

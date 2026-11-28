@@ -3353,8 +3353,15 @@ MuseScore {
     function barNumbers() {
         if (!curScore) return { error: "No score open" };
         var excluded = [];
-        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) excluded.push(!!m.irregular);
-        return { success: true, numbers: displayedNumbers(), excluded: excluded };
+        // Each measure's start and beat length, so the server can name the bar and beat of a tick
+        var startTicks = [];
+        var beats = [];
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) {
+            excluded.push(!!m.irregular);
+            startTicks.push(measureStartTick(m));
+            beats.push(beatTicks(m));
+        }
+        return { success: true, numbers: displayedNumbers(), excluded: excluded, startTicks: startTicks, beatTicks: beats };
     }
 
     // Set "Add to measure number" and/or "Exclude from measure count" on one measure.

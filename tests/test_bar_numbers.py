@@ -6,7 +6,10 @@ a number printed on two bars (a split bar, or a section that starts again from
 """
 
 import pytest
+from mock_musescore import MockScore
 from test_integration import patterned_score, run_with_mock
+
+from src.bars import BarNumbers
 
 
 def pickup_score():
@@ -443,3 +446,22 @@ def test_file_edits_take_printed_bars(tmp_path, monkeypatch):
         )
 
     run_with_mock(scenario, score)
+
+
+def test_the_cursor_header_counts_bars_and_beats_by_the_time_signature():
+    async def scenario(c, mock):
+        text = text_of(await c.call_tool("go_to_measure", {"measure": 3}))
+        assert "Bar: 3, Beat: 1" in text
+
+    score = MockScore(measures=4)
+    score.time_signature = (3, 4)
+    run_with_mock(scenario, score)
+
+
+def test_a_tick_is_located_in_its_bar_and_beat():
+    # Two bars of 3/4, then one of 6/8, whose beat is an eighth
+    bars = BarNumbers([1, 2, 3], [False] * 3, [0, 1440, 2880], [480, 480, 240])
+    assert bars.locate(1440) == (2, 1)
+    assert bars.locate(1920) == (2, 2)
+    assert bars.locate(3120) == (3, 2)
+    assert BarNumbers([1], [False]).locate(0) is None

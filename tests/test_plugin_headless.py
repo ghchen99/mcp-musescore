@@ -2472,3 +2472,6 @@ def test_bar_numbers_tell_a_pickup_from_the_bars_after_it():
     reply = results[1]["result"]
     assert reply["numbers"] == [1, 1, 2, 3, 4, 5, 6, 7]
     assert reply["excluded"] == [True] + [False] * 7
+    # Each measure's start and beat length, for naming a tick's bar and beat
+    assert reply["startTicks"][:3] == [0, 1440, 2880]
+    assert reply["beatTicks"][:3] == [480, 480, 480]
