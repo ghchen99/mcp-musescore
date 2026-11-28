@@ -1387,6 +1387,151 @@ def test_advancing_past_a_tuplet_moves_after_it(tmp_path):
     assert results[1]["result"]["currentSelection"]["startTick"] == 480
 
 
+def test_a_tuplet_reports_its_ratio_and_written_value(tmp_path):
+    from src.utils.lilypond_converter import process_element
+
+    for actual, written in ((5, "r16*4/5"), (7, "r16*4/7")):
+        results = run(
+            [
+                {"action": "goToMeasure", "params": {"measure": 1}},
+                {
+                    "action": "addTuplet",
+                    "params": {
+                        "duration": QUARTER,
+                        "ratio": {"numerator": actual, "denominator": 4},
+                        "advanceCursorAfterAction": False,
+                    },
+                },
+                get_measures(1, 1),
+            ],
+            tie_score(tmp_path, REST_BAR),
+        )
+        (bar,) = bars_of(results[-1]["result"])
+        first = bar[0]
+        assert first["tuplet"] == {
+            "actual": actual,
+            "normal": 4,
+            "writtenTicks": 120,
+        }
+        assert process_element(first) == written
+
+
+def tuplet_step(actual, normal, numerator, denominator):
+    return {
+        "action": "addTuplet",
+        "params": {
+            "duration": {"numerator": numerator, "denominator": denominator},
+            "ratio": {"numerator": actual, "denominator": normal},
+            "advanceCursorAfterAction": False,
+        },
+    }
+
+
+@pytest.mark.parametrize("actual", [3, 5, 6, 7])
+def test_a_tuplet_is_filled_note_by_note(tmp_path, actual):
+    from src.utils.lilypond_converter import process_element
+
+    sixteenth = {"numerator": 1, "denominator": 16}
+    # A triplet of 16ths fills an eighth; the others fill a quarter
+    span = (1, 8) if actual == 3 else (1, 4)
+    normal = 2 if actual == 3 else 4
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            tuplet_step(actual, normal, *span),
+        ]
+        + [add_note(60 + i, sixteenth) for i in range(actual)]
+        + [get_measures(1, 1)],
+        tie_score(tmp_path, REST_BAR),
+    )
+    (bar,) = bars_of(results[-1]["result"])
+    written = [process_element(e) for e in bar if "tuplet" in e]
+    pitches = [n["pitchMidi"] for e in bar if "tuplet" in e for n in e["notes"]]
+    assert pitches == [60 + i for i in range(actual)]
+    assert all(w.endswith(f"16*{normal}/{actual}") for w in written)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="B20: inside a nested tuplet a slot can start between two ticks "
+    "(53 1/3); the cursor is kept in whole ticks, so the next note lands on "
+    "the slot before it and overwrites it",
+)
+def test_notes_in_a_tuplet_inside_a_tuplet_get_both_ratios(tmp_path):
+    from src.utils.lilypond_converter import process_element
+
+    sixteenth = {"numerator": 1, "denominator": 16}
+    results = run(
+        [
+            {"action": "goToMeasure", "params": {"measure": 1}},
+            tuplet_step(3, 2, 1, 4),  # a triplet of eighths on beat 1
+            tuplet_step(3, 2, 1, 8),  # a triplet of 16ths in its first slot
+            add_note(60, sixteenth),
+            add_note(62, sixteenth),
+            add_note(64, sixteenth),
+            add_note(65, EIGHTH),  # back in the outer triplet
+            add_note(67, EIGHTH),
+            add_note(69),  # after both tuplets
+            get_measures(1, 1),
+        ],
+        tie_score(tmp_path, REST_BAR),
+    )
+    (bar,) = bars_of(results[-1]["result"])
+    assert [process_element(e) for e in bar] == [
+        "c'16*4/9",
+        "d'16*4/9",
+        "e'16*4/9",
+        "f'8*2/3",
+        "g'8*2/3",
+        "a'4",
+        "r2",
+    ]
+
+
+@pytest.mark.parametrize(
+    "steps, ratio, first",
+    [
+        (  # a quintuplet of 16ths in the first slot of a triplet of quarters
+            [tuplet_step(3, 2, 1, 2), tuplet_step(5, 4, 1, 4)],
+            (15, 8),
+            "r16*8/15",
+        ),
+        (  # a triplet of 16ths in the first slot of a quintuplet of eighths
+            [tuplet_step(5, 4, 1, 2), tuplet_step(3, 2, 1, 8)],
+            (15, 8),
+            "r16*8/15",
+        ),
+        (  # three triplets inside each other
+            [
+                tuplet_step(3, 2, 1, 2),
+                tuplet_step(3, 2, 1, 4),
+                tuplet_step(3, 2, 1, 8),
+            ],
+            (27, 8),
+            "r16*8/27",
+        ),
+        (  # a duplet: two eighths in the time of a dotted quarter
+            [tuplet_step(2, 3, 3, 8)],
+            (2, 3),
+            "r8*3/2",
+        ),
+    ],
+)
+def test_tuplets_report_their_combined_ratio(tmp_path, steps, ratio, first):
+    from src.utils.lilypond_converter import process_element
+
+    results = run(
+        [{"action": "goToMeasure", "params": {"measure": 1}}]
+        + steps
+        + [get_measures(1, 1)],
+        tie_score(tmp_path, REST_BAR),
+    )
+    (bar,) = bars_of(results[-1]["result"])
+    tuplet = bar[0]["tuplet"]
+    assert (tuplet["actual"], tuplet["normal"]) == ratio
+    assert process_element(bar[0]) == first
+
+
 def test_next_element_reports_where_it_moved(tmp_path):
     results = run(
         [

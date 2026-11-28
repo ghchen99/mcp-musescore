@@ -141,14 +141,15 @@ def ticks_to_lilypond_duration(ticks: int) -> str:
             1440: "2.",  # Dotted half note
             960: "2",  # Half note
             720: "4.",  # Dotted quarter note
+            640: "2*2/3",  # Half triplet: two thirds of a half (960)
             480: "4",  # Quarter note
             360: "8.",  # Dotted eighth note
-            320: "2*2/3",  # Half triplet
+            320: "4*2/3",  # Quarter triplet
             240: "8",  # Eighth note
             180: "16.",  # Dotted 16th note
-            160: "4*2/3",  # Quarter triplet
+            160: "8*2/3",  # Eighth triplet
             120: "16",  # 16th note
-            80: "8*2/3",  # Eighth triplet
+            80: "16*2/3",  # 16th triplet
             60: "32",  # 32nd note
             30: "64",  # 64th note
         }
@@ -221,6 +222,12 @@ def process_element(element: Dict[str, Any]) -> str:
         elem_name = element.get("name", "")
         duration_ticks = element.get("durationTicks", 480)
         lily_duration = ticks_to_lilypond_duration(duration_ticks)
+        # In a tuplet: the written value times the ratio, e.g. "16*4/5" for a
+        # 16th of a quintuplet, which works for any ratio
+        tuplet = element.get("tuplet")
+        if tuplet and tuplet.get("writtenTicks"):
+            written = ticks_to_lilypond_duration(tuplet["writtenTicks"])
+            lily_duration = f"{written}*{tuplet['normal']}/{tuplet['actual']}"
 
         if elem_name == "Rest":
             return f"r{lily_duration}"
