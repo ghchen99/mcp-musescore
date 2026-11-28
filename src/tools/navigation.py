@@ -57,7 +57,12 @@ def setup_navigation_tools(mcp: FastMCP, client: MuseScoreClient) -> None:
                 measure_num = (tick // 1920) + 1
                 beat_num = ((tick % 1920) // 480) + 1
 
-                if "measures" in score_info:
+                # The measure and beat by the score's own measures and time
+                # signatures; counting in 4/4 is wrong in 3/4 or 6/8
+                located = bars.locate(tick) if bars else None
+                if located:
+                    measure_num, beat_num = located
+                elif "measures" in score_info:
                     measures = score_info["measures"]
                     # Sort and find
                     measures = sorted(

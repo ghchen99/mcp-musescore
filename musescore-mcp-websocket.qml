@@ -382,6 +382,19 @@ MuseScore {
         }
     }
 
+    // The ratio of the tuplet an element is in, and its written value: a 16th in a quintuplet is written as
+    // a 16th (120 ticks) and lasts 4/5 of that, so the LilyPond output can write "16*4/5" for any ratio
+    // instead of guessing it from the length in ticks. A tuplet inside another multiplies their ratios.
+    function tupletOf(element) {
+        var actual = 1;
+        var normal = 1;
+        for (var t = element.tuplet; t; t = t.tuplet) {
+            actual *= t.actualNotes;
+            normal *= t.normalNotes;
+        }
+        return { actual: actual, normal: normal, writtenTicks: element.duration ? element.duration.ticks : 0 };
+    }
+
     function processElement(element) {
         if (!element) return null;
         if (element.name === "MeasureRepeat") {
@@ -399,6 +412,7 @@ MuseScore {
             isTie: false,  // set below: true when a note of the chord is tied to the next note
             isTuplet: element.tuplet ? true : false
         };
+        if (element.tuplet) base.tuplet = tupletOf(element);
 
         if (element.lyrics && element.lyrics.length > 0) {
             base.lyrics = [];
@@ -3339,8 +3353,15 @@ MuseScore {
     function barNumbers() {
         if (!curScore) return { error: "No score open" };
         var excluded = [];
-        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) excluded.push(!!m.irregular);
-        return { success: true, numbers: displayedNumbers(), excluded: excluded };
+        // Each measure's start and beat length, so the server can name the bar and beat of a tick
+        var startTicks = [];
+        var beats = [];
+        for (var m = curScore.firstMeasure; m; m = m.nextMeasure) {
+            excluded.push(!!m.irregular);
+            startTicks.push(measureStartTick(m));
+            beats.push(beatTicks(m));
+        }
+        return { success: true, numbers: displayedNumbers(), excluded: excluded, startTicks: startTicks, beatTicks: beats };
     }
 
     // Set "Add to measure number" and/or "Exclude from measure count" on one measure.

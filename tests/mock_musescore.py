@@ -489,6 +489,11 @@ class MockMuseScore:
             "excluded": [
                 n in score.irregular for n in range(1, score.num_measures + 1)
             ],
+            "startTicks": [
+                i * score.measure_ticks for i in range(score.num_measures)
+            ],
+            "beatTicks": [WHOLE_NOTE_TICKS // score.time_signature[1]]
+            * score.num_measures,
         }
 
     def _do_getScore(self, params):
